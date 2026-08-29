@@ -12,6 +12,8 @@ import {
   Bookmark,
   CheckSquare,
   Globe,
+  Zap,
+  TrendingUp,
 } from 'lucide-react';
 
 interface JobDetailsModalProps {
@@ -34,6 +36,31 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const companyName = job.companies?.name || 'Verified Tech Employer';
   const companyLogo = job.companies?.logo_url;
   const companyWebsite = job.companies?.website;
+
+  // Format compensation details
+  const hasSalary = job.has_salary || job.salary_min !== null || job.salary_max !== null;
+  const symbol = job.salary_currency === 'EUR' ? '€' : job.salary_currency === 'GBP' ? '£' : '$';
+  const interval = job.salary_interval || 'yearly';
+
+  let displaySalary = 'Not Disclosed by Employer';
+  if (hasSalary) {
+    if (job.salary_min && job.salary_max) {
+      displaySalary = `${symbol}${Number(job.salary_min).toLocaleString()} - ${symbol}${Number(job.salary_max).toLocaleString()} / ${interval}`;
+    } else if (job.salary_max) {
+      displaySalary = `Up to ${symbol}${Number(job.salary_max).toLocaleString()} / ${interval}`;
+    } else if (job.salary_min) {
+      displaySalary = `From ${symbol}${Number(job.salary_min).toLocaleString()} / ${interval}`;
+    }
+  }
+
+  let annualizedEst: string | null = null;
+  if (interval !== 'yearly' && (job.annualized_min || job.annualized_max)) {
+    if (job.annualized_min && job.annualized_max) {
+      annualizedEst = `~${symbol}${Number(job.annualized_min).toLocaleString()} - ${symbol}${Number(job.annualized_max).toLocaleString()} / year`;
+    } else {
+      annualizedEst = `~${symbol}${Number(job.annualized_min || job.annualized_max).toLocaleString()} / year`;
+    }
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -107,6 +134,46 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           >
             <X size={20} />
           </button>
+        </div>
+
+        {/* Compensation & Market Transparency Card (Batch H) */}
+        <div
+          style={{
+            padding: '20px',
+            borderRadius: 'var(--radius-md)',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(99, 102, 241, 0.08) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            marginBottom: '24px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '16px',
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+              <DollarSign size={16} />
+              <span>Base Compensation</span>
+            </div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff' }}>
+              {displaySalary}
+            </div>
+            {annualizedEst && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Estimated Annualized: {annualizedEst}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.8rem', color: '#a5b4fc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+              <Zap size={15} />
+              <span>Equity & Perks</span>
+            </div>
+            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: job.equity_mentioned ? '#c084fc' : 'var(--text-secondary)' }}>
+              {job.equity_mentioned ? '✨ Stock Options / Equity Disclosed' : 'Standard Benefits Package'}
+            </div>
+          </div>
         </div>
 
         {/* Info Grid */}

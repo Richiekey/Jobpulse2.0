@@ -10,6 +10,7 @@ import {
   Bookmark,
   CheckSquare,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 
 export interface JobCardProps {
@@ -25,6 +26,10 @@ export interface JobCardProps {
     salary_max?: number | null;
     salary_currency?: string | null;
     salary_interval?: string | null;
+    annualized_min?: number | null;
+    annualized_max?: number | null;
+    has_salary?: boolean;
+    equity_mentioned?: boolean;
     skills: string[];
     posted_at: string;
     apply_url: string;
@@ -51,16 +56,32 @@ export const JobCard: React.FC<JobCardProps> = ({
   const companyName = job.companies?.name || 'Verified Company';
   const companyLogo = job.companies?.logo_url;
 
-  // Format salary
+  // Format compensation
   let salaryString: string | null = null;
+  const intervalSuffix =
+    job.salary_interval === 'hourly'
+      ? '/hr'
+      : job.salary_interval === 'monthly'
+      ? '/mo'
+      : job.salary_interval === 'daily'
+      ? '/day'
+      : '/yr';
+
   if (job.salary_min || job.salary_max) {
     const symbol = job.salary_currency === 'EUR' ? '€' : job.salary_currency === 'GBP' ? '£' : '$';
+    const isUnder1000 = (job.salary_max || job.salary_min || 0) < 1000;
+
+    const formatNum = (num: number) => {
+      if (isUnder1000) return `${symbol}${num}`;
+      return `${symbol}${(num / 1000).toFixed(0)}k`;
+    };
+
     if (job.salary_min && job.salary_max) {
-      salaryString = `${symbol}${(job.salary_min / 1000).toFixed(0)}k - ${symbol}${(job.salary_max / 1000).toFixed(0)}k`;
+      salaryString = `${formatNum(job.salary_min)} - ${formatNum(job.salary_max)}${intervalSuffix}`;
     } else if (job.salary_max) {
-      salaryString = `Up to ${symbol}${(job.salary_max / 1000).toFixed(0)}k`;
+      salaryString = `Up to ${formatNum(job.salary_max)}${intervalSuffix}`;
     } else if (job.salary_min) {
-      salaryString = `From ${symbol}${(job.salary_min / 1000).toFixed(0)}k`;
+      salaryString = `From ${formatNum(job.salary_min)}${intervalSuffix}`;
     }
   }
 
@@ -178,13 +199,33 @@ export const JobCard: React.FC<JobCardProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
-                    color: '#22d3ee',
-                    fontWeight: 600,
+                    color: '#34d399',
+                    fontWeight: 700,
                   }}
                 >
                   <DollarSign size={14} />
                   <span>{salaryString}</span>
                 </div>
+              )}
+
+              {job.equity_mentioned && (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: '#c084fc',
+                    background: 'rgba(192, 132, 252, 0.12)',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid rgba(192, 132, 252, 0.25)',
+                  }}
+                >
+                  <Zap size={11} />
+                  <span>Equity</span>
+                </span>
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

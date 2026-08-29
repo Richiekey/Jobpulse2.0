@@ -3,7 +3,7 @@ import type {
   JobCandidate,
   NormalizedJob,
 } from '@jobpulse/domain';
-import { DeduplicationEngine } from '@jobpulse/domain';
+import { DeduplicationEngine, SalaryExtractor } from '@jobpulse/domain';
 import type { ATSAdapter } from '@jobpulse/ats';
 import { logger } from '@jobpulse/shared';
 import { supabase } from '../db.js';
@@ -49,14 +49,39 @@ export class IngestionPipeline {
         };
       }
 
-      // 5. Generate Level-3 Canonical Fingerprint
+      // 5. Enrich Salary & Compensation Intelligence (Batch H)
+      let salaryMin = normalizedJob.salary?.min ?? null;
+      let salaryMax = normalizedJob.salary?.max ?? null;
+      let salaryCurrency = normalizedJob.salary?.currency ?? 'USD';
+      let salaryInterval = normalizedJob.salary?.interval ?? 'yearly';
+
+      if (!salaryMin && !salaryMax) {
+        // Attempt extraction from unstructured description
+        const extracted = SalaryExtractor.extractFromText(normalizedJob.description || '');
+        if (extracted.hasSalary) {
+          salaryMin = extracted.salaryMin;
+          salaryMax = extracted.salaryMax;
+          salaryCurrency = extracted.currency;
+          salaryInterval = extracted.interval;
+        }
+      }
+
+      const salaryProfile = SalaryExtractor.normalize(
+        salaryMin,
+        salaryMax,
+        salaryCurrency,
+        salaryInterval as any,
+        normalizedJob.description || ''
+      );
+
+      // 6. Generate Level-3 Canonical Fingerprint
       const canonicalFingerprint = DeduplicationEngine.generateCanonicalFingerprint(
         companySource.companyId,
         normalizedJob.canonicalTitle,
         normalizedJob.locations
       );
 
-      // 6. Atomic Transactional Persistence via PostgreSQL RPC
+      // 7. Atomic Transactional Persistence via PostgreSQL RPC
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         'ingest_job_transaction',
         {
@@ -68,10 +93,14 @@ export class IngestionPipeline {
           p_employment_type: normalizedJob.employmentType,
           p_workplace_type: normalizedJob.workplaceType,
           p_locations: normalizedJob.locations,
-          p_salary_min: normalizedJob.salary?.min ?? null,
-          p_salary_max: normalizedJob.salary?.max ?? null,
-          p_salary_currency: normalizedJob.salary?.currency ?? 'USD',
-          p_salary_interval: normalizedJob.salary?.interval ?? null,
+          p_salary_min: salaryProfile.salaryMin,
+          p_salary_max: salaryProfile.salaryMax,
+          p_salary_currency: salaryProfile.currency,
+          p_salary_interval: salaryProfile.interval,
+          p_annualized_min: salaryProfile.annualizedMin,
+          p_annualized_max: salaryProfile.annualizedMax,
+          p_has_salary: salaryProfile.hasSalary,
+          p_equity_mentioned: salaryProfile.equityMentioned,
           p_skills: normalizedJob.skills,
           p_posted_at: normalizedJob.postedAt,
           p_canonical_url: normalizedJob.urls.canonicalUrl,

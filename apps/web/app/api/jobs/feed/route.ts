@@ -13,6 +13,7 @@ const FeedQuerySchema = z.object({
   company_id: z.string().uuid().optional(),
   salary_min: z.coerce.number().min(0).optional(),
   salary_max: z.coerce.number().min(0).optional(),
+  has_salary: z.coerce.boolean().optional(),
   skill: z.string().max(100).optional(),
   location: z.string().max(100).optional(),
   posted_after: z.string().datetime().optional(),
@@ -40,6 +41,7 @@ export async function GET(request: NextRequest) {
       company_id,
       salary_min,
       salary_max,
+      has_salary,
       skill,
       location,
       posted_after,
@@ -70,6 +72,10 @@ export async function GET(request: NextRequest) {
         salary_max,
         salary_currency,
         salary_interval,
+        annualized_min,
+        annualized_max,
+        has_salary,
+        equity_mentioned,
         skills,
         posted_at,
         first_seen_at,
@@ -105,7 +111,10 @@ export async function GET(request: NextRequest) {
       dbQuery = dbQuery.eq('company_id', company_id);
     }
 
-    // 4. Salary Floor & Ceiling Filters
+    // 4. Compensation Filters (Batch H)
+    if (has_salary) {
+      dbQuery = dbQuery.eq('has_salary', true);
+    }
     if (salary_min !== undefined) {
       dbQuery = dbQuery.gte('salary_max', salary_min);
     }
@@ -113,7 +122,7 @@ export async function GET(request: NextRequest) {
       dbQuery = dbQuery.lte('salary_min', salary_max);
     }
 
-    // 5. Skills Filter (supports single skill or comma-separated list)
+    // 5. Skills Filter
     if (skill) {
       const skillsList = skill.split(',').map((s) => s.trim()).filter(Boolean);
       if (skillsList.length > 0) {
@@ -139,12 +148,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 9. Keyset / Cursor Pagination with tamper validation (M10.3, M10.4)
+    // 9. Keyset / Cursor Pagination with tamper validation
     if (decodedCursor) {
       dbQuery = dbQuery.or(`posted_at.lt.${decodedCursor.postedAt},and(posted_at.eq.${decodedCursor.postedAt},id.lt.${decodedCursor.id})`);
     }
 
-    // 10. Stable compound sorting (M10.1)
+    // 10. Stable compound sorting
     dbQuery = dbQuery
       .order('posted_at', { ascending: false })
       .order('id', { ascending: false })
@@ -160,6 +169,30 @@ export async function GET(request: NextRequest) {
     const hasMore = items.length > limit;
     const resultItems = hasMore ? items.slice(0, limit) : items;
 
+    // Calculate Salary Distribution Facets for the result set
+    const salaryFacets = {
+      under_100k: 0,
+      from_100k_to_150k: 0,
+      from_150k_to_200k: 0,
+      over_200k: 0,
+      with_equity: 0,
+      with_disclosed_salary: 0,
+    };
+
+    for (const item of resultItems as any[]) {
+      if (item.has_salary || item.salary_min !== null || item.salary_max !== null) {
+        salaryFacets.with_disclosed_salary++;
+        const val = item.annualized_max || item.annualized_min || item.salary_max || item.salary_min || 0;
+        if (val < 100000) salaryFacets.under_100k++;
+        else if (val <= 150000) salaryFacets.from_100k_to_150k++;
+        else if (val <= 200000) salaryFacets.from_150k_to_200k++;
+        else salaryFacets.over_200k++;
+      }
+      if (item.equity_mentioned) {
+        salaryFacets.with_equity++;
+      }
+    }
+
     let nextCursor: string | null = null;
     if (hasMore && resultItems.length > 0) {
       const lastItem = resultItems[resultItems.length - 1];
@@ -173,6 +206,9 @@ export async function GET(request: NextRequest) {
         next_cursor: nextCursor,
         has_more: hasMore,
         count: resultItems.length,
+      },
+      facets: {
+        salaries: salaryFacets,
       },
     });
   } catch (err) {

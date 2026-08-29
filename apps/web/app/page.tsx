@@ -24,6 +24,7 @@ export default function HomePage() {
   const [workplace, setWorkplace] = useState('all');
   const [employment, setEmployment] = useState('all');
   const [salaryMin, setSalaryMin] = useState('');
+  const [hasSalaryOnly, setHasSalaryOnly] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState('');
 
   // Pagination state
@@ -56,6 +57,7 @@ export default function HomePage() {
         if (workplace !== 'all') params.set('workplace', workplace);
         if (employment !== 'all') params.set('employment', employment);
         if (salaryMin) params.set('salary_min', salaryMin);
+        if (hasSalaryOnly) params.set('has_salary', 'true');
         if (selectedSkill) params.set('skill', selectedSkill);
         if (!resetCursor && cursor) params.set('cursor', cursor);
 
@@ -78,7 +80,7 @@ export default function HomePage() {
         setIsLoadingMore(false);
       }
     },
-    [searchQuery, workplace, employment, salaryMin, selectedSkill, cursor]
+    [searchQuery, workplace, employment, salaryMin, hasSalaryOnly, selectedSkill, cursor]
   );
 
   // Initial load and filter change
@@ -87,7 +89,7 @@ export default function HomePage() {
       fetchFeedJobs(true);
     }, 250);
     return () => clearTimeout(timer);
-  }, [searchQuery, workplace, employment, salaryMin, selectedSkill]);
+  }, [searchQuery, workplace, employment, salaryMin, hasSalaryOnly, selectedSkill]);
 
   // Load Saved Jobs and Applications
   useEffect(() => {
@@ -205,6 +207,7 @@ export default function HomePage() {
     setWorkplace('all');
     setEmployment('all');
     setSalaryMin('');
+    setHasSalaryOnly(false);
     setSelectedSkill('');
   };
 
@@ -219,32 +222,52 @@ export default function HomePage() {
         isScraping={isScraping}
       />
 
-      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 24px 80px', width: '100%', flex: 1 }}>
-        {/* Notification Toast */}
-        {scrapeNotification && (
-          <div
-            style={{
-              margin: '16px 0',
-              padding: '12px 20px',
-              borderRadius: 'var(--radius-md)',
-              background: 'rgba(99, 102, 241, 0.2)',
-              border: '1px solid var(--accent-primary)',
-              color: '#c7d2fe',
-              fontSize: '0.875rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-            }}
-          >
-            <Sparkles size={16} />
-            <span>{scrapeNotification}</span>
-          </div>
-        )}
+      {/* Notification Toast */}
+      {scrapeNotification && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '80px',
+            right: '24px',
+            zIndex: 1000,
+            background: 'var(--accent-gradient)',
+            color: '#ffffff',
+            padding: '12px 20px',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-lg)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.9rem',
+            fontWeight: 600,
+          }}
+        >
+          <Sparkles size={16} />
+          <span>{scrapeNotification}</span>
+        </div>
+      )}
 
-        {/* Hero & Metrics */}
+      {/* Main Content Area */}
+      <main style={{ flex: 1, maxWidth: '1200px', margin: '0 auto', width: '100%', padding: '32px 24px' }}>
         {activeTab === 'feed' && (
           <>
-            <div style={{ textAlign: 'center', margin: '32px 0 24px' }}>
+            {/* Hero Section */}
+            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+              <div
+                className="badge badge-ats"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 16px',
+                  fontSize: '0.85rem',
+                  marginBottom: '16px',
+                  borderRadius: 'var(--radius-full)',
+                }}
+              >
+                <Sparkles size={14} />
+                <span>Zero-Latency Direct-from-ATS Scraping Engine</span>
+              </div>
               <h1
                 style={{
                   fontSize: '2.5rem',
@@ -280,6 +303,8 @@ export default function HomePage() {
               onEmploymentChange={setEmployment}
               salaryMin={salaryMin}
               onSalaryMinChange={setSalaryMin}
+              hasSalaryOnly={hasSalaryOnly}
+              onHasSalaryOnlyChange={setHasSalaryOnly}
               selectedSkill={selectedSkill}
               onSkillChange={setSelectedSkill}
               onClearFilters={handleClearFilters}

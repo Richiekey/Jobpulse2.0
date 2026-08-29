@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Search, Globe, MapPin, DollarSign, Filter, X } from 'lucide-react';
+import { Search, Globe, MapPin, DollarSign, Filter, X, Sparkles } from 'lucide-react';
 
 interface SearchFiltersProps {
   searchQuery: string;
@@ -12,6 +12,8 @@ interface SearchFiltersProps {
   onEmploymentChange: (e: string) => void;
   salaryMin: string;
   onSalaryMinChange: (s: string) => void;
+  hasSalaryOnly?: boolean;
+  onHasSalaryOnlyChange?: (hasSalary: boolean) => void;
   selectedSkill: string;
   onSkillChange: (skill: string) => void;
   onClearFilters: () => void;
@@ -32,6 +34,16 @@ const POPULAR_SKILLS = [
   'AI',
 ];
 
+const SALARY_PRESETS = [
+  { label: 'Any Salary', value: '' },
+  { label: '$80k+', value: '80000' },
+  { label: '$100k+', value: '100000' },
+  { label: '$120k+', value: '120000' },
+  { label: '$150k+', value: '150000' },
+  { label: '$180k+', value: '180000' },
+  { label: '$200k+', value: '200000' },
+];
+
 export const SearchFilters: React.FC<SearchFiltersProps> = ({
   searchQuery,
   onSearchChange,
@@ -41,6 +53,8 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
   onEmploymentChange,
   salaryMin,
   onSalaryMinChange,
+  hasSalaryOnly = false,
+  onHasSalaryOnlyChange,
   selectedSkill,
   onSkillChange,
   onClearFilters,
@@ -50,6 +64,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
     workplace !== 'all' ||
     employment !== 'all' ||
     salaryMin !== '' ||
+    hasSalaryOnly ||
     selectedSkill !== '';
 
   return (
@@ -116,29 +131,20 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
           )}
         </div>
 
-        {/* Salary Filter Input */}
-        <div style={{ position: 'relative', width: '160px' }}>
-          <DollarSign
-            size={16}
-            color="var(--text-muted)"
-            style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-            }}
-          />
-          <input
-            type="number"
+        {/* Salary Floor Selector (Batch H) */}
+        <div style={{ width: '160px' }}>
+          <select
             className="input-control"
-            placeholder="Min Salary ($)"
             value={salaryMin}
             onChange={(e) => onSalaryMinChange(e.target.value)}
-            style={{
-              paddingLeft: '34px',
-              height: '46px',
-            }}
-          />
+            style={{ height: '46px' }}
+          >
+            {SALARY_PRESETS.map((preset) => (
+              <option key={preset.value} value={preset.value}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Employment Type Selector */}
@@ -156,6 +162,32 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
             <option value="part_time">Part-Time</option>
           </select>
         </div>
+
+        {/* Disclosed Salary Only Filter Toggle */}
+        {onHasSalaryOnlyChange && (
+          <button
+            onClick={() => onHasSalaryOnlyChange(!hasSalaryOnly)}
+            className="btn"
+            style={{
+              height: '46px',
+              padding: '0 14px',
+              borderRadius: 'var(--radius-md)',
+              border: hasSalaryOnly ? '1px solid #10b981' : '1px solid var(--border-color)',
+              background: hasSalaryOnly ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-tertiary)',
+              color: hasSalaryOnly ? '#34d399' : 'var(--text-secondary)',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'var(--transition)',
+            }}
+          >
+            <DollarSign size={15} />
+            <span>Disclosed Salary</span>
+          </button>
+        )}
 
         {hasActiveFilters && (
           <button
