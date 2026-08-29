@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ApiResponse } from '../lib/api-response.ts';
+import { ApiResponse } from '../lib/api-response.js';
 
 describe('ApiResponse Sanitization & Security (P1.16)', () => {
   it('generates secure unique request IDs with req_ prefix', () => {

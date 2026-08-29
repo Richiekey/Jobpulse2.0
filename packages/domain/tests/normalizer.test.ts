@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Normalizer } from '../src/normalizer.ts';
+import { Normalizer } from '../src/normalizer.js';
 
 describe('Normalizer', () => {
   it('normalizes titles by stripping emojis and trailing metadata tags', () => {

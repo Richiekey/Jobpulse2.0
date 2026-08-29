@@ -7,10 +7,11 @@ import {
   GreenhouseAdapter,
   LeverAdapter,
   AshbyAdapter,
+  JobrightAdapter,
 } from '../src/index.js';
 
-describe('ATSAdapterRegistry (Batch A Remediated)', () => {
-  it('resolves registered adapters cleanly by platform slug', () => {
+describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
+  it('resolves all implemented ATS adapters cleanly by platform slug', () => {
     const gh = ATSAdapterRegistry.getAdapter('greenhouse');
     expect(gh).toBeInstanceOf(GreenhouseAdapter);
     expect(gh.platformSlug).toBe('greenhouse');
@@ -22,29 +23,55 @@ describe('ATSAdapterRegistry (Batch A Remediated)', () => {
     const ashby = ATSAdapterRegistry.getAdapter('ashby');
     expect(ashby).toBeInstanceOf(AshbyAdapter);
     expect(ashby.platformSlug).toBe('ashby');
+
+    const jobright = ATSAdapterRegistry.getAdapter('jobright');
+    expect(jobright).toBeInstanceOf(JobrightAdapter);
+    expect(jobright.platformSlug).toBe('jobright');
   });
 
-  it('is case-insensitive and whitespace-tolerant on platform slug resolution', () => {
-    const ghUpper = ATSAdapterRegistry.getAdapter('  GREENHOUSE  ');
-    expect(ghUpper).toBeInstanceOf(GreenhouseAdapter);
+  it('is strictly case-insensitive and whitespace-tolerant on platform slug resolution', () => {
+    expect(ATSAdapterRegistry.getAdapter('  GREENHOUSE  ')).toBeInstanceOf(GreenhouseAdapter);
+    expect(ATSAdapterRegistry.getAdapter('  LeVeR  ')).toBeInstanceOf(LeverAdapter);
+    expect(ATSAdapterRegistry.getAdapter('  ashby  ')).toBeInstanceOf(AshbyAdapter);
+    expect(ATSAdapterRegistry.getAdapter('  JOBRIGHT  ')).toBeInstanceOf(JobrightAdapter);
   });
 
   it('distinguishes known-but-unimplemented ATS platforms (e.g. Workday) from unknown platforms', () => {
     // Workday is in the catalog but not implemented
     expect(ATSAdapterRegistry.isKnownPlatform('workday')).toBe(true);
+    expect(ATSAdapterRegistry.hasAdapter('workday')).toBe(false);
     expect(() => {
       ATSAdapterRegistry.getAdapter('workday');
     }).toThrowError(UnimplementedATSError);
 
     // Completely unknown ATS
     expect(ATSAdapterRegistry.isKnownPlatform('non_existent_ats_999')).toBe(false);
+    expect(ATSAdapterRegistry.hasAdapter('non_existent_ats_999')).toBe(false);
     expect(() => {
       ATSAdapterRegistry.getAdapter('non_existent_ats_999');
     }).toThrowError(UnknownATSError);
 
-    // Both inherit from UnsupportedATSError
+    // Both inherit from UnsupportedATSError to prevent silent fallback
     expect(() => ATSAdapterRegistry.getAdapter('workday')).toThrowError(UnsupportedATSError);
     expect(() => ATSAdapterRegistry.getAdapter('non_existent_ats_999')).toThrowError(UnsupportedATSError);
+  });
+
+  it('provides platform definition metadata via getDefinition and getAllDefinitions', () => {
+    const ghDef = ATSAdapterRegistry.getDefinition('greenhouse');
+    expect(ghDef).not.toBeNull();
+    expect(ghDef?.name).toBe('Greenhouse');
+    expect(ghDef?.isImplemented).toBe(true);
+    expect(ghDef?.capabilities.hasPublicApi).toBe(true);
+
+    const workdayDef = ATSAdapterRegistry.getDefinition('workday');
+    expect(workdayDef).not.toBeNull();
+    expect(workdayDef?.name).toBe('Workday');
+    expect(workdayDef?.isImplemented).toBe(false);
+
+    const allDefs = ATSAdapterRegistry.getAllDefinitions();
+    expect(allDefs.length).toBeGreaterThanOrEqual(4);
+    expect(allDefs.some((d) => d.slug === 'greenhouse')).toBe(true);
+    expect(allDefs.some((d) => d.slug === 'workday')).toBe(true);
   });
 
   it('detects Greenhouse URLs and board tokens', () => {
@@ -69,6 +96,14 @@ describe('ATSAdapterRegistry (Batch A Remediated)', () => {
     expect(result?.detected).toBe(true);
     expect(result?.atsType).toBe('ashby');
     expect(result?.boardIdentifier).toBe('openai');
+  });
+
+  it('detects Jobright URLs and board tokens', () => {
+    const result = ATSAdapterRegistry.detectATS('https://jobright.ai/jobs/jr_123456');
+    expect(result).not.toBeNull();
+    expect(result?.detected).toBe(true);
+    expect(result?.atsType).toBe('jobright');
+    expect(result?.boardIdentifier).toBe('jr_123456');
   });
 
   it('detects embedded Greenhouse job boards from HTML content', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ScraperRunner, type SourceRunResult } from '../src/engine/runner.ts';
+import { ScraperRunner, type SourceRunResult } from '../src/engine/runner.js';
 
 describe('ScraperRunner Telemetry & State Machine (P1.12, P1.13, P1.23)', () => {
   it('instantiates cleanly with custom concurrency limits', () => {

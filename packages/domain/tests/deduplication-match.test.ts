@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DeduplicationEngine } from '../src/deduplication.ts';
+import { DeduplicationEngine } from '../src/deduplication.js';
 
 describe('DeduplicationEngine Multi-Level Match Evaluation (M08)', () => {
   it('identifies Level 1 exact deterministic identity match', () => {

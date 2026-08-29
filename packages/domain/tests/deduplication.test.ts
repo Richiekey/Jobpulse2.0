@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DeduplicationEngine } from '../src/deduplication.ts';
+import { DeduplicationEngine } from '../src/deduplication.js';
 
 describe('DeduplicationEngine & 3-Level Deduplication', () => {
   it('Level 1: Generates consistent SHA-256 payload hashes', () => {

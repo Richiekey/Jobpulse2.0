@@ -40,7 +40,7 @@ export class CompanyNormalizer {
     return rawName
       .toLowerCase()
       .replace(/[\u{1F600}-\u{1F6FF}|[\u{2600}-\u{26FF}]/gu, '')
-      .replace(/\b(inc\.?|llc\.?|corp\.?|corporation|ltd\.?|limited|technologies|tech|group|co\.?|company)\b/gi, '')
+      .replace(/\b(inc\.?|llc\.?|corp\.?|corporation|ltd\.?|limited|technologies|technology|tech|group|co\.?|company)\b/gi, '')
       .replace(/[^a-z0-9]/g, '')
       .trim();
   }
@@ -82,7 +82,8 @@ export class CompanyNormalizer {
     if (!rawUrl || typeof rawUrl !== 'string') return null;
     try {
       let target = rawUrl.trim();
-      if (!target.startsWith('http://') && !target.startsWith('https://')) {
+      const lower = target.toLowerCase();
+      if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
         target = `https://${target}`;
       }
       const parsed = new URL(target);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { URLResolver, isDomainMatch } from '../src/resolver.ts';
+import { URLResolver, isDomainMatch } from '../src/resolver.js';
 
 describe('URLResolver Observability & Safety Guarantees (M09)', () => {
   it('correctly resolves and scores direct ATS URL with 0.98 confidence', () => {

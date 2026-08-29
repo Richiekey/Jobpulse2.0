@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GreenhouseAdapter } from '../src/adapters/greenhouse.adapter.ts';
+import { GreenhouseAdapter } from '../src/adapters/greenhouse.adapter.js';
 import type { RawJobPayload } from '@jobpulse/domain';
 import fixture from './fixtures/greenhouse_board.json';
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { JobValidator } from '../src/validator.ts';
-import { SSRFGuard } from '../src/ssrf.ts';
+import { JobValidator } from '../src/validator.js';
+import { SSRFGuard } from '../src/ssrf.js';
 import type { NormalizedJob } from '@jobpulse/domain';
 
 describe('JobValidator & SSRFGuard', () => {

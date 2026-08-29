@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { httpClient } from '../src/http-client.ts';
+import { httpClient } from '../src/http-client.js';
 
 describe('HttpClient SSRF Defense & Protocol Safety (M09.4, M13.4)', () => {
   it('blocks private IPv4 addresses from external fetching', async () => {
