@@ -288,11 +288,18 @@ export class ScraperRunner {
     try {
       // 2. Initialize or adopt durable scrape_runs record
       if (!runId) {
+        const concurrencyScope = options.sourceId
+          ? `source:${options.sourceId}`
+          : options.companyIdentifier && options.companyIdentifier !== 'all'
+            ? `company:${options.companyIdentifier}`
+            : 'global';
+
         const { data: scrapeRun, error: runInitError } = await supabase
           .from('scrape_runs')
           .insert({
             started_at: new Date().toISOString(),
             status: 'running',
+            concurrency_scope: concurrencyScope,
             companies_attempted: 0,
             companies_succeeded: 0,
             companies_failed: 0,
@@ -301,7 +308,11 @@ export class ScraperRunner {
             jobs_updated: 0,
             jobs_rejected: 0,
             jobs_failed: 0,
-            metadata: { worker_id: workerId, concurrency: options.concurrency ?? this.defaultConcurrency },
+            metadata: {
+              worker_id: workerId,
+              concurrency: options.concurrency ?? this.defaultConcurrency,
+              concurrency_scope: concurrencyScope,
+            },
           })
           .select('id')
           .single();
