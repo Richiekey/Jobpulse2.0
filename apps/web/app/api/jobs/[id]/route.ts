@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { ApiResponse } from '@/lib/api-response';
 
 export async function GET(
   _request: NextRequest,
@@ -7,6 +8,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return ApiResponse.error('Invalid job ID: Must be a valid UUID.', null, 400);
+    }
+
     const supabase = await createClient();
 
     const { data: job, error } = await supabase
@@ -41,14 +47,11 @@ export async function GET(
       .single();
 
     if (error || !job) {
-      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+      return ApiResponse.error('Job posting not found.', error, 404);
     }
 
-    return NextResponse.json({ data: job });
+    return ApiResponse.success(job);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal Server Error' },
-      { status: 500 }
-    );
+    return ApiResponse.error('An unexpected error occurred.', err, 500);
   }
 }

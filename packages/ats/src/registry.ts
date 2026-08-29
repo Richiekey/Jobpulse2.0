@@ -86,8 +86,9 @@ export const ATS_REGISTRY: Record<string, ATSDefinition> = {
 export function detectATSFromUrl(url: string): ATSDefinition | null {
   try {
     const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
     for (const def of Object.values(ATS_REGISTRY)) {
-      if (def.domains.some((d) => parsed.hostname.includes(d))) {
+      if (def.domains.some((d) => host === d.toLowerCase() || host.endsWith('.' + d.toLowerCase()))) {
         return def;
       }
     }

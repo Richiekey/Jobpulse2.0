@@ -1,8 +1,17 @@
+export type ScrapeRunStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'succeeded'
+  | 'partially_failed'
+  | 'failed'
+  | 'cancelled';
+
 export interface ScrapeRun {
   id: string;
   startedAt: string;
   completedAt?: string | null;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  status: ScrapeRunStatus;
   companiesAttempted: number;
   companiesSucceeded: number;
   companiesFailed: number;

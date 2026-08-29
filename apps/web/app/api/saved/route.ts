@@ -1,16 +1,22 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { ApiResponse } from '@/lib/api-response';
+import { z } from 'zod';
+
+const SaveJobSchema = z.object({
+  jobId: z.string().uuid(),
+});
 
 export async function GET() {
   try {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (authError || !user) {
+      return ApiResponse.error('Unauthorized: Authentication required.', authError, 401);
     }
 
-    const { data: savedJobs, error } = await supabase
+    const { data: savedJobs, error: queryError } = await supabase
       .from('saved_jobs')
       .select(`
         id,
@@ -28,6 +34,7 @@ export async function GET() {
           salary_currency,
           posted_at,
           apply_url,
+          canonical_url,
           companies (
             id,
             name,
@@ -39,88 +46,84 @@ export async function GET() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (queryError) {
+      return ApiResponse.error('Failed to retrieve saved jobs.', queryError, 500);
     }
 
-    return NextResponse.json({ data: savedJobs || [] });
+    return ApiResponse.success(savedJobs || []);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal Server Error' },
-      { status: 500 }
-    );
+    return ApiResponse.error('An unexpected error occurred.', err, 500);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (authError || !user) {
+      return ApiResponse.error('Unauthorized: Authentication required.', authError, 401);
     }
 
-    const body = await request.json();
-    const jobId = body.jobId;
+    const rawBody = await request.json().catch(() => ({}));
+    const parseResult = SaveJobSchema.safeParse(rawBody);
 
-    if (!jobId) {
-      return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+    if (!parseResult.success) {
+      return ApiResponse.error('Invalid request body: jobId must be a valid UUID.', parseResult.error, 400);
     }
 
-    const { data, error } = await supabase
+    const { jobId } = parseResult.data;
+
+    const { data, error: insertError } = await supabase
       .from('saved_jobs')
-      .insert({
-        user_id: user.id,
-        job_id: jobId,
-      })
+      .upsert(
+        {
+          user_id: user.id,
+          job_id: jobId,
+        },
+        { onConflict: 'user_id, job_id' }
+      )
       .select('id')
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (insertError) {
+      return ApiResponse.error('Failed to save job.', insertError, 500);
     }
 
-    return NextResponse.json({ success: true, data });
+    return ApiResponse.success({ id: data.id, jobId, saved: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal Server Error' },
-      { status: 500 }
-    );
+    return ApiResponse.error('An unexpected error occurred.', err, 500);
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (authError || !user) {
+      return ApiResponse.error('Unauthorized: Authentication required.', authError, 401);
     }
 
     const { searchParams } = new URL(request.url);
     const jobId = searchParams.get('jobId');
 
-    if (!jobId) {
-      return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+    if (!jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {
+      return ApiResponse.error('Invalid query parameter: jobId must be a valid UUID.', null, 400);
     }
 
-    const { error } = await supabase
+    const { error: deleteError } = await supabase
       .from('saved_jobs')
       .delete()
       .eq('user_id', user.id)
       .eq('job_id', jobId);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (deleteError) {
+      return ApiResponse.error('Failed to remove saved job.', deleteError, 500);
     }
 
-    return NextResponse.json({ success: true });
+    return ApiResponse.success({ jobId, removed: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal Server Error' },
-      { status: 500 }
-    );
+    return ApiResponse.error('An unexpected error occurred.', err, 500);
   }
 }

@@ -1,5 +1,14 @@
 import crypto from 'node:crypto';
 
+export type DeduplicationLevel = 'level_1_source_identity' | 'level_2_canonical_url' | 'level_3_canonical_fingerprint';
+
+export interface DeduplicationIdentity {
+  sourceId: string;
+  externalJobId: string;
+  canonicalUrl?: string | null;
+  canonicalFingerprint?: string | null;
+}
+
 export class DeduplicationEngine {
   /**
    * Generates a SHA-256 hash of a raw JSON payload for change detection.
@@ -10,30 +19,47 @@ export class DeduplicationEngine {
   }
 
   /**
-   * Normalizes URLs for Level-2 deduplication by removing tracking parameters (UTM, ref, fbclid, etc.)
+   * Provider-aware URL cleaning that strips non-essential tracking tokens while preserving
+   * routing and identity parameters.
    */
   public static cleanUrl(urlStr: string): string {
     try {
       const parsed = new URL(urlStr);
-      // Strip common tracking and session parameters
-      const trackingParams = [
+      const host = parsed.hostname.toLowerCase();
+
+      // Universal tracking parameters
+      const universalTracking = [
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-        'ref', 'source', 'fbclid', 'gclid', 'msclkid', 'gh_jid', 'lever-source'
+        'ref', 'source', 'fbclid', 'gclid', 'msclkid', '_hsenc', '_hsmi',
+        'mc_cid', 'mc_eid', 'yclid', 'trk', 'sc_src'
       ];
-      for (const param of trackingParams) {
+
+      // Provider-specific tracking parameters to remove
+      if (host.includes('lever.co')) {
+        universalTracking.push('lever-source', 'lever-origin');
+      } else if (host.includes('greenhouse.io')) {
+        universalTracking.push('gh_src', 'gh_ref');
+      } else if (host.includes('ashbyhq.com')) {
+        universalTracking.push('ashby_jid');
+      }
+
+      for (const param of universalTracking) {
         parsed.searchParams.delete(param);
       }
-      // Remove trailing slash
+
+      // Remove trailing slashes from path
       const cleanPath = parsed.pathname.replace(/\/+$/, '') || '/';
-      return `${parsed.protocol}//${parsed.host.toLowerCase()}${cleanPath}${parsed.search}${parsed.hash}`;
+      const queryString = parsed.searchParams.toString() ? `?${parsed.searchParams.toString()}` : '';
+
+      return `${parsed.protocol}//${parsed.host.toLowerCase()}${cleanPath}${queryString}${parsed.hash}`;
     } catch {
       return urlStr.trim().toLowerCase();
     }
   }
 
   /**
-   * Generates a canonical fingerprint for Level-3 matching:
-   * company_id + normalized canonical title + normalized location string.
+   * Generates a canonical fingerprint for conservative Level-3 candidate matching:
+   * company_id + normalized canonical title + sorted normalized locations.
    */
   public static generateCanonicalFingerprint(
     companyId: string,

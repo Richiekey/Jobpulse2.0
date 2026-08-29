@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { ApiResponse } from '@/lib/api-response';
 
 export async function GET() {
   try {
@@ -12,14 +12,11 @@ export async function GET() {
       .order('name', { ascending: true });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return ApiResponse.error('Failed to retrieve companies.', error, 500);
     }
 
-    return NextResponse.json({ data: companies || [] });
+    return ApiResponse.success(companies || []);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal Server Error' },
-      { status: 500 }
-    );
+    return ApiResponse.error('An unexpected error occurred.', err, 500);
   }
 }

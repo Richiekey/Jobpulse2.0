@@ -1,19 +1,34 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { ApiResponse } from '@/lib/api-response';
+import { z } from 'zod';
+
+const FeedQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().optional(),
+  q: z.string().max(200).optional(),
+  workplace: z.enum(['all', 'remote', 'hybrid', 'on_site']).optional(),
+  employment: z.enum(['all', 'full_time', 'part_time', 'contract', 'internship', 'temporary', 'other']).optional(),
+  company_id: z.string().uuid().optional(),
+  salary_min: z.coerce.number().min(0).optional(),
+  skill: z.string().max(60).optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
 
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 50);
-    const cursor = searchParams.get('cursor');
-    const query = searchParams.get('q')?.trim();
-    const workplace = searchParams.get('workplace');
-    const employment = searchParams.get('employment');
-    const companyId = searchParams.get('company_id');
-    const salaryMin = searchParams.get('salary_min');
-    const skill = searchParams.get('skill');
+    const parseResult = FeedQuerySchema.safeParse(Object.fromEntries(searchParams.entries()));
+    if (!parseResult.success) {
+      return ApiResponse.error(
+        `Invalid feed query parameters: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+        parseResult.error,
+        400
+      );
+    }
+
+    const { limit, cursor, q: query, workplace, employment, company_id, salary_min, skill } = parseResult.data;
 
     let dbQuery = supabase
       .from('jobs')
@@ -59,16 +74,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Company filter
-    if (companyId) {
-      dbQuery = dbQuery.eq('company_id', companyId);
+    if (company_id) {
+      dbQuery = dbQuery.eq('company_id', company_id);
     }
 
     // Minimum salary filter
-    if (salaryMin) {
-      const minNum = parseFloat(salaryMin);
-      if (!isNaN(minNum)) {
-        dbQuery = dbQuery.gte('salary_max', minNum);
-      }
+    if (salary_min !== undefined) {
+      dbQuery = dbQuery.gte('salary_max', salary_min);
     }
 
     // Skill filter
@@ -77,31 +89,43 @@ export async function GET(request: NextRequest) {
     }
 
     // Full-Text Search Query
-    if (query) {
-      dbQuery = dbQuery.textSearch('search_vector', query, {
+    if (query && query.trim()) {
+      dbQuery = dbQuery.textSearch('search_vector', query.trim(), {
         type: 'websearch',
         config: 'english',
       });
     }
 
-    // Keyset / Cursor Pagination: (posted_at, id) < (cursorPostedAt, cursorId)
+    // Compound Keyset / Cursor Pagination: (posted_at < cursorPostedAt) OR (posted_at = cursorPostedAt AND id < cursorId)
     if (cursor) {
-      const [cursorPostedAt, cursorId] = cursor.split(':');
+      let cursorPostedAt: string | undefined;
+      let cursorId: string | undefined;
+
+      try {
+        // Decode base64 or colon-separated token
+        const decoded = cursor.includes(':') ? cursor : Buffer.from(cursor, 'base64').toString('utf-8');
+        const parts = decoded.split(':');
+        cursorPostedAt = parts[0];
+        cursorId = parts[1];
+      } catch {
+        return ApiResponse.error('Invalid cursor token provided.', { cursor }, 400);
+      }
+
       if (cursorPostedAt && cursorId) {
-        dbQuery = dbQuery.lt('posted_at', cursorPostedAt);
+        dbQuery = dbQuery.or(`posted_at.lt.${cursorPostedAt},and(posted_at.eq.${cursorPostedAt},id.lt.${cursorId})`);
       }
     }
 
-    // Stable Sorting
+    // Stable compound sorting
     dbQuery = dbQuery
       .order('posted_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(limit + 1);
 
-    const { data: rows, error } = await dbQuery;
+    const { data: rows, error: queryError } = await dbQuery;
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (queryError) {
+      return ApiResponse.error('Failed to retrieve jobs feed.', queryError, 500);
     }
 
     const items = rows || [];
@@ -112,12 +136,11 @@ export async function GET(request: NextRequest) {
     if (hasMore && resultItems.length > 0) {
       const lastItem = resultItems[resultItems.length - 1];
       if (lastItem) {
-        nextCursor = `${lastItem.posted_at}:${lastItem.id}`;
+        nextCursor = Buffer.from(`${lastItem.posted_at}:${lastItem.id}`).toString('base64');
       }
     }
 
-    return NextResponse.json({
-      data: resultItems,
+    return ApiResponse.success(resultItems, {
       pagination: {
         next_cursor: nextCursor,
         has_more: hasMore,
@@ -125,9 +148,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal Server Error' },
-      { status: 500 }
-    );
+    return ApiResponse.error('An unexpected error occurred while fetching the jobs feed.', err, 500);
   }
 }

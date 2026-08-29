@@ -65,8 +65,8 @@ export default function HomePage() {
           } else {
             setJobs((prev) => [...prev, ...data.data]);
           }
-          setCursor(data.pagination?.next_cursor || null);
-          setHasMore(data.pagination?.has_more || false);
+          setCursor(data.meta?.pagination?.next_cursor || data.pagination?.next_cursor || null);
+          setHasMore(data.meta?.pagination?.has_more || data.pagination?.has_more || false);
         }
       } catch (err) {
         console.error('Error fetching jobs feed:', err);
