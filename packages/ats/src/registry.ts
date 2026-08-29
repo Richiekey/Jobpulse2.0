@@ -2,9 +2,23 @@ import type { ATSAdapter } from './adapter.interface.js';
 import type { ATSDetectionResult } from '@jobpulse/domain';
 
 export class UnsupportedATSError extends Error {
-  constructor(atsSlug: string) {
-    super(`Unsupported ATS platform or adapter not registered: "${atsSlug}". JobPulse does not permit silent fallback.`);
+  constructor(atsSlug: string, reason?: string) {
+    super(reason || `Unsupported ATS platform: "${atsSlug}". JobPulse does not permit silent fallback.`);
     this.name = 'UnsupportedATSError';
+  }
+}
+
+export class UnimplementedATSError extends UnsupportedATSError {
+  constructor(atsSlug: string) {
+    super(atsSlug, `ATS platform "${atsSlug}" is recognized in the platform catalog, but its adapter is not yet implemented. Source marked as discovered but unsupported.`);
+    this.name = 'UnimplementedATSError';
+  }
+}
+
+export class UnknownATSError extends UnsupportedATSError {
+  constructor(atsSlug: string) {
+    super(atsSlug, `Unknown ATS platform: "${atsSlug}". Not found in catalog.`);
+    this.name = 'UnknownATSError';
   }
 }
 
@@ -12,6 +26,7 @@ export interface ATSDefinition {
   id: string;
   name: string;
   slug: string;
+  isImplemented: boolean;
   domains: string[];
   jobUrlPatterns: RegExp[];
   capabilities: {
@@ -27,6 +42,7 @@ export const ATS_DEFINITIONS: Record<string, ATSDefinition> = {
     id: '00000000-0000-0000-0000-000000000001',
     name: 'Greenhouse',
     slug: 'greenhouse',
+    isImplemented: true,
     domains: ['boards.greenhouse.io', 'job-boards.greenhouse.io'],
     jobUrlPatterns: [
       /boards\.greenhouse\.io\/([^/]+)\/jobs\/(\d+)/i,
@@ -43,6 +59,7 @@ export const ATS_DEFINITIONS: Record<string, ATSDefinition> = {
     id: '00000000-0000-0000-0000-000000000002',
     name: 'Lever',
     slug: 'lever',
+    isImplemented: true,
     domains: ['jobs.lever.co', 'api.lever.co'],
     jobUrlPatterns: [/jobs\.lever\.co\/([^/]+)\/([a-f0-9-]+)/i],
     capabilities: {
@@ -56,6 +73,7 @@ export const ATS_DEFINITIONS: Record<string, ATSDefinition> = {
     id: '00000000-0000-0000-0000-000000000003',
     name: 'Ashby',
     slug: 'ashby',
+    isImplemented: true,
     domains: ['jobs.ashbyhq.com', 'api.ashbyhq.com'],
     jobUrlPatterns: [/jobs\.ashbyhq\.com\/([^/]+)\/([a-f0-9-]+)/i],
     capabilities: {
@@ -65,10 +83,25 @@ export const ATS_DEFINITIONS: Record<string, ATSDefinition> = {
       requiresBrowserRendering: false,
     },
   },
+  workday: {
+    id: '00000000-0000-0000-0000-000000000004',
+    name: 'Workday',
+    slug: 'workday',
+    isImplemented: false,
+    domains: ['myworkdayjobs.com'],
+    jobUrlPatterns: [/([a-zA-Z0-9_-]+)\.myworkdayjobs\.com/i],
+    capabilities: {
+      hasPublicApi: false,
+      supportsIncrementalSync: false,
+      providesStructuredData: true,
+      requiresBrowserRendering: true,
+    },
+  },
   jobright: {
     id: '00000000-0000-0000-0000-000000000005',
     name: 'Jobright',
     slug: 'jobright',
+    isImplemented: true,
     domains: ['jobright.ai'],
     jobUrlPatterns: [/jobright\.ai\/jobs\/([a-zA-Z0-9_-]+)/i],
     capabilities: {
@@ -87,28 +120,54 @@ export class ATSAdapterRegistry {
    * Registers an ATS adapter factory for a given platform slug.
    */
   public static register(slug: string, factory: () => ATSAdapter): void {
-    this.adapters.set(slug.toLowerCase().trim(), factory);
+    const key = slug.toLowerCase().trim();
+    this.adapters.set(key, factory);
+    if (ATS_DEFINITIONS[key]) {
+      ATS_DEFINITIONS[key].isImplemented = true;
+    }
+  }
+
+  /**
+   * Unregisters an ATS adapter (useful for isolated testing).
+   */
+  public static unregister(slug: string): void {
+    const key = slug.toLowerCase().trim();
+    this.adapters.delete(key);
   }
 
   /**
    * Resolves the ATSAdapter instance for the given platform slug.
-   * Throws UnsupportedATSError if the platform is not registered.
+   * Throws UnimplementedATSError if known but not implemented,
+   * or UnknownATSError if completely unrecognized.
    */
   public static getAdapter(slug: string): ATSAdapter {
     const key = (slug || '').toLowerCase().trim();
     const factory = this.adapters.get(key);
-    if (!factory) {
-      throw new UnsupportedATSError(slug);
+    if (factory) {
+      return factory();
     }
-    return factory();
+
+    if (ATS_DEFINITIONS[key]) {
+      throw new UnimplementedATSError(slug);
+    }
+
+    throw new UnknownATSError(slug);
   }
 
   /**
-   * Checks if an adapter is registered for the given platform slug.
+   * Checks if an adapter implementation is registered.
    */
   public static hasAdapter(slug: string): boolean {
     const key = (slug || '').toLowerCase().trim();
     return this.adapters.has(key);
+  }
+
+  /**
+   * Checks if an ATS platform exists in the catalog.
+   */
+  public static isKnownPlatform(slug: string): boolean {
+    const key = (slug || '').toLowerCase().trim();
+    return Boolean(ATS_DEFINITIONS[key]);
   }
 
   /**
@@ -120,7 +179,7 @@ export class ATSAdapterRegistry {
   }
 
   /**
-   * Returns all registered platform definitions.
+   * Returns all platform definitions in the catalog.
    */
   public static getAllDefinitions(): ATSDefinition[] {
     return Object.values(ATS_DEFINITIONS);
@@ -130,7 +189,7 @@ export class ATSAdapterRegistry {
    * Evaluates all registered adapters to detect ATS platform from a given URL and optional HTML snippet.
    */
   public static detectATS(url: string, html?: string): ATSDetectionResult | null {
-    for (const [slug, factory] of this.adapters.entries()) {
+    for (const [_, factory] of this.adapters.entries()) {
       try {
         const adapter = factory();
         const result = adapter.detect(url, html);

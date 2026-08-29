@@ -169,7 +169,8 @@ export class AshbyAdapter implements ATSAdapter {
       rawSalary: data.compensationTierSummary || undefined,
       rawPostedAt: data.publishedAt || new Date().toISOString(),
       rawWorkplaceType: data.isRemote ? 'remote' : undefined,
-      rawApplyUrl: data.jobUrl ? `${data.jobUrl}/application` : undefined,
+      // INVARIANT: Never synthesize /application suffix. Use explicit data.jobUrl without guessed path modifications.
+      rawApplyUrl: data.jobUrl || undefined,
       sourceJobUrl: data.jobUrl || '',
       discoveryUrl: `https://api.ashbyhq.com/posting-api/job-board/job/${data.id}`,
       sourceMetadata: {
@@ -209,8 +210,8 @@ export class AshbyAdapter implements ATSAdapter {
   }
 
   public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
+    // INVARIANT: Never synthesize application URLs.
     if (raw.rawApplyUrl) return raw.rawApplyUrl;
-    if (raw.sourceJobUrl) return `${raw.sourceJobUrl}/application`;
-    return candidate.sourceJobUrl || '';
+    return raw.sourceJobUrl || candidate.sourceJobUrl || '';
   }
 }

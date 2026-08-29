@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { ATSAdapterRegistry, UnsupportedATSError, GreenhouseAdapter, LeverAdapter, AshbyAdapter } from '../src/index.js';
+import {
+  ATSAdapterRegistry,
+  UnsupportedATSError,
+  UnimplementedATSError,
+  UnknownATSError,
+  GreenhouseAdapter,
+  LeverAdapter,
+  AshbyAdapter,
+} from '../src/index.js';
 
-describe('ATSAdapterRegistry (Batch A — S04/S05)', () => {
+describe('ATSAdapterRegistry (Batch A Remediated)', () => {
   it('resolves registered adapters cleanly by platform slug', () => {
     const gh = ATSAdapterRegistry.getAdapter('greenhouse');
     expect(gh).toBeInstanceOf(GreenhouseAdapter);
@@ -21,17 +29,22 @@ describe('ATSAdapterRegistry (Batch A — S04/S05)', () => {
     expect(ghUpper).toBeInstanceOf(GreenhouseAdapter);
   });
 
-  it('throws UnsupportedATSError with zero silent fallback when requested adapter is unregistered', () => {
+  it('distinguishes known-but-unimplemented ATS platforms (e.g. Workday) from unknown platforms', () => {
+    // Workday is in the catalog but not implemented
+    expect(ATSAdapterRegistry.isKnownPlatform('workday')).toBe(true);
     expect(() => {
-      ATSAdapterRegistry.getAdapter('workday_xml');
-    }).toThrowError(UnsupportedATSError);
+      ATSAdapterRegistry.getAdapter('workday');
+    }).toThrowError(UnimplementedATSError);
 
-    try {
-      ATSAdapterRegistry.getAdapter('fake_ats_unknown');
-    } catch (err: any) {
-      expect(err.message).toContain('Unsupported ATS platform or adapter not registered');
-      expect(err.message).toContain('JobPulse does not permit silent fallback');
-    }
+    // Completely unknown ATS
+    expect(ATSAdapterRegistry.isKnownPlatform('non_existent_ats_999')).toBe(false);
+    expect(() => {
+      ATSAdapterRegistry.getAdapter('non_existent_ats_999');
+    }).toThrowError(UnknownATSError);
+
+    // Both inherit from UnsupportedATSError
+    expect(() => ATSAdapterRegistry.getAdapter('workday')).toThrowError(UnsupportedATSError);
+    expect(() => ATSAdapterRegistry.getAdapter('non_existent_ats_999')).toThrowError(UnsupportedATSError);
   });
 
   it('detects Greenhouse URLs and board tokens', () => {

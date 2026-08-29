@@ -171,7 +171,8 @@ export class LeverAdapter implements ATSAdapter {
       rawLocations,
       rawPostedAt: data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString(),
       rawEmploymentType: data.categories?.commitment || undefined,
-      rawApplyUrl: data.applyUrl || (data.hostedUrl ? `${data.hostedUrl}/apply` : undefined),
+      // INVARIANT: Never synthesize /apply suffix. Only use explicit data.applyUrl if provided by Lever API.
+      rawApplyUrl: data.applyUrl || undefined,
       sourceJobUrl: data.hostedUrl || '',
       discoveryUrl: `https://api.lever.co/v0/postings/job/${data.id}`,
       sourceMetadata: {
@@ -212,8 +213,8 @@ export class LeverAdapter implements ATSAdapter {
   }
 
   public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
+    // INVARIANT: Never synthesize application URLs.
     if (raw.rawApplyUrl) return raw.rawApplyUrl;
-    if (raw.sourceJobUrl) return `${raw.sourceJobUrl}/apply`;
-    return candidate.sourceJobUrl || '';
+    return raw.sourceJobUrl || candidate.sourceJobUrl || '';
   }
 }

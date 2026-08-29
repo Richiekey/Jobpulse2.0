@@ -33,7 +33,7 @@ describe('GreenhouseAdapter Contract & Parser Tests', () => {
     const normalized = await adapter.normalize(rawJob, rawPayload.payloadHash);
     expect(normalized.canonicalTitle).toBe('Senior Staff Software Engineer - Infrastructure');
     expect(normalized.workplaceType).toBe('remote');
-    expect(normalized.urls.applyUrl).toBe('https://boards.greenhouse.io/stripe/jobs/5512345#app');
+    expect(normalized.urls.applyUrl).toBe('https://boards.greenhouse.io/stripe/jobs/5512345');
 
     const validation = adapter.validate(normalized);
     expect(validation.isValid).toBe(true);

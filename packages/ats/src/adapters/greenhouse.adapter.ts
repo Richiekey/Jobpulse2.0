@@ -176,7 +176,8 @@ export class GreenhouseAdapter implements ATSAdapter {
       rawDescriptionHtml: rawHtml,
       rawLocations,
       rawPostedAt: data.updated_at,
-      rawApplyUrl: data.absolute_url ? `${data.absolute_url}#app` : undefined,
+      // INVARIANT: Never synthesize application URL suffix (e.g. #app). Use exact absolute_url provided by ATS.
+      rawApplyUrl: data.absolute_url || undefined,
       sourceJobUrl: data.absolute_url || '',
       discoveryUrl: `https://boards-api.greenhouse.io/v1/boards/job/${data.id}`,
       sourceMetadata: {
@@ -216,8 +217,8 @@ export class GreenhouseAdapter implements ATSAdapter {
   }
 
   public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
+    // INVARIANT: Never synthesize application URLs. Return explicit apply URL or fallback to sourceJobUrl.
     if (raw.rawApplyUrl) return raw.rawApplyUrl;
-    if (raw.sourceJobUrl) return `${raw.sourceJobUrl}#app`;
-    return candidate.sourceJobUrl || '';
+    return raw.sourceJobUrl || candidate.sourceJobUrl || '';
   }
 }
