@@ -4,6 +4,7 @@ import type {
   CompanySourceConfig,
   ScrapeRunStatus,
 } from '@jobpulse/domain';
+import { SourceScheduler, SourceHealthEngine } from '@jobpulse/domain';
 import { getAdapterForSource } from '@jobpulse/ats';
 import { logger } from '@jobpulse/shared';
 import { supabase } from '../db.js';
@@ -17,6 +18,7 @@ export interface ScraperRunnerOptions {
   forceUnlock?: boolean;
   workerId?: string;
   limitSources?: number;
+  currentTime?: Date | string;
 }
 
 export interface SourceRunResult {
@@ -136,7 +138,7 @@ export class ScraperRunner {
           .eq('id', runId);
       }
 
-      // 3. Query active company sources ordered by priority and scheduling
+      // 3. Query active company sources from database
       let query = supabase
         .from('company_sources')
         .select(`
@@ -166,8 +168,7 @@ export class ScraperRunner {
           )
         `)
         .eq('is_active', true)
-        .order('priority', { ascending: true })
-        .order('last_checked_at', { ascending: true, nullsFirst: true });
+        .neq('health_status', 'disabled');
 
       if (options.companyIdentifier) {
         query = query.eq('source_identifier', options.companyIdentifier);
@@ -175,53 +176,78 @@ export class ScraperRunner {
       if (options.sourceId) {
         query = query.eq('source_id', options.sourceId);
       }
-      if (options.limitSources) {
-        query = query.limit(options.limitSources);
-      }
 
-      const { data: companySources, error: fetchError } = await query;
-      if (fetchError || !companySources) {
+      const { data: rawSources, error: fetchError } = await query;
+      if (fetchError || !rawSources) {
         throw new Error(`Failed to load company sources: ${fetchError?.message}`);
       }
 
-      logger.info(`Loaded ${companySources.length} active company sources for scraping.`);
+      // Map DB records to typed configs
+      const allLoadedSources: (CompanySourceConfig & { adapterName: string })[] = rawSources.map((csRaw: any) => ({
+        id: csRaw.id,
+        companyId: csRaw.company_id,
+        sourceId: csRaw.source_id,
+        sourceIdentifier: csRaw.source_identifier,
+        sourceUrl: csRaw.source_url,
+        adapterConfig: (csRaw.adapter_config as Record<string, unknown>) || {},
+        isActive: csRaw.is_active,
+        healthStatus: csRaw.health_status,
+        priority: csRaw.priority ?? 100,
+        scheduleIntervalMinutes: csRaw.schedule_interval_minutes ?? 360,
+        consecutiveFailures: csRaw.consecutive_failures || 0,
+        lastCheckedAt: csRaw.last_checked_at || null,
+        lastSuccessAt: csRaw.last_success_at || null,
+        lastFailureAt: csRaw.last_failure_at || null,
+        lastError: csRaw.last_error || null,
+        lastJobCount: csRaw.last_job_count || 0,
+        discoveryMethod: csRaw.discovery_method || 'manual',
+        createdAt: csRaw.created_at || new Date().toISOString(),
+        updatedAt: csRaw.updated_at || new Date().toISOString(),
+        adapterName: csRaw.sources?.adapter_name || '',
+      }));
+
+      // Apply authoritative schedule eligibility, priority ordering, and limitSources
+      const eligibleSources = SourceScheduler.filterAndOrderEligibleSources(allLoadedSources, {
+        currentTime: options.currentTime,
+        limitSources: options.limitSources,
+        companyIdentifier: options.companyIdentifier,
+        sourceId: options.sourceId,
+      });
+
+      logger.info(
+        `Loaded ${rawSources.length} active sources; filtered to ${eligibleSources.length} due/eligible company sources for scraping.`
+      );
+
+      if (eligibleSources.length === 0) {
+        logger.info('No company sources are currently due for scraping. Completing run cleanly.');
+        await supabase
+          .from('scrape_runs')
+          .update({
+            completed_at: new Date().toISOString(),
+            status: 'completed',
+            companies_attempted: 0,
+            companies_succeeded: 0,
+            companies_failed: 0,
+            metadata: { worker_id: workerId, no_sources_due: true },
+          })
+          .eq('id', runId);
+
+        return runId!;
+      }
 
       const limit = pLimit(options.concurrency ?? this.defaultConcurrency);
 
-      // 4. Process each company source concurrently with strict error isolation
+      // 4. Process each eligible company source concurrently with strict error isolation
       const sourceResults: SourceRunResult[] = await Promise.all(
-        companySources.map((csRaw: any) =>
+        eligibleSources.map((companySource) =>
           limit(async (): Promise<SourceRunResult> => {
             const startSourceTime = Date.now();
-            const sourceInfo = csRaw.sources;
-            const adapter = getAdapterForSource(sourceInfo?.adapter_name || '');
-
-            const companySource: CompanySourceConfig = {
-              id: csRaw.id,
-              companyId: csRaw.company_id,
-              sourceId: csRaw.source_id,
-              sourceIdentifier: csRaw.source_identifier,
-              sourceUrl: csRaw.source_url,
-              adapterConfig: (csRaw.adapter_config as Record<string, unknown>) || {},
-              isActive: csRaw.is_active,
-              healthStatus: csRaw.health_status,
-              priority: csRaw.priority ?? 100,
-              scheduleIntervalMinutes: csRaw.schedule_interval_minutes ?? 360,
-              consecutiveFailures: csRaw.consecutive_failures || 0,
-              lastCheckedAt: csRaw.last_checked_at || null,
-              lastSuccessAt: csRaw.last_success_at || null,
-              lastFailureAt: csRaw.last_failure_at || null,
-              lastError: csRaw.last_error || null,
-              lastJobCount: csRaw.last_job_count || 0,
-              discoveryMethod: csRaw.discovery_method || 'manual',
-              createdAt: csRaw.created_at || new Date().toISOString(),
-              updatedAt: csRaw.updated_at || new Date().toISOString(),
-            };
+            const adapter = getAdapterForSource(companySource.adapterName);
 
             // If no adapter found, record failure and update source health state
             if (!adapter) {
               const durationMs = Date.now() - startSourceTime;
-              const errorMsg = `No adapter registered for adapter_name: "${sourceInfo?.adapter_name}"`;
+              const errorMsg = `No adapter registered for adapter_name: "${companySource.adapterName}"`;
               logger.error(errorMsg);
 
               await this.updateSourceHealth(companySource, false, errorMsg, 0);
@@ -232,7 +258,7 @@ export class ScraperRunner {
                 companyId: companySource.companyId,
                 sourceId: companySource.sourceId,
                 sourceIdentifier: companySource.sourceIdentifier,
-                adapterName: sourceInfo?.adapter_name || 'unknown',
+                adapterName: companySource.adapterName || 'unknown',
                 status: 'failed',
                 discovered: 0,
                 inserted: 0,
@@ -459,7 +485,7 @@ export class ScraperRunner {
   }
 
   /**
-   * Updates company source health state machine based on success / failure thresholds.
+   * Updates company source health state machine using production SourceHealthEngine.
    */
   private async updateSourceHealth(
     companySource: CompanySourceConfig,
@@ -467,41 +493,32 @@ export class ScraperRunner {
     errorMessage: string | null,
     jobCount: number
   ): Promise<void> {
-    const nowIso = new Date().toISOString();
-
     if (isSuccess) {
+      const updateData = SourceHealthEngine.getSuccessUpdate(jobCount);
       await supabase
         .from('company_sources')
         .update({
-          health_status: 'healthy',
-          consecutive_failures: 0,
-          last_checked_at: nowIso,
-          last_success_at: nowIso,
-          last_job_count: jobCount,
-          last_error: null,
-          updated_at: nowIso,
+          health_status: updateData.healthStatus,
+          consecutive_failures: updateData.consecutiveFailures,
+          last_checked_at: updateData.lastCheckedAt,
+          last_success_at: updateData.lastSuccessAt,
+          last_job_count: updateData.lastJobCount,
+          last_error: updateData.lastError,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', companySource.id);
     } else {
-      const newConsecutive = (companySource.consecutiveFailures || 0) + 1;
-      let newHealth: 'degraded' | 'failing' | 'disabled' = 'degraded';
-
-      if (newConsecutive >= 5) {
-        newHealth = 'disabled';
-      } else if (newConsecutive >= 3) {
-        newHealth = 'failing';
-      }
-
+      const updateData = SourceHealthEngine.getFailureUpdate(companySource.consecutiveFailures, errorMessage);
       await supabase
         .from('company_sources')
         .update({
-          health_status: newHealth,
-          consecutive_failures: newConsecutive,
-          is_active: newHealth !== 'disabled',
-          last_checked_at: nowIso,
-          last_failure_at: nowIso,
-          last_error: errorMessage,
-          updated_at: nowIso,
+          health_status: updateData.healthStatus,
+          consecutive_failures: updateData.consecutiveFailures,
+          is_active: updateData.isActive,
+          last_checked_at: updateData.lastCheckedAt,
+          last_failure_at: updateData.lastFailureAt,
+          last_error: updateData.lastError,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', companySource.id);
     }

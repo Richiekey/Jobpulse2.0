@@ -5,3 +5,5 @@ export * from './entities/source.js';
 export * from './entities/scrape-run.js';
 export * from './normalizer.js';
 export * from './deduplication.js';
+export * from './scheduler.js';
+export * from './health.js';
