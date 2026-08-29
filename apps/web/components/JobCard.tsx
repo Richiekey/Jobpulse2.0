@@ -13,6 +13,8 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { formatSalary } from '@/lib/format-salary';
+
 export interface JobCardProps {
   job: {
     id: string;
@@ -56,34 +58,13 @@ export const JobCard: React.FC<JobCardProps> = ({
   const companyName = job.companies?.name || 'Verified Company';
   const companyLogo = job.companies?.logo_url;
 
-  // Format compensation
-  let salaryString: string | null = null;
-  const intervalSuffix =
-    job.salary_interval === 'hourly'
-      ? '/hr'
-      : job.salary_interval === 'monthly'
-      ? '/mo'
-      : job.salary_interval === 'daily'
-      ? '/day'
-      : '/yr';
-
-  if (job.salary_min || job.salary_max) {
-    const symbol = job.salary_currency === 'EUR' ? '€' : job.salary_currency === 'GBP' ? '£' : '$';
-    const isUnder1000 = (job.salary_max || job.salary_min || 0) < 1000;
-
-    const formatNum = (num: number) => {
-      if (isUnder1000) return `${symbol}${num}`;
-      return `${symbol}${(num / 1000).toFixed(0)}k`;
-    };
-
-    if (job.salary_min && job.salary_max) {
-      salaryString = `${formatNum(job.salary_min)} - ${formatNum(job.salary_max)}${intervalSuffix}`;
-    } else if (job.salary_max) {
-      salaryString = `Up to ${formatNum(job.salary_max)}${intervalSuffix}`;
-    } else if (job.salary_min) {
-      salaryString = `From ${formatNum(job.salary_min)}${intervalSuffix}`;
-    }
-  }
+  // Format compensation deterministically using domain helper
+  const salaryString = formatSalary({
+    min: job.salary_min,
+    max: job.salary_max,
+    currency: job.salary_currency,
+    interval: job.salary_interval,
+  });
 
   // Format relative time
   const postedDate = new Date(job.posted_at);

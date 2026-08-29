@@ -15,6 +15,7 @@ import {
   Zap,
   TrendingUp,
 } from 'lucide-react';
+import { formatSalary } from '@/lib/format-salary';
 
 interface JobDetailsModalProps {
   job: any | null;
@@ -38,27 +39,25 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const companyWebsite = job.companies?.website;
 
   // Format compensation details
-  const hasSalary = job.has_salary || job.salary_min !== null || job.salary_max !== null;
-  const symbol = job.salary_currency === 'EUR' ? '€' : job.salary_currency === 'GBP' ? '£' : '$';
-  const interval = job.salary_interval || 'yearly';
+  const formattedSalary = formatSalary({
+    min: job.salary_min,
+    max: job.salary_max,
+    currency: job.salary_currency,
+    interval: job.salary_interval,
+  });
 
-  let displaySalary = 'Not Disclosed by Employer';
-  if (hasSalary) {
-    if (job.salary_min && job.salary_max) {
-      displaySalary = `${symbol}${Number(job.salary_min).toLocaleString()} - ${symbol}${Number(job.salary_max).toLocaleString()} / ${interval}`;
-    } else if (job.salary_max) {
-      displaySalary = `Up to ${symbol}${Number(job.salary_max).toLocaleString()} / ${interval}`;
-    } else if (job.salary_min) {
-      displaySalary = `From ${symbol}${Number(job.salary_min).toLocaleString()} / ${interval}`;
-    }
-  }
+  const displaySalary = formattedSalary || 'Not Disclosed by Employer';
 
   let annualizedEst: string | null = null;
-  if (interval !== 'yearly' && (job.annualized_min || job.annualized_max)) {
-    if (job.annualized_min && job.annualized_max) {
-      annualizedEst = `~${symbol}${Number(job.annualized_min).toLocaleString()} - ${symbol}${Number(job.annualized_max).toLocaleString()} / year`;
-    } else {
-      annualizedEst = `~${symbol}${Number(job.annualized_min || job.annualized_max).toLocaleString()} / year`;
+  if (job.salary_interval && job.salary_interval !== 'yearly' && (job.annualized_min || job.annualized_max)) {
+    const formattedAnnual = formatSalary({
+      min: job.annualized_min,
+      max: job.annualized_max,
+      currency: job.salary_currency,
+      interval: 'yearly',
+    });
+    if (formattedAnnual) {
+      annualizedEst = `~${formattedAnnual}`;
     }
   }
 

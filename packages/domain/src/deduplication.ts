@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+import crypto from 'crypto';
 
 export type DeduplicationLevel =
   | 'level_1_source_identity'

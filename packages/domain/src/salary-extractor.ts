@@ -1,18 +1,27 @@
 /**
- * JobPulse 2.0 — Salary & Compensation Extractor & Normalizer
- * Extracts and standardizes salary ranges, currency, pay periods, and equity disclosures.
+ * JobPulse 2.0 — Salary & Compensation Extractor, Normalizer & Formatter
+ * Standardizes compensation ranges, currencies, pay intervals, annualization, and equity disclosures.
  */
+
+export type SalaryInterval = 'yearly' | 'monthly' | 'weekly' | 'daily' | 'hourly';
 
 export interface ExtractedSalary {
   salaryMin: number | null;
   salaryMax: number | null;
   currency: string;
-  interval: 'yearly' | 'monthly' | 'hourly' | 'daily';
+  interval: SalaryInterval;
   annualizedMin: number | null;
   annualizedMax: number | null;
   hasSalary: boolean;
   equityMentioned: boolean;
   rawString?: string;
+}
+
+export interface FormatSalaryOptions {
+  min?: number | null;
+  max?: number | null;
+  currency?: string | null;
+  interval?: SalaryInterval | string | null;
 }
 
 export class SalaryExtractor {
@@ -33,14 +42,21 @@ export class SalaryExtractor {
   };
 
   /**
-   * Annualizes a given compensation amount based on interval.
+   * Annualizes compensation amounts based on explicit interval standards:
+   * - Hourly: 2,080 hours/year (Standard full-time: 40 hours/week * 52 weeks/year)
+   * - Daily: 260 days/year (Standard full-time: 5 working days/week * 52 weeks/year)
+   * - Weekly: 52 weeks/year (52 calendar weeks/year)
+   * - Monthly: 12 months/year (12 calendar months/year)
+   * - Yearly: 1 (Direct annual compensation)
    */
-  public static annualize(amount: number, interval: 'yearly' | 'monthly' | 'hourly' | 'daily'): number {
+  public static annualize(amount: number, interval: SalaryInterval): number {
     switch (interval) {
       case 'hourly':
-        return Math.round(amount * 2080); // 40h/week * 52 weeks
+        return Math.round(amount * 2080);
       case 'daily':
-        return Math.round(amount * 260); // 5 days/week * 52 weeks
+        return Math.round(amount * 260);
+      case 'weekly':
+        return Math.round(amount * 52);
       case 'monthly':
         return Math.round(amount * 12);
       case 'yearly':
@@ -51,6 +67,7 @@ export class SalaryExtractor {
 
   /**
    * Detects whether equity, stock options, or RSUs are mentioned in the job description or perks.
+   * Explicitly ignores negation phrases such as "no equity" or "without stock options".
    */
   public static hasEquityMention(text: string): boolean {
     if (!text) return false;
@@ -63,19 +80,20 @@ export class SalaryExtractor {
 
   /**
    * Normalizes structured or parsed salary inputs into a validated ExtractedSalary object.
+   * Preserves raw source values while generating derived annualized fields.
    */
   public static normalize(
     min?: number | null,
     max?: number | null,
     currency = 'USD',
-    interval: 'yearly' | 'monthly' | 'hourly' | 'daily' = 'yearly',
+    interval: SalaryInterval = 'yearly',
     textForEquity = ''
   ): ExtractedSalary {
-    let cleanMin = typeof min === 'number' && !isNaN(min) && min > 0 ? min : null;
-    let cleanMax = typeof max === 'number' && !isNaN(max) && max > 0 ? max : null;
+    let cleanMin = typeof min === 'number' && !isNaN(min) && min >= 0 ? min : null;
+    let cleanMax = typeof max === 'number' && !isNaN(max) && max >= 0 ? max : null;
 
     if (cleanMin !== null && cleanMax !== null && cleanMin > cleanMax) {
-      // Swap if min > max
+      // Swap if min > max to protect bounds
       const tmp = cleanMin;
       cleanMin = cleanMax;
       cleanMax = tmp;
@@ -109,12 +127,12 @@ export class SalaryExtractor {
     const equityMentioned = this.hasEquityMention(text);
 
     // 1. Regex pattern for salary ranges:
-    // e.g. "$140,000 - $180,000 / year", "£70k - £90k", "$60 - $80 / hr", "100k - 140k USD"
-    const salaryRangeRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:-|–|—|to)\s*(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|hr|hour|hourly|day|daily)?\b/i;
+    // e.g. "$140,000 - $180,000 / year", "£70k - £90k", "$60 - $80 / hr", "$2,000 - $3,000 / wk"
+    const salaryRangeRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:-|–|—|to)\s*(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
 
     // 2. Single salary pattern:
-    // e.g. "$150,000 / year", "$75/hr", "£90k annually"
-    const singleSalaryRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|hr|hour|hourly|day|daily)?\b/i;
+    // e.g. "$150,000 / year", "$75/hr", "£90k annually", "$2,500 / week"
+    const singleSalaryRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
 
     const rangeMatch = text.match(salaryRangeRegex);
     if (rangeMatch && rangeMatch[2] && rangeMatch[5]) {
@@ -142,9 +160,10 @@ export class SalaryExtractor {
         if (max < 1000) max *= 1000;
       }
 
-      let interval: 'yearly' | 'monthly' | 'hourly' | 'daily' = 'yearly';
+      let interval: SalaryInterval = 'yearly';
       if (intervalStr) {
         if (/hr|hour|hourly/i.test(intervalStr)) interval = 'hourly';
+        else if (/wk|week|weekly/i.test(intervalStr)) interval = 'weekly';
         else if (/mo|month|monthly/i.test(intervalStr)) interval = 'monthly';
         else if (/day|daily/i.test(intervalStr)) interval = 'daily';
       } else if (max < 300 && !isK) {
@@ -169,9 +188,10 @@ export class SalaryExtractor {
         if (amount < 1000) amount *= 1000;
       }
 
-      let interval: 'yearly' | 'monthly' | 'hourly' | 'daily' = 'yearly';
+      let interval: SalaryInterval = 'yearly';
       if (intervalStr) {
         if (/hr|hour|hourly/i.test(intervalStr)) interval = 'hourly';
+        else if (/wk|week|weekly/i.test(intervalStr)) interval = 'weekly';
         else if (/mo|month|monthly/i.test(intervalStr)) interval = 'monthly';
         else if (/day|daily/i.test(intervalStr)) interval = 'daily';
       } else if (amount < 300 && !isK) {
@@ -194,4 +214,67 @@ export class SalaryExtractor {
       equityMentioned,
     };
   }
+}
+
+/**
+ * Formats compensation values deterministically based on currency, interval, and numbers.
+ * Completely replaces magic magnitude heuristics (< 1000).
+ */
+export function formatSalary({ min, max, currency = 'USD', interval = 'yearly' }: FormatSalaryOptions): string | null {
+  if ((min === null || min === undefined) && (max === null || max === undefined)) {
+    return null;
+  }
+
+  const symbolMap: Record<string, string> = {
+    USD: '$',
+    EUR: '€',
+    GBP: '£',
+    CAD: 'C$',
+    AUD: 'A$',
+    CHF: 'CHF ',
+  };
+
+  const currCode = (currency || 'USD').toUpperCase();
+  const symbol = symbolMap[currCode] || `${currCode} `;
+
+  const intervalSuffixMap: Record<string, string> = {
+    hourly: '/hr',
+    daily: '/day',
+    weekly: '/wk',
+    monthly: '/mo',
+    yearly: '/yr',
+  };
+  const intervalKey = ((interval || 'yearly') as string).toLowerCase();
+  const suffix = intervalSuffixMap[intervalKey] || '/yr';
+
+  const formatAmount = (num: number): string => {
+    if (intervalKey === 'hourly') {
+      return `${symbol}${num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    }
+    if (intervalKey === 'daily' || intervalKey === 'weekly' || intervalKey === 'monthly') {
+      return `${symbol}${Math.round(num).toLocaleString('en-US')}`;
+    }
+    // yearly
+    if (num >= 1000 && num % 1000 === 0) {
+      return `${symbol}${num / 1000}k`;
+    }
+    return `${symbol}${Math.round(num).toLocaleString('en-US')}`;
+  };
+
+  const hasMin = typeof min === 'number' && !isNaN(min);
+  const hasMax = typeof max === 'number' && !isNaN(max);
+
+  if (hasMin && hasMax) {
+    if (min === max) {
+      return `${formatAmount(min)}${suffix}`;
+    }
+    return `${formatAmount(min)} - ${formatAmount(max)}${suffix}`;
+  }
+  if (hasMin) {
+    return `From ${formatAmount(min)}${suffix}`;
+  }
+  if (hasMax) {
+    return `Up to ${formatAmount(max)}${suffix}`;
+  }
+  return null;
 }

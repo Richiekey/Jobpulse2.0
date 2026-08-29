@@ -10,7 +10,7 @@ export interface SalaryRange {
   min?: number | null;
   max?: number | null;
   currency?: string | null;
-  interval?: 'yearly' | 'monthly' | 'hourly' | 'daily' | null;
+  interval?: 'yearly' | 'monthly' | 'weekly' | 'hourly' | 'daily' | null;
 }
 
 export interface JobCandidate {

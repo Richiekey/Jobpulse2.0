@@ -9,7 +9,7 @@ import { JobDetailsModal } from '@/components/JobDetailsModal';
 import { ApplicationTrackerModal } from '@/components/ApplicationTrackerModal';
 import { JobAlertModal } from '@/components/alerts/JobAlertModal';
 import { JobAlertManager } from '@/components/alerts/JobAlertManager';
-import { Sparkles, Bookmark, CheckSquare, Loader2, AlertCircle, RefreshCw, Bell } from 'lucide-react';
+import { Sparkles, Bookmark, CheckSquare, Loader2, AlertCircle, RefreshCw, Bell, Zap } from 'lucide-react';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
@@ -24,6 +24,7 @@ export default function HomePage() {
   const [workplace, setWorkplace] = useState('all');
   const [employment, setEmployment] = useState('all');
   const [salaryMin, setSalaryMin] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState('');
   const [hasSalaryOnly, setHasSalaryOnly] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState('');
 
@@ -57,6 +58,7 @@ export default function HomePage() {
         if (workplace !== 'all') params.set('workplace', workplace);
         if (employment !== 'all') params.set('employment', employment);
         if (salaryMin) params.set('salary_min', salaryMin);
+        if (selectedCurrency) params.set('currency', selectedCurrency);
         if (hasSalaryOnly) params.set('has_salary', 'true');
         if (selectedSkill) params.set('skill', selectedSkill);
         if (!resetCursor && cursor) params.set('cursor', cursor);
@@ -207,6 +209,7 @@ export default function HomePage() {
     setWorkplace('all');
     setEmployment('all');
     setSalaryMin('');
+    setSelectedCurrency('');
     setHasSalaryOnly(false);
     setSelectedSkill('');
   };
@@ -218,55 +221,53 @@ export default function HomePage() {
         onTabChange={setActiveTab}
         savedCount={savedJobs.length}
         applicationCount={applications.length}
-        onTriggerScrape={handleTriggerScrape}
-        isScraping={isScraping}
       />
 
-      {/* Notification Toast */}
-      {scrapeNotification && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '80px',
-            right: '24px',
-            zIndex: 1000,
-            background: 'var(--accent-gradient)',
-            color: '#ffffff',
-            padding: '12px 20px',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-lg)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.9rem',
-            fontWeight: 600,
-          }}
-        >
-          <Sparkles size={16} />
-          <span>{scrapeNotification}</span>
-        </div>
-      )}
-
       {/* Main Content Area */}
-      <main style={{ flex: 1, maxWidth: '1200px', margin: '0 auto', width: '100%', padding: '32px 24px' }}>
+      <main className="container" style={{ flex: 1, padding: '32px 24px' }}>
+        {/* Scrape Notification Banner */}
+        {scrapeNotification && (
+          <div
+            className="glass-card"
+            style={{
+              padding: '12px 20px',
+              marginBottom: '20px',
+              background: 'rgba(99, 102, 241, 0.15)',
+              borderColor: 'var(--accent-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              color: '#818cf8',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+            }}
+          >
+            <Zap size={16} />
+            <span>{scrapeNotification}</span>
+          </div>
+        )}
+
+        {/* FEED HEADER & METRICS */}
         {activeTab === 'feed' && (
           <>
-            {/* Hero Section */}
-            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <div style={{ textAlign: 'center', margin: '24px 0 36px 0' }}>
               <div
-                className="badge badge-ats"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 16px',
+                  gap: '8px',
+                  padding: '6px 14px',
+                  borderRadius: '9999px',
+                  background: 'rgba(99, 102, 241, 0.1)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
                   fontSize: '0.85rem',
+                  fontWeight: 600,
+                  color: 'var(--accent-secondary)',
                   marginBottom: '16px',
-                  borderRadius: 'var(--radius-full)',
                 }}
               >
                 <Sparkles size={14} />
-                <span>Zero-Latency Direct-from-ATS Scraping Engine</span>
+                <span>Direct Ingestion from Verified ATS Endpoints</span>
               </div>
               <h1
                 style={{
@@ -303,6 +304,8 @@ export default function HomePage() {
               onEmploymentChange={setEmployment}
               salaryMin={salaryMin}
               onSalaryMinChange={setSalaryMin}
+              currency={selectedCurrency}
+              onCurrencyChange={setSelectedCurrency}
               hasSalaryOnly={hasSalaryOnly}
               onHasSalaryOnlyChange={setHasSalaryOnly}
               selectedSkill={selectedSkill}

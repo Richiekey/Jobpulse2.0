@@ -12,6 +12,8 @@ interface SearchFiltersProps {
   onEmploymentChange: (e: string) => void;
   salaryMin: string;
   onSalaryMinChange: (s: string) => void;
+  currency?: string;
+  onCurrencyChange?: (c: string) => void;
   hasSalaryOnly?: boolean;
   onHasSalaryOnlyChange?: (hasSalary: boolean) => void;
   selectedSkill: string;
@@ -53,6 +55,8 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
   onEmploymentChange,
   salaryMin,
   onSalaryMinChange,
+  currency = '',
+  onCurrencyChange,
   hasSalaryOnly = false,
   onHasSalaryOnlyChange,
   selectedSkill,
@@ -146,6 +150,24 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
             ))}
           </select>
         </div>
+
+        {/* Currency Selector (Batch H Remediation) */}
+        {onCurrencyChange && (
+          <div style={{ width: '130px' }}>
+            <select
+              className="input-control"
+              value={currency || 'ALL'}
+              onChange={(e) => onCurrencyChange(e.target.value === 'ALL' ? '' : e.target.value)}
+              style={{ height: '46px' }}
+            >
+              <option value="ALL">All Currencies</option>
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="GBP">GBP (£)</option>
+              <option value="CAD">CAD (C$)</option>
+            </select>
+          </div>
+        )}
 
         {/* Employment Type Selector */}
         <div style={{ width: '160px' }}>
