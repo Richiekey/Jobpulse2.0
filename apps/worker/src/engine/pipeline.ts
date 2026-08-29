@@ -52,7 +52,7 @@ export class IngestionPipeline {
       // 5. Enrich Salary & Compensation Intelligence (Batch H)
       let salaryMin = normalizedJob.salary?.min ?? null;
       let salaryMax = normalizedJob.salary?.max ?? null;
-      let salaryCurrency = normalizedJob.salary?.currency ?? 'USD';
+      let salaryCurrency: string | null = normalizedJob.salary?.currency ?? null;
       let salaryInterval = normalizedJob.salary?.interval ?? 'yearly';
 
       if (!salaryMin && !salaryMax) {

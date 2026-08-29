@@ -380,7 +380,7 @@ BEGIN
     -- Grouped multi-currency benchmarks (never combining raw cross-currency numbers)
     WITH eligible_jobs AS (
       SELECT 
-        coalesce(salary_currency, 'USD') AS curr,
+        salary_currency AS curr,
         annualized_min,
         annualized_max,
         coalesce(annualized_min, annualized_max) AS representative_salary,
@@ -388,6 +388,7 @@ BEGIN
       FROM public.jobs
       WHERE status = 'active'
         AND has_salary = true
+        AND salary_currency IS NOT NULL
         AND (p_query IS NULL OR p_query = '' OR title ILIKE '%' || p_query || '%' OR description_text ILIKE '%' || p_query || '%')
         AND (p_department IS NULL OR p_department = '' OR department ILIKE '%' || p_department || '%')
         AND (p_workplace_type IS NULL OR p_workplace_type = 'all' OR workplace_type = p_workplace_type)

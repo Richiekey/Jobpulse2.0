@@ -3,7 +3,7 @@ import { SalaryExtractor, formatSalary } from '../src/salary-extractor';
 
 describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
   describe('Annualization for all 5 intervals', () => {
-    it('annualizes hourly rates correctly (x2080 hours full-time equivalent)', () => {
+    it('annualizes hourly rates correctly (formula: amount * 2080 hrs full-time equivalent)', () => {
       const result = SalaryExtractor.normalize(65, 85, 'USD', 'hourly', 'Standard health benefits');
       expect(result.salaryMin).toBe(65);
       expect(result.salaryMax).toBe(85);
@@ -14,7 +14,7 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
       expect(result.equityMentioned).toBe(false);
     });
 
-    it('annualizes daily rates correctly (x260 workdays full-time equivalent)', () => {
+    it('annualizes daily rates correctly (formula: amount * 260 workdays full-time equivalent)', () => {
       const result = SalaryExtractor.normalize(500, 750, 'GBP', 'daily', 'Contract position');
       expect(result.salaryMin).toBe(500);
       expect(result.salaryMax).toBe(750);
@@ -24,7 +24,7 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
       expect(result.currency).toBe('GBP');
     });
 
-    it('annualizes weekly rates correctly (x52 weeks full-time equivalent)', () => {
+    it('annualizes weekly rates correctly (formula: amount * 52 weeks full-time equivalent)', () => {
       const result = SalaryExtractor.normalize(2500, 3500, 'USD', 'weekly', 'Weekly stipend');
       expect(result.salaryMin).toBe(2500);
       expect(result.salaryMax).toBe(3500);
@@ -33,7 +33,7 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
       expect(result.annualizedMax).toBe(182000); // 3500 * 52
     });
 
-    it('annualizes monthly rates correctly (x12 months)', () => {
+    it('annualizes monthly rates correctly (formula: amount * 12 months)', () => {
       const result = SalaryExtractor.normalize(10000, 15000, 'EUR', 'monthly', 'Monthly compensation');
       expect(result.salaryMin).toBe(10000);
       expect(result.salaryMax).toBe(15000);
@@ -43,7 +43,7 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
       expect(result.currency).toBe('EUR');
     });
 
-    it('annualizes yearly rates correctly (1:1)', () => {
+    it('annualizes yearly rates correctly (formula: amount * 1)', () => {
       const result = SalaryExtractor.normalize(140000, 190000, 'USD', 'yearly', 'Competitive base salary');
       expect(result.salaryMin).toBe(140000);
       expect(result.salaryMax).toBe(190000);
@@ -58,6 +58,24 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
       expect(result.salaryMax).toBe(200000);
       expect(result.annualizedMin).toBe(150000);
       expect(result.annualizedMax).toBe(200000);
+    });
+  });
+
+  describe('Currency Integrity & Absence Semantics', () => {
+    it('preserves null currency when currency is omitted (never assuming USD)', () => {
+      const result = SalaryExtractor.normalize(100000, 150000, null, 'yearly', '');
+      expect(result.currency).toBeNull();
+      expect(result.hasSalary).toBe(true);
+      expect(result.salaryMin).toBe(100000);
+      expect(result.salaryMax).toBe(150000);
+    });
+
+    it('extracts un-denominated numbers without silently tagging USD', () => {
+      const result = SalaryExtractor.extractFromText('Salary: 120,000 - 150,000 per year');
+      expect(result.hasSalary).toBe(true);
+      expect(result.salaryMin).toBe(120000);
+      expect(result.salaryMax).toBe(150000);
+      expect(result.currency).toBeNull();
     });
   });
 
@@ -114,6 +132,7 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
       expect(result.hasSalary).toBe(false);
       expect(result.salaryMin).toBeNull();
       expect(result.salaryMax).toBeNull();
+      expect(result.currency).toBeNull();
       expect(result.annualizedMin).toBeNull();
       expect(result.annualizedMax).toBeNull();
       expect(result.equityMentioned).toBe(false);
@@ -143,6 +162,11 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
     it('formats yearly rates with clean k abbreviations ($120k - $150k/yr)', () => {
       expect(formatSalary({ min: 120000, max: 150000, currency: 'USD', interval: 'yearly' })).toBe('$120k - $150k/yr');
       expect(formatSalary({ min: 145000, currency: 'USD', interval: 'yearly' })).toBe('From $145k/yr');
+    });
+
+    it('formats numbers without currency symbol when currency is null/missing (no default to $)', () => {
+      expect(formatSalary({ min: 120000, max: 150000, currency: null, interval: 'yearly' })).toBe('120k - 150k/yr');
+      expect(formatSalary({ min: 50, max: 75, currency: null, interval: 'hourly' })).toBe('50 - 75/hr');
     });
 
     it('returns null when no salary bounds exist', () => {

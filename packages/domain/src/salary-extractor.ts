@@ -8,7 +8,7 @@ export type SalaryInterval = 'yearly' | 'monthly' | 'weekly' | 'daily' | 'hourly
 export interface ExtractedSalary {
   salaryMin: number | null;
   salaryMax: number | null;
-  currency: string;
+  currency: string | null;
   interval: SalaryInterval;
   annualizedMin: number | null;
   annualizedMax: number | null;
@@ -42,12 +42,22 @@ export class SalaryExtractor {
   };
 
   /**
-   * Annualizes compensation amounts based on explicit interval standards:
-   * - Hourly: 2,080 hours/year (Standard full-time: 40 hours/week * 52 weeks/year)
-   * - Daily: 260 days/year (Standard full-time: 5 working days/week * 52 weeks/year)
-   * - Weekly: 52 weeks/year (52 calendar weeks/year)
-   * - Monthly: 12 months/year (12 calendar months/year)
-   * - Yearly: 1 (Direct annual compensation)
+   * Annualizes compensation amounts based on 5 explicit mathematical formulas:
+   * 
+   * 1. Hourly:  amount * 2,080
+   *    Assumption: Standard full-time baseline (40 hours/week * 52 weeks/year = 2,080 hours)
+   * 
+   * 2. Daily:   amount * 260
+   *    Assumption: Standard working year (5 working days/week * 52 weeks/year = 260 workdays)
+   * 
+   * 3. Weekly:  amount * 52
+   *    Assumption: 52 standard calendar weeks per year
+   * 
+   * 4. Monthly: amount * 12
+   *    Assumption: 12 standard calendar months per year
+   * 
+   * 5. Yearly:  amount * 1
+   *    Assumption: 1:1 direct annualized compensation
    */
   public static annualize(amount: number, interval: SalaryInterval): number {
     switch (interval) {
@@ -80,12 +90,12 @@ export class SalaryExtractor {
 
   /**
    * Normalizes structured or parsed salary inputs into a validated ExtractedSalary object.
-   * Preserves raw source values while generating derived annualized fields.
+   * Never assumes missing currency is USD.
    */
   public static normalize(
     min?: number | null,
     max?: number | null,
-    currency = 'USD',
+    currency?: string | null,
     interval: SalaryInterval = 'yearly',
     textForEquity = ''
   ): ExtractedSalary {
@@ -103,11 +113,12 @@ export class SalaryExtractor {
     const annualizedMin = cleanMin !== null ? this.annualize(cleanMin, interval) : null;
     const annualizedMax = cleanMax !== null ? this.annualize(cleanMax, interval) : null;
     const equityMentioned = this.hasEquityMention(textForEquity);
+    const cleanCurrency = currency && typeof currency === 'string' && currency.trim() ? currency.trim().toUpperCase() : null;
 
     return {
       salaryMin: cleanMin,
       salaryMax: cleanMax,
-      currency: currency.toUpperCase(),
+      currency: cleanCurrency,
       interval,
       annualizedMin,
       annualizedMax,
@@ -118,10 +129,11 @@ export class SalaryExtractor {
 
   /**
    * Extracts salary data from unstructured job text, titles, or description blocks.
+   * Does not silently default missing currency to USD.
    */
   public static extractFromText(text: string): ExtractedSalary {
     if (!text || typeof text !== 'string') {
-      return this.normalize(null, null, 'USD', 'yearly', '');
+      return this.normalize(null, null, null, 'yearly', '');
     }
 
     const equityMentioned = this.hasEquityMention(text);
@@ -132,7 +144,7 @@ export class SalaryExtractor {
 
     // 2. Single salary pattern:
     // e.g. "$150,000 / year", "$75/hr", "£90k annually", "$2,500 / week"
-    const singleSalaryRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
+    const singleSalaryRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
 
     const rangeMatch = text.match(salaryRangeRegex);
     if (rangeMatch && rangeMatch[2] && rangeMatch[5]) {
@@ -148,8 +160,8 @@ export class SalaryExtractor {
         intervalStr,
       ] = rangeMatch;
 
-      const currencyKey = (prefixCurr1 || prefixCurr2 || suffixCurr || '$').toLowerCase();
-      const currency = this.CURRENCY_MAP[currencyKey] || 'USD';
+      const rawCurr = prefixCurr1 || prefixCurr2 || suffixCurr;
+      const currency = rawCurr ? (this.CURRENCY_MAP[rawCurr.toLowerCase()] || rawCurr.toUpperCase()) : null;
 
       let min = parseFloat((numStr1 || '0').replace(/,/g, ''));
       let max = parseFloat((numStr2 || '0').replace(/,/g, ''));
@@ -178,8 +190,8 @@ export class SalaryExtractor {
     const singleMatch = text.match(singleSalaryRegex);
     if (singleMatch && singleMatch[2]) {
       const [fullMatch, prefixCurr, numStr, k, suffixCurr, intervalStr] = singleMatch;
-      const currencyKey = (prefixCurr || suffixCurr || '$').toLowerCase();
-      const currency = this.CURRENCY_MAP[currencyKey] || 'USD';
+      const rawCurr = prefixCurr || suffixCurr;
+      const currency = rawCurr ? (this.CURRENCY_MAP[rawCurr.toLowerCase()] || rawCurr.toUpperCase()) : null;
 
       let amount = parseFloat((numStr || '0').replace(/,/g, ''));
 
@@ -206,7 +218,7 @@ export class SalaryExtractor {
     return {
       salaryMin: null,
       salaryMax: null,
-      currency: 'USD',
+      currency: null,
       interval: 'yearly',
       annualizedMin: null,
       annualizedMax: null,
@@ -219,8 +231,9 @@ export class SalaryExtractor {
 /**
  * Formats compensation values deterministically based on currency, interval, and numbers.
  * Completely replaces magic magnitude heuristics (< 1000).
+ * Never assumes missing currency is USD.
  */
-export function formatSalary({ min, max, currency = 'USD', interval = 'yearly' }: FormatSalaryOptions): string | null {
+export function formatSalary({ min, max, currency, interval = 'yearly' }: FormatSalaryOptions): string | null {
   if ((min === null || min === undefined) && (max === null || max === undefined)) {
     return null;
   }
@@ -234,8 +247,8 @@ export function formatSalary({ min, max, currency = 'USD', interval = 'yearly' }
     CHF: 'CHF ',
   };
 
-  const currCode = (currency || 'USD').toUpperCase();
-  const symbol = symbolMap[currCode] || `${currCode} `;
+  const currCode = currency ? currency.trim().toUpperCase() : null;
+  const symbol = currCode ? (symbolMap[currCode] || `${currCode} `) : '';
 
   const intervalSuffixMap: Record<string, string> = {
     hourly: '/hr',

@@ -203,7 +203,7 @@ export async function GET(request: NextRequest) {
     > = {};
 
     for (const item of resultItems as any[]) {
-      const curr = (item.salary_currency || 'USD').toUpperCase();
+      const curr = item.salary_currency && item.salary_currency.trim() ? item.salary_currency.trim().toUpperCase() : 'UNKNOWN';
       if (!salariesByCurrency[curr]) {
         salariesByCurrency[curr] = {
           under_100k: 0,

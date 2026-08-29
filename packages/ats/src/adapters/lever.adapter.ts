@@ -211,8 +211,10 @@ export class LeverAdapter implements ATSAdapter {
     // Salary parsing if present in Lever structured fields
     let rawSalary: string | undefined = undefined;
     if (data.salaryRange?.min && data.salaryRange?.max) {
-      const currency = data.salaryRange.currency || 'USD';
-      rawSalary = `$${data.salaryRange.min} - $${data.salaryRange.max} ${currency} / ${data.salaryRange.interval || 'year'}`;
+      const currency = data.salaryRange.currency ? data.salaryRange.currency.trim().toUpperCase() : '';
+      const currPrefix = currency === 'USD' || currency === '$' ? '$' : (currency === 'EUR' || currency === '€' ? '€' : (currency === 'GBP' || currency === '£' ? '£' : ''));
+      const currSuffix = currPrefix ? '' : (currency ? ` ${currency}` : '');
+      rawSalary = `${currPrefix}${data.salaryRange.min} - ${currPrefix}${data.salaryRange.max}${currSuffix} / ${data.salaryRange.interval || 'year'}`;
     }
 
     return {

@@ -108,7 +108,7 @@ export class Normalizer {
       const currencySymbol = match[1];
       const currencyCode = match[2];
       const currencyMap: Record<string, string> = { '$': 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY' };
-      const currency = currencyCode ? currencyCode.toUpperCase() : (currencyMap[currencySymbol || '$'] || 'USD');
+      const currency = currencyCode ? currencyCode.toUpperCase() : (currencySymbol && currencyMap[currencySymbol] ? currencyMap[currencySymbol] : null);
 
       let min = parseFloat(match[3].replace(/,/g, ''));
       let max = parseFloat(match[5].replace(/,/g, ''));

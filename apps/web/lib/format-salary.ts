@@ -10,8 +10,9 @@ export interface FormatSalaryOptions {
 /**
  * Formats compensation values deterministically based on currency, interval, and numbers.
  * Completely replaces magic magnitude heuristics (< 1000).
+ * Never defaults missing currency to USD.
  */
-export function formatSalary({ min, max, currency = 'USD', interval = 'yearly' }: FormatSalaryOptions): string | null {
+export function formatSalary({ min, max, currency, interval = 'yearly' }: FormatSalaryOptions): string | null {
   if ((min === null || min === undefined) && (max === null || max === undefined)) {
     return null;
   }
@@ -25,8 +26,8 @@ export function formatSalary({ min, max, currency = 'USD', interval = 'yearly' }
     CHF: 'CHF ',
   };
 
-  const currCode = (currency || 'USD').toUpperCase();
-  const symbol = symbolMap[currCode] || `${currCode} `;
+  const currCode = currency ? currency.trim().toUpperCase() : null;
+  const symbol = currCode ? (symbolMap[currCode] || `${currCode} `) : '';
 
   const intervalSuffixMap: Record<string, string> = {
     hourly: '/hr',
