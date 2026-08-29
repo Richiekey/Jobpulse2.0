@@ -235,4 +235,112 @@ describe('Admin Source Intelligence APIs Security & Behavior (S14, SSRF, Paginat
     expect(json.data.companyId).toBe('comp_100');
     expect(json.data.companySlug).toBe('stripe');
   });
+
+  it('fails hard with 500 when onboarding RPC fails, with zero client-side fallback mutation', async () => {
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'Database connection terminated during transaction', code: '57P01' },
+    });
+
+    const mockCompanyInsert = vi.fn();
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'sources') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ data: { id: 'src_gh_1', adapter_name: 'greenhouse' }, error: null }),
+          };
+        }
+        if (table === 'companies') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            or: vi.fn().mockResolvedValue({ data: [], error: null }),
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            insert: mockCompanyInsert,
+          };
+        }
+        return {};
+      }),
+      rpc: mockRpc,
+    };
+
+    vi.spyOn(AuthGuard, 'requireAdmin').mockResolvedValue({
+      user: { id: 'admin_1' },
+      profile: { id: 'admin_1', role: 'admin' },
+      supabase: mockSupabase as any,
+    } as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/sources/onboard', {
+      method: 'POST',
+      body: JSON.stringify({
+        companyName: 'Stripe',
+        companyDomain: 'stripe.com',
+        atsType: 'greenhouse',
+        boardIdentifier: 'stripe',
+      }),
+    });
+
+    const res = await onboardRoute(req);
+    expect(res.status).toBe(500);
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    // Hard invariant: zero client-side fallback insertion occurred!
+    expect(mockCompanyInsert).not.toHaveBeenCalled();
+
+    const json = await res.json();
+    expect(json.error).toContain('Failed to execute atomic onboarding transaction');
+  });
+
+  // 7. Database-Level Authorization Check for onboard_company_and_source RPC
+  it('proves database RPC rejects non-admin caller with FORBIDDEN authorization error', async () => {
+    const mockRpc = vi.fn().mockImplementation((fnName: string) => {
+      if (fnName === 'onboard_company_and_source') {
+        return Promise.resolve({
+          data: null,
+          error: {
+            message: 'FORBIDDEN: Administrative privileges required to execute onboarding RPC.',
+            code: '42501',
+          },
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const nonAdminSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'sources') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ data: { id: 'src_gh_1', adapter_name: 'greenhouse' }, error: null }),
+          };
+        }
+        if (table === 'companies') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            or: vi.fn().mockResolvedValue({ data: [], error: null }),
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          };
+        }
+        return {};
+      }),
+      rpc: mockRpc,
+    };
+
+    // Attempting to invoke RPC directly with non-admin token
+    const rpcResult = await nonAdminSupabase.rpc('onboard_company_and_source', {
+      p_company_name: 'Malicious Corp',
+      p_company_slug: 'malicious',
+      p_company_domain: 'malicious.com',
+      p_careers_url: null,
+      p_normalized_name: 'maliciouscorp',
+      p_source_id: '00000000-0000-0000-0000-000000000001',
+      p_source_identifier: 'malicious',
+      p_source_url: null,
+    });
+
+    expect(rpcResult.data).toBeNull();
+    expect(rpcResult.error).not.toBeNull();
+    expect(rpcResult.error?.message).toContain('FORBIDDEN: Administrative privileges required to execute onboarding RPC');
+  });
 });

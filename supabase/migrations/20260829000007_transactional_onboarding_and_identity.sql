@@ -2,7 +2,7 @@
 -- JobPulse 2.0 — Transactional Company & Source Onboarding & Identity Guarantees
 -- Version: 20260829000007
 -- Description: Adds verified column to companies, unique index on verified domain,
---              and atomic onboard_company_and_source database RPC.
+--              and atomic, locked-down onboard_company_and_source database RPC.
 -- ============================================================================
 
 -- 1. COMPANIES IDENTITY CONSTRAINTS & COLUMNS
@@ -21,8 +21,9 @@ CREATE INDEX IF NOT EXISTS idx_companies_domain_lookup
 CREATE INDEX IF NOT EXISTS idx_companies_normalized_name_lookup
     ON public.companies(normalized_name);
 
--- 2. ATOMIC ONBOARDING DATABASE RPC
+-- 2. ATOMIC ONBOARDING DATABASE RPC (SECURITY DEFINER)
 -- Performs company resolution/creation and company_sources upsert within a single database transaction.
+-- Strictly locked down: only admins and service_role can execute.
 CREATE OR REPLACE FUNCTION public.onboard_company_and_source(
     p_company_name TEXT,
     p_company_slug TEXT,
@@ -40,6 +41,7 @@ CREATE OR REPLACE FUNCTION public.onboard_company_and_source(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_company_id UUID;
@@ -51,6 +53,13 @@ DECLARE
     v_final_slug TEXT;
     v_slug_suffix INT := 2;
 BEGIN
+    -- 0. Authorization Guard: Check admin / service_role authorization
+    IF current_user != 'service_role' 
+       AND coalesce(current_setting('request.jwt.claim.role', true), '') != 'service_role' 
+       AND NOT public.is_admin() THEN
+        RAISE EXCEPTION 'FORBIDDEN: Administrative privileges required to execute onboarding RPC.';
+    END IF;
+
     -- 1. Resolve Company Identity
     -- Priority 1: Verified domain match
     IF p_company_domain IS NOT NULL AND p_company_domain <> '' THEN
@@ -162,3 +171,7 @@ BEGIN
     );
 END;
 $$;
+
+-- 3. REVOKE DEFAULT PUBLIC ACCESS & GRANT ONLY TO AUTHENTICATED/SERVICE_ROLE
+REVOKE EXECUTE ON FUNCTION public.onboard_company_and_source FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.onboard_company_and_source TO authenticated, service_role;

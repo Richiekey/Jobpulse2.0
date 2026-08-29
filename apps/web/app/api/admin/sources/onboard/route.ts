@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     // 3. Prepare deterministic company & source payload
     const prepared = CompanySourceOnboardingService.prepareOnboarding(input, candidateCompanies);
 
-    // 4. Atomic Transaction via Database RPC
+    // 4. Atomic Transaction via Database RPC (Hard invariant: zero client-side fallback)
     const { data: rpcResult, error: rpcError } = await supabase.rpc('onboard_company_and_source', {
       p_company_name: prepared.preparedCompany.name,
       p_company_slug: prepared.preparedCompany.slug,
@@ -105,74 +105,21 @@ export async function POST(request: NextRequest) {
       p_health_status: prepared.preparedSource.healthStatus,
     });
 
-    if (!rpcError && rpcResult) {
-      return ApiResponse.success(
-        {
-          companyId: rpcResult.company_id,
-          companySlug: rpcResult.company_slug,
-          companyName: rpcResult.company_name,
-          isNewCompany: rpcResult.is_new_company,
-          companySourceId: rpcResult.company_source_id,
-        },
-        undefined,
-        { status: 201 }
+    if (rpcError || !rpcResult) {
+      return ApiResponse.error(
+        'Failed to execute atomic onboarding transaction in database.',
+        rpcError,
+        500
       );
-    }
-
-    // Fallback: If RPC is not available in mock/test environment, execute atomic sequential steps
-    let companyId = prepared.matchedCompany?.id;
-
-    if (!companyId) {
-      const { data: newCompany, error: companyInsertError } = await supabase
-        .from('companies')
-        .insert({
-          name: prepared.preparedCompany.name,
-          slug: prepared.preparedCompany.slug,
-          domain: prepared.preparedCompany.domain,
-          careers_url: prepared.preparedCompany.careersUrl,
-          normalized_name: prepared.preparedCompany.normalizedName,
-          verified: false,
-          status: 'active',
-        })
-        .select('id, name, slug, domain')
-        .single();
-
-      if (companyInsertError || !newCompany) {
-        return ApiResponse.error('Failed to create company record.', companyInsertError, 500);
-      }
-
-      companyId = newCompany.id;
-    }
-
-    const { data: companySource, error: csUpsertError } = await supabase
-      .from('company_sources')
-      .upsert(
-        {
-          company_id: companyId,
-          source_id: sourceRecord.id,
-          source_identifier: prepared.preparedSource.sourceIdentifier,
-          source_url: prepared.preparedSource.sourceUrl,
-          priority: prepared.preparedSource.priority,
-          schedule_interval_minutes: prepared.preparedSource.scheduleIntervalMinutes,
-          is_active: prepared.preparedSource.isActive,
-          health_status: prepared.preparedSource.healthStatus,
-        },
-        { onConflict: 'company_id, source_id, source_identifier' }
-      )
-      .select('id, company_id, source_id, source_identifier, source_url, is_active, health_status, priority, schedule_interval_minutes')
-      .single();
-
-    if (csUpsertError || !companySource) {
-      return ApiResponse.error('Failed to create company source record.', csUpsertError, 500);
     }
 
     return ApiResponse.success(
       {
-        companyId,
-        companySlug: prepared.preparedCompany.slug,
-        companyName: prepared.preparedCompany.name,
-        isNewCompany: !prepared.matchedCompany,
-        companySource,
+        companyId: rpcResult.company_id,
+        companySlug: rpcResult.company_slug,
+        companyName: rpcResult.company_name,
+        isNewCompany: rpcResult.is_new_company,
+        companySourceId: rpcResult.company_source_id,
       },
       undefined,
       { status: 201 }
