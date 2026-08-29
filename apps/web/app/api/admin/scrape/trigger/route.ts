@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { z } from 'zod';
 
@@ -10,38 +10,15 @@ const ScrapeTriggerSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // 1. Authenticate user - Must not be anonymous
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return ApiResponse.error(
-        'Unauthorized: Authentication is required to access admin operations.',
-        authError,
-        401
-      );
+    // 1. Authorize Admin
+    const authResult = await AuthGuard.requireAdmin();
+    if ('errorResponse' in authResult) {
+      return authResult.errorResponse;
     }
 
-    // 2. Authorize user role - Must have server-verified 'admin' role
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    const { supabase, profile } = authResult;
 
-    if (profileError || !profile || (profile as any).role !== 'admin') {
-      return ApiResponse.error(
-        'Forbidden: You do not have administrator privileges to trigger scraper runs.',
-        profileError || { userId: user.id, role: (profile as any)?.role },
-        403
-      );
-    }
-
-    // 3. Validate Request Payload
+    // 2. Validate Request Payload
     const rawBody = await request.json().catch(() => ({}));
     const parseResult = ScrapeTriggerSchema.safeParse(rawBody);
 
@@ -55,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     const { companyIdentifier, sourceId } = parseResult.data;
 
-    // 4. Create durable scrape_runs record in Supabase
+    // 3. Create durable scrape_runs record in Supabase with status 'pending'
     const { data: scrapeRun, error: insertError } = await supabase
       .from('scrape_runs')
       .insert({
@@ -69,6 +46,11 @@ export async function POST(request: NextRequest) {
         jobs_updated: 0,
         jobs_rejected: 0,
         jobs_failed: 0,
+        metadata: {
+          triggered_by_admin: profile.id,
+          company_identifier: companyIdentifier || 'all',
+          source_id: sourceId || null,
+        },
       })
       .select('id, started_at, status')
       .single();

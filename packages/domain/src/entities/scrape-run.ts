@@ -2,8 +2,6 @@ export type ScrapeRunStatus =
   | 'pending'
   | 'running'
   | 'completed'
-  | 'succeeded'
-  | 'partially_failed'
   | 'failed'
   | 'cancelled';
 
@@ -25,7 +23,12 @@ export interface ScrapeRun {
     error: string;
     timestamp: string;
   }>;
-  metadata: Record<string, unknown>;
+  metadata: {
+    partial_failure?: boolean;
+    concurrency?: number;
+    worker_id?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface ScrapeRunSource {
@@ -36,7 +39,12 @@ export interface ScrapeRunSource {
   jobsDiscovered: number;
   jobsInserted: number;
   jobsUpdated: number;
+  jobsRejected: number;
+  jobsFailed: number;
   errorMessage?: string | null;
   durationMs: number;
+  metadata: Record<string, unknown>;
+  startedAt: string;
+  completedAt?: string | null;
   createdAt: string;
 }

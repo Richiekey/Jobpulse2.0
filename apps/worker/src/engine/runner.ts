@@ -1,4 +1,5 @@
 import pLimit from 'p-limit';
+import crypto from 'node:crypto';
 import type {
   CompanySourceConfig,
   ScrapeRunStatus,
@@ -9,10 +10,12 @@ import { supabase } from '../db.js';
 import { IngestionPipeline } from './pipeline.js';
 
 export interface ScraperRunnerOptions {
+  runId?: string;
   companyIdentifier?: string;
   sourceId?: string;
   concurrency?: number;
   forceUnlock?: boolean;
+  workerId?: string;
 }
 
 export interface SourceRunResult {
@@ -31,6 +34,8 @@ export interface SourceRunResult {
   errorMessage?: string | null;
 }
 
+const GLOBAL_SCRAPE_LOCK_KEY = 'jobpulse_scraper_global_lock';
+
 export class ScraperRunner {
   private defaultConcurrency: number;
 
@@ -39,65 +44,97 @@ export class ScraperRunner {
   }
 
   /**
-   * Acquires a distributed scrape lock to prevent overlapping runs.
+   * Acquires a distributed scrape lease lock via atomic database RPC.
    */
-  private async acquireLock(forceUnlock = false): Promise<boolean> {
-    if (forceUnlock) return true;
+  private async acquireLock(workerId: string, forceUnlock = false): Promise<boolean> {
+    if (forceUnlock) {
+      logger.warn(`Force unlocking global scrape lock requested by ${workerId}`);
+      await supabase.rpc('force_unlock_scrape', { p_lock_key: GLOBAL_SCRAPE_LOCK_KEY });
+    }
 
-    // Check if there is an active running scrape_run started within the last 15 minutes
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const { data: activeRuns } = await supabase
-      .from('scrape_runs')
-      .select('id, started_at')
-      .eq('status', 'running')
-      .gte('started_at', fifteenMinutesAgo)
-      .limit(1);
+    const { data: acquired, error: lockError } = await supabase.rpc(
+      'try_acquire_scrape_lock',
+      {
+        p_lock_key: GLOBAL_SCRAPE_LOCK_KEY,
+        p_holder_id: workerId,
+        p_ttl_seconds: 900, // 15-minute lease with automatic TTL expiry
+      }
+    );
 
-    if (activeRuns && activeRuns.length > 0) {
-      logger.warn(`Another scrape run is currently active (${activeRuns[0]?.id}). Lock not acquired.`);
+    if (lockError) {
+      logger.error('Error acquiring distributed scrape lock:', { error: lockError.message });
       return false;
     }
 
-    return true;
+    return Boolean(acquired);
+  }
+
+  /**
+   * Releases the distributed scrape lock atomically.
+   */
+  private async releaseLock(workerId: string): Promise<void> {
+    try {
+      await supabase.rpc('release_scrape_lock', {
+        p_lock_key: GLOBAL_SCRAPE_LOCK_KEY,
+        p_holder_id: workerId,
+      });
+    } catch (err) {
+      logger.warn('Failed to release distributed scrape lock:', { error: String(err) });
+    }
   }
 
   /**
    * Runs the complete discovery and ingestion cycle across active company sources.
    */
   public async run(options: ScraperRunnerOptions = {}): Promise<string> {
-    logger.info('Starting JobPulse Scraper Run...', { options });
+    const workerId = options.workerId || `worker_${crypto.randomBytes(6).toString('hex')}`;
+    logger.info('Starting JobPulse Scraper Run...', { options, workerId });
 
-    // 1. Acquire distributed lock
-    const lockAcquired = await this.acquireLock(options.forceUnlock);
+    // 1. Acquire distributed lease lock
+    const lockAcquired = await this.acquireLock(workerId, options.forceUnlock);
     if (!lockAcquired) {
-      throw new Error('Concurrent scrape run in progress. Aborting to avoid race conditions.');
+      throw new Error('Concurrent scrape run in progress or lock held. Aborting execution.');
     }
 
-    // 2. Initialize durable scrape_runs record
-    const { data: scrapeRun, error: runInitError } = await supabase
-      .from('scrape_runs')
-      .insert({
-        started_at: new Date().toISOString(),
-        status: 'running',
-        companies_attempted: 0,
-        companies_succeeded: 0,
-        companies_failed: 0,
-        jobs_discovered: 0,
-        jobs_inserted: 0,
-        jobs_updated: 0,
-        jobs_rejected: 0,
-        jobs_failed: 0,
-      })
-      .select('id')
-      .single();
-
-    if (runInitError || !scrapeRun) {
-      throw new Error(`Failed to initialize scrape_runs: ${runInitError?.message}`);
-    }
-
-    const runId = scrapeRun.id;
+    let runId = options.runId;
 
     try {
+      // 2. Initialize or adopt durable scrape_runs record
+      if (!runId) {
+        const { data: scrapeRun, error: runInitError } = await supabase
+          .from('scrape_runs')
+          .insert({
+            started_at: new Date().toISOString(),
+            status: 'running',
+            companies_attempted: 0,
+            companies_succeeded: 0,
+            companies_failed: 0,
+            jobs_discovered: 0,
+            jobs_inserted: 0,
+            jobs_updated: 0,
+            jobs_rejected: 0,
+            jobs_failed: 0,
+            metadata: { worker_id: workerId, concurrency: options.concurrency ?? this.defaultConcurrency },
+          })
+          .select('id')
+          .single();
+
+        if (runInitError || !scrapeRun) {
+          throw new Error(`Failed to initialize scrape_runs: ${runInitError?.message}`);
+        }
+        runId = scrapeRun.id;
+      } else {
+        // Adopt existing pending run
+        await supabase
+          .from('scrape_runs')
+          .update({
+            status: 'running',
+            started_at: new Date().toISOString(),
+            metadata: { worker_id: workerId },
+          })
+          .eq('id', runId);
+      }
+
       // 3. Query active company sources
       let query = supabase
         .from('company_sources')
@@ -161,11 +198,8 @@ export class ScraperRunner {
               const errorMsg = `No adapter registered for adapter_name: ${sourceInfo?.adapter_name}`;
               logger.error(errorMsg);
 
-              // Update source health
               await this.updateSourceHealth(companySource, false, errorMsg);
-
-              // Record scrape_run_sources telemetry
-              await this.recordSourceTelemetry(runId, companySource, 'failed', 0, 0, 0, 0, 0, errorMsg, durationMs);
+              await this.recordSourceTelemetry(runId!, companySource, 'failed', 0, 0, 0, 0, 0, errorMsg, durationMs);
 
               return {
                 companySourceId: companySource.id,
@@ -213,12 +247,9 @@ export class ScraperRunner {
 
               const durationMs = Date.now() - startSourceTime;
 
-              // Update source health state machine to healthy
               await this.updateSourceHealth(companySource, true, null);
-
-              // Record complete source telemetry
               await this.recordSourceTelemetry(
-                runId,
+                runId!,
                 companySource,
                 'succeeded',
                 discoveredCount,
@@ -251,12 +282,9 @@ export class ScraperRunner {
               const errorMsg = srcErr instanceof Error ? srcErr.message : String(srcErr);
               logger.error(`Failed scraping for ${companySource.sourceIdentifier}:`, { error: errorMsg });
 
-              // Update source health state machine with degradation
               await this.updateSourceHealth(companySource, false, errorMsg);
-
-              // Record complete source telemetry
               await this.recordSourceTelemetry(
-                runId,
+                runId!,
                 companySource,
                 'failed',
                 0,
@@ -314,7 +342,7 @@ export class ScraperRunner {
       );
 
       const finalStatus: ScrapeRunStatus =
-        summary.failed === 0 ? 'succeeded' : summary.succeeded > 0 ? 'partially_failed' : 'failed';
+        summary.failed === summary.attempted && summary.attempted > 0 ? 'failed' : 'completed';
 
       const errorDetails = sourceResults
         .filter((r) => r.errorMessage)
@@ -338,7 +366,14 @@ export class ScraperRunner {
           jobs_updated: summary.updated,
           jobs_rejected: summary.rejected,
           jobs_failed: summary.failedJobs,
-          error_summary: errorDetails.length > 0 ? (errorDetails as any) : null,
+          error_summary: errorDetails as any,
+          metadata: {
+            worker_id: workerId,
+            partial_failure: summary.failed > 0,
+            sources_attempted: summary.attempted,
+            sources_succeeded: summary.succeeded,
+            sources_failed: summary.failed,
+          },
         })
         .eq('id', runId);
 
@@ -348,22 +383,53 @@ export class ScraperRunner {
         finalStatus,
       });
 
+      if (!runId) {
+        throw new Error('Uninitialized run ID');
+      }
+
       return runId;
     } catch (runErr) {
       const runErrorMsg = runErr instanceof Error ? runErr.message : String(runErr);
       logger.error('Fatal crash in scraper runner execution:', { error: runErrorMsg });
 
-      await supabase
-        .from('scrape_runs')
-        .update({
-          completed_at: new Date().toISOString(),
-          status: 'failed',
-          error_summary: [{ error: runErrorMsg, timestamp: new Date().toISOString() }] as any,
-        })
-        .eq('id', runId);
+      if (runId) {
+        await supabase
+          .from('scrape_runs')
+          .update({
+            completed_at: new Date().toISOString(),
+            status: 'failed',
+            error_summary: [{ error: runErrorMsg, timestamp: new Date().toISOString() }] as any,
+          })
+          .eq('id', runId);
+      }
 
       throw runErr;
+    } finally {
+      // Always release distributed lock on completion or crash
+      await this.releaseLock(workerId);
     }
+  }
+
+  /**
+   * Polls the durable scrape_runs queue and claims next pending job using SKIP LOCKED.
+   */
+  public async pollAndExecutePending(): Promise<string | null> {
+    const { data: claimedRuns, error: claimError } = await supabase.rpc('claim_next_pending_scrape_run');
+
+    if (claimError) {
+      logger.error('Error claiming pending scrape run:', { error: claimError.message });
+      return null;
+    }
+
+    if (!claimedRuns || claimedRuns.length === 0) {
+      return null;
+    }
+
+    const claimedRun = claimedRuns[0];
+    if (!claimedRun) return null;
+
+    logger.info(`Claimed pending scrape run ${claimedRun.id} from queue. Executing...`);
+    return this.run({ runId: claimedRun.id });
   }
 
   /**
@@ -412,7 +478,7 @@ export class ScraperRunner {
   }
 
   /**
-   * Records a source telemetry item in scrape_run_sources.
+   * Records a source telemetry item in scrape_run_sources without silent error swallowing.
    */
   private async recordSourceTelemetry(
     runId: string,
@@ -427,27 +493,30 @@ export class ScraperRunner {
     durationMs: number,
     parserVersion?: string
   ): Promise<void> {
-    try {
-      await supabase.from('scrape_run_sources').insert({
-        scrape_run_id: runId,
-        source_id: companySource.sourceId,
-        company_id: companySource.companyId,
-        status,
-        jobs_discovered: discovered,
-        jobs_inserted: inserted,
-        jobs_updated: updated,
-        jobs_rejected: rejected,
-        jobs_failed: failed,
-        error_message: errorMessage,
-        metadata: {
-          duration_ms: durationMs,
-          parser_version: parserVersion || 'unknown',
-        },
-        started_at: new Date(Date.now() - durationMs).toISOString(),
-        completed_at: new Date().toISOString(),
+    const { error: insertError } = await supabase.from('scrape_run_sources').insert({
+      scrape_run_id: runId,
+      company_source_id: companySource.id,
+      status,
+      jobs_discovered: discovered,
+      jobs_inserted: inserted,
+      jobs_updated: updated,
+      jobs_rejected: rejected,
+      jobs_failed: failed,
+      error_message: errorMessage,
+      metadata: {
+        parser_version: parserVersion || 'unknown',
+      },
+      duration_ms: durationMs,
+      started_at: new Date(Date.now() - durationMs).toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+
+    if (insertError) {
+      logger.error('CRITICAL TELEMETRY FAILURE: Failed to write scrape_run_sources record', {
+        runId,
+        companySourceId: companySource.id,
+        error: insertError.message,
       });
-    } catch (err) {
-      logger.debug('Failed to insert scrape_run_sources telemetry record', { error: String(err) });
     }
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { z } from 'zod';
 
@@ -13,12 +13,12 @@ const ApplicationSchema = z.object({
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return ApiResponse.error('Unauthorized: Authentication required.', authError, 401);
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) {
+      return authResult.errorResponse;
     }
+
+    const { user, supabase } = authResult;
 
     const { data: applications, error: queryError } = await supabase
       .from('applications')
@@ -38,12 +38,12 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return ApiResponse.error('Unauthorized: Authentication required.', authError, 401);
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) {
+      return authResult.errorResponse;
     }
+
+    const { user, supabase } = authResult;
 
     const rawBody = await request.json().catch(() => ({}));
     const parseResult = ApplicationSchema.safeParse(rawBody);

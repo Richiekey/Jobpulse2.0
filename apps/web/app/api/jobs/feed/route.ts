@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
+import { decodeCursor, encodeCursor } from '@/lib/cursor';
 import { z } from 'zod';
 
 const FeedQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
-  cursor: z.string().optional(),
+  cursor: z.string().max(300).optional(),
   q: z.string().max(200).optional(),
   workplace: z.enum(['all', 'remote', 'hybrid', 'on_site']).optional(),
   employment: z.enum(['all', 'full_time', 'part_time', 'contract', 'internship', 'temporary', 'other']).optional(),
@@ -96,27 +97,16 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Compound Keyset / Cursor Pagination: (posted_at < cursorPostedAt) OR (posted_at = cursorPostedAt AND id < cursorId)
+    // Keyset / Cursor Pagination with tamper validation (M10.3, M10.4)
     if (cursor) {
-      let cursorPostedAt: string | undefined;
-      let cursorId: string | undefined;
-
-      try {
-        // Decode base64 or colon-separated token
-        const decoded = cursor.includes(':') ? cursor : Buffer.from(cursor, 'base64').toString('utf-8');
-        const parts = decoded.split(':');
-        cursorPostedAt = parts[0];
-        cursorId = parts[1];
-      } catch {
-        return ApiResponse.error('Invalid cursor token provided.', { cursor }, 400);
+      const decoded = decodeCursor(cursor);
+      if (!decoded) {
+        return ApiResponse.error('Invalid or malformed cursor token.', null, 400);
       }
-
-      if (cursorPostedAt && cursorId) {
-        dbQuery = dbQuery.or(`posted_at.lt.${cursorPostedAt},and(posted_at.eq.${cursorPostedAt},id.lt.${cursorId})`);
-      }
+      dbQuery = dbQuery.or(`posted_at.lt.${decoded.postedAt},and(posted_at.eq.${decoded.postedAt},id.lt.${decoded.id})`);
     }
 
-    // Stable compound sorting
+    // Stable compound sorting (M10.1)
     dbQuery = dbQuery
       .order('posted_at', { ascending: false })
       .order('id', { ascending: false })
@@ -136,7 +126,7 @@ export async function GET(request: NextRequest) {
     if (hasMore && resultItems.length > 0) {
       const lastItem = resultItems[resultItems.length - 1];
       if (lastItem) {
-        nextCursor = Buffer.from(`${lastItem.posted_at}:${lastItem.id}`).toString('base64');
+        nextCursor = encodeCursor(lastItem.posted_at, lastItem.id);
       }
     }
 
