@@ -87,6 +87,151 @@ export class ScraperRunner {
   }
 
   /**
+   * Executes discovery and ingestion for a single company source with complete error isolation.
+   */
+  public async processSource(
+    companySource: CompanySourceConfig & { adapterName: string },
+    runId: string
+  ): Promise<SourceRunResult> {
+    const startSourceTime = Date.now();
+    const adapter = getAdapterForSource(companySource.adapterName);
+
+    // If no adapter found, record failure and update source health state
+    if (!adapter) {
+      const durationMs = Date.now() - startSourceTime;
+      const errorMsg = `No adapter registered for adapter_name: "${companySource.adapterName}"`;
+      logger.error(errorMsg);
+
+      await this.updateSourceHealth(companySource, false, errorMsg, 0);
+      await this.recordSourceTelemetry(runId, companySource, 'failed', 0, 0, 0, 0, 0, errorMsg, durationMs);
+
+      return {
+        companySourceId: companySource.id,
+        companyId: companySource.companyId,
+        sourceId: companySource.sourceId,
+        sourceIdentifier: companySource.sourceIdentifier,
+        adapterName: companySource.adapterName || 'unknown',
+        status: 'failed',
+        discovered: 0,
+        inserted: 0,
+        updated: 0,
+        rejected: 0,
+        failed: 0,
+        durationMs,
+        errorMessage: errorMsg,
+      };
+    }
+
+    try {
+      logger.info(`Discovering jobs for ${companySource.sourceIdentifier} via ${adapter.platformSlug}...`);
+      const candidates = await adapter.discover(companySource);
+      const discoveredCount = candidates.length;
+
+      logger.info(`Discovered ${discoveredCount} candidates for ${companySource.sourceIdentifier}. Ingesting...`);
+
+      // Candidate processing with sub-concurrency (bound to 5 per source)
+      const candidateLimit = pLimit(5);
+      const candidateResults = await Promise.all(
+        candidates.map((c) =>
+          candidateLimit(() => IngestionPipeline.processCandidate(adapter, companySource, c))
+        )
+      );
+
+      let inserted = 0;
+      let updated = 0;
+      let rejected = 0;
+      let failed = 0;
+
+      for (const res of candidateResults) {
+        if (res.status === 'inserted') inserted++;
+        else if (res.status === 'updated') updated++;
+        else if (res.status === 'rejected') rejected++;
+        else if (res.status === 'failed') failed++;
+      }
+
+      const durationMs = Date.now() - startSourceTime;
+
+      await this.updateSourceHealth(companySource, true, null, discoveredCount);
+      await this.recordSourceTelemetry(
+        runId,
+        companySource,
+        'succeeded',
+        discoveredCount,
+        inserted,
+        updated,
+        rejected,
+        failed,
+        null,
+        durationMs,
+        adapter.parserVersion
+      );
+
+      return {
+        companySourceId: companySource.id,
+        companyId: companySource.companyId,
+        sourceId: companySource.sourceId,
+        sourceIdentifier: companySource.sourceIdentifier,
+        adapterName: adapter.platformSlug,
+        status: 'succeeded',
+        discovered: discoveredCount,
+        inserted,
+        updated,
+        rejected,
+        failed,
+        durationMs,
+        errorMessage: null,
+      };
+    } catch (srcErr) {
+      const durationMs = Date.now() - startSourceTime;
+      const errorMsg = srcErr instanceof Error ? srcErr.message : String(srcErr);
+      logger.error(`Failed scraping for ${companySource.sourceIdentifier}:`, { error: errorMsg });
+
+      await this.updateSourceHealth(companySource, false, errorMsg, 0);
+      await this.recordSourceTelemetry(
+        runId,
+        companySource,
+        'failed',
+        0,
+        0,
+        0,
+        0,
+        0,
+        errorMsg,
+        durationMs,
+        adapter.parserVersion
+      );
+
+      return {
+        companySourceId: companySource.id,
+        companyId: companySource.companyId,
+        sourceId: companySource.sourceId,
+        sourceIdentifier: companySource.sourceIdentifier,
+        adapterName: adapter.platformSlug,
+        status: 'failed',
+        discovered: 0,
+        inserted: 0,
+        updated: 0,
+        rejected: 0,
+        failed: 0,
+        durationMs,
+        errorMessage: errorMsg,
+      };
+    }
+  }
+
+  /**
+   * Processes a list of eligible company sources concurrently with bounded concurrency.
+   */
+  public async processSources(
+    eligibleSources: (CompanySourceConfig & { adapterName: string })[],
+    runId: string,
+    concurrency?: number
+  ): Promise<SourceRunResult[]> {
+    const limit = pLimit(concurrency ?? this.defaultConcurrency);
+    return Promise.all(eligibleSources.map((source) => limit(() => this.processSource(source, runId))));
+  }
+
+  /**
    * Runs the complete discovery and ingestion cycle across active company sources.
    */
   public async run(options: ScraperRunnerOptions = {}): Promise<string> {
@@ -235,139 +380,8 @@ export class ScraperRunner {
         return runId!;
       }
 
-      const limit = pLimit(options.concurrency ?? this.defaultConcurrency);
-
       // 4. Process each eligible company source concurrently with strict error isolation
-      const sourceResults: SourceRunResult[] = await Promise.all(
-        eligibleSources.map((companySource) =>
-          limit(async (): Promise<SourceRunResult> => {
-            const startSourceTime = Date.now();
-            const adapter = getAdapterForSource(companySource.adapterName);
-
-            // If no adapter found, record failure and update source health state
-            if (!adapter) {
-              const durationMs = Date.now() - startSourceTime;
-              const errorMsg = `No adapter registered for adapter_name: "${companySource.adapterName}"`;
-              logger.error(errorMsg);
-
-              await this.updateSourceHealth(companySource, false, errorMsg, 0);
-              await this.recordSourceTelemetry(runId!, companySource, 'failed', 0, 0, 0, 0, 0, errorMsg, durationMs);
-
-              return {
-                companySourceId: companySource.id,
-                companyId: companySource.companyId,
-                sourceId: companySource.sourceId,
-                sourceIdentifier: companySource.sourceIdentifier,
-                adapterName: companySource.adapterName || 'unknown',
-                status: 'failed',
-                discovered: 0,
-                inserted: 0,
-                updated: 0,
-                rejected: 0,
-                failed: 0,
-                durationMs,
-                errorMessage: errorMsg,
-              };
-            }
-
-            try {
-              logger.info(`Discovering jobs for ${companySource.sourceIdentifier} via ${adapter.platformSlug}...`);
-              const candidates = await adapter.discover(companySource);
-              const discoveredCount = candidates.length;
-
-              logger.info(`Discovered ${discoveredCount} candidates for ${companySource.sourceIdentifier}. Ingesting...`);
-
-              // Candidate processing with sub-concurrency (bound to 5 per source)
-              const candidateLimit = pLimit(5);
-              const candidateResults = await Promise.all(
-                candidates.map((c) =>
-                  candidateLimit(() => IngestionPipeline.processCandidate(adapter, companySource, c))
-                )
-              );
-
-              let inserted = 0;
-              let updated = 0;
-              let rejected = 0;
-              let failed = 0;
-
-              for (const res of candidateResults) {
-                if (res.status === 'inserted') inserted++;
-                else if (res.status === 'updated') updated++;
-                else if (res.status === 'rejected') rejected++;
-                else if (res.status === 'failed') failed++;
-              }
-
-              const durationMs = Date.now() - startSourceTime;
-
-              await this.updateSourceHealth(companySource, true, null, discoveredCount);
-              await this.recordSourceTelemetry(
-                runId!,
-                companySource,
-                'succeeded',
-                discoveredCount,
-                inserted,
-                updated,
-                rejected,
-                failed,
-                null,
-                durationMs,
-                adapter.parserVersion
-              );
-
-              return {
-                companySourceId: companySource.id,
-                companyId: companySource.companyId,
-                sourceId: companySource.sourceId,
-                sourceIdentifier: companySource.sourceIdentifier,
-                adapterName: adapter.platformSlug,
-                status: 'succeeded',
-                discovered: discoveredCount,
-                inserted,
-                updated,
-                rejected,
-                failed,
-                durationMs,
-                errorMessage: null,
-              };
-            } catch (srcErr) {
-              const durationMs = Date.now() - startSourceTime;
-              const errorMsg = srcErr instanceof Error ? srcErr.message : String(srcErr);
-              logger.error(`Failed scraping for ${companySource.sourceIdentifier}:`, { error: errorMsg });
-
-              await this.updateSourceHealth(companySource, false, errorMsg, 0);
-              await this.recordSourceTelemetry(
-                runId!,
-                companySource,
-                'failed',
-                0,
-                0,
-                0,
-                0,
-                0,
-                errorMsg,
-                durationMs,
-                adapter.parserVersion
-              );
-
-              return {
-                companySourceId: companySource.id,
-                companyId: companySource.companyId,
-                sourceId: companySource.sourceId,
-                sourceIdentifier: companySource.sourceIdentifier,
-                adapterName: adapter.platformSlug,
-                status: 'failed',
-                discovered: 0,
-                inserted: 0,
-                updated: 0,
-                rejected: 0,
-                failed: 0,
-                durationMs,
-                errorMessage: errorMsg,
-              };
-            }
-          })
-        )
-      );
+      const sourceResults = await this.processSources(eligibleSources, runId!, options.concurrency);
 
       // 5. Aggregate Results deterministically
       const summary = sourceResults.reduce(

@@ -1,15 +1,21 @@
-import { describe, it, expect } from 'vitest';
-import type { CompanySourceConfig, ScrapeRunStatus } from '@jobpulse/domain';
-import { SourceScheduler, SourceHealthEngine } from '@jobpulse/domain';
-import pLimit from 'p-limit';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { CompanySourceConfig } from '@jobpulse/domain';
+import { ScraperRunner } from '../src/engine/runner.js';
+import * as atsModule from '@jobpulse/ats';
 
-describe('Multi-Source Ingestion Engine & Isolation Verification (S09 & S10 Production Logic)', () => {
-  it('proves multi-source failure isolation: Source A failure does not halt or corrupt Source B and Source C', async () => {
+describe('Multi-Source Ingestion Engine & Real ScraperRunner Orchestration (S09 & S10)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('proves multi-source failure isolation via real ScraperRunner orchestration: Source A failure does not halt or corrupt Source B and Source C', async () => {
+    const runner = new ScraperRunner({ concurrency: 2 });
+
     const mockSources: (CompanySourceConfig & { adapterName: string })[] = [
       {
-        id: 'cs_source_a',
-        companyId: 'comp_a',
-        sourceId: 'src_1',
+        id: '10000000-0000-0000-0000-000000000001',
+        companyId: '20000000-0000-0000-0000-000000000001',
+        sourceId: '30000000-0000-0000-0000-000000000001',
         sourceIdentifier: 'failing_source_a',
         adapterConfig: {},
         isActive: true,
@@ -21,12 +27,12 @@ describe('Multi-Source Ingestion Engine & Isolation Verification (S09 & S10 Prod
         discoveryMethod: 'manual',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        adapterName: 'greenhouse',
+        adapterName: 'mock_failing',
       },
       {
-        id: 'cs_source_b',
-        companyId: 'comp_b',
-        sourceId: 'src_2',
+        id: '10000000-0000-0000-0000-000000000002',
+        companyId: '20000000-0000-0000-0000-000000000002',
+        sourceId: '30000000-0000-0000-0000-000000000002',
         sourceIdentifier: 'healthy_source_b',
         adapterConfig: {},
         isActive: true,
@@ -38,12 +44,12 @@ describe('Multi-Source Ingestion Engine & Isolation Verification (S09 & S10 Prod
         discoveryMethod: 'manual',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        adapterName: 'lever',
+        adapterName: 'mock_healthy_b',
       },
       {
-        id: 'cs_source_c',
-        companyId: 'comp_c',
-        sourceId: 'src_3',
+        id: '10000000-0000-0000-0000-000000000003',
+        companyId: '20000000-0000-0000-0000-000000000003',
+        sourceId: '30000000-0000-0000-0000-000000000003',
         sourceIdentifier: 'healthy_source_c',
         adapterConfig: {},
         isActive: true,
@@ -55,108 +61,63 @@ describe('Multi-Source Ingestion Engine & Isolation Verification (S09 & S10 Prod
         discoveryMethod: 'manual',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        adapterName: 'ashby',
+        adapterName: 'mock_healthy_c',
       },
     ];
 
-    // Filter & order via production SourceScheduler
-    const eligibleSources = SourceScheduler.filterAndOrderEligibleSources(mockSources);
-    expect(eligibleSources).toHaveLength(3);
-
-    // Concurrency limit bounded to 2
-    const limit = pLimit(2);
-
-    // Execute concurrently with per-source isolation (matching ScraperRunner execution model)
-    const sourceResults = await Promise.all(
-      eligibleSources.map((source) =>
-        limit(async () => {
-          const startTime = Date.now();
-          try {
-            if (source.sourceIdentifier === 'failing_source_a') {
-              throw new Error('HTTP 500 Internal Server Error');
-            }
-            // Successful source execution
-            const discovered = source.sourceIdentifier === 'healthy_source_b' ? 12 : 8;
-            const healthUpdate = SourceHealthEngine.getSuccessUpdate(discovered);
-
-            return {
-              companySourceId: source.id,
-              status: 'succeeded' as const,
-              discovered,
-              inserted: discovered,
-              updated: 0,
-              rejected: 0,
-              failed: 0,
-              errorMessage: null,
-              healthUpdate,
-              durationMs: Date.now() - startTime,
-            };
-          } catch (err: any) {
-            const healthUpdate = SourceHealthEngine.getFailureUpdate(source.consecutiveFailures, err.message);
-            return {
-              companySourceId: source.id,
-              status: 'failed' as const,
-              discovered: 0,
-              inserted: 0,
-              updated: 0,
-              rejected: 0,
-              failed: 0,
-              errorMessage: err.message,
-              healthUpdate,
-              durationMs: Date.now() - startTime,
-            };
-          }
-        })
-      )
-    );
-
-    // 1. Verify that all 3 sources executed
-    expect(sourceResults).toHaveLength(3);
-
-    // 2. Verify Source A failed with exact error and health updated to degraded
-    const resultA = sourceResults.find((r) => r.companySourceId === 'cs_source_a');
-    expect(resultA?.status).toBe('failed');
-    expect(resultA?.errorMessage).toBe('HTTP 500 Internal Server Error');
-    expect(resultA?.healthUpdate.healthStatus).toBe('degraded');
-    expect(resultA?.healthUpdate.consecutiveFailures).toBe(1);
-
-    // 3. Verify Source B succeeded completely and untouched
-    const resultB = sourceResults.find((r) => r.companySourceId === 'cs_source_b');
-    expect(resultB?.status).toBe('succeeded');
-    expect(resultB?.discovered).toBe(12);
-    expect(resultB?.healthUpdate.healthStatus).toBe('healthy');
-    expect(resultB?.healthUpdate.lastJobCount).toBe(12);
-
-    // 4. Verify Source C succeeded completely and untouched
-    const resultC = sourceResults.find((r) => r.companySourceId === 'cs_source_c');
-    expect(resultC?.status).toBe('succeeded');
-    expect(resultC?.discovered).toBe(8);
-    expect(resultC?.healthUpdate.healthStatus).toBe('healthy');
-    expect(resultC?.healthUpdate.lastJobCount).toBe(8);
-
-    // 5. Aggregate summary calculation (matching ScraperRunner aggregation)
-    const summary = sourceResults.reduce(
-      (acc, r) => ({
-        attempted: acc.attempted + 1,
-        succeeded: acc.succeeded + (r.status === 'succeeded' ? 1 : 0),
-        failed: acc.failed + (r.status === 'failed' ? 1 : 0),
-        discovered: acc.discovered + r.discovered,
-        inserted: acc.inserted + r.inserted,
-      }),
-      { attempted: 0, succeeded: 0, failed: 0, discovered: 0, inserted: 0 }
-    );
-
-    expect(summary).toEqual({
-      attempted: 3,
-      succeeded: 2,
-      failed: 1,
-      discovered: 20,
-      inserted: 20,
+    // Mock adapter lookup to return a failing adapter for source A, and valid adapters for B & C
+    vi.spyOn(atsModule, 'getAdapterForSource').mockImplementation((adapterName: string) => {
+      if (adapterName === 'mock_failing') {
+        return {
+          platformSlug: 'mock_failing',
+          parserVersion: 'v1',
+          discover: vi.fn().mockRejectedValue(new Error('HTTP 500 Internal Server Error')),
+          fetch: vi.fn(),
+          parse: vi.fn(),
+          normalize: vi.fn(),
+          validate: vi.fn(),
+          resolveApplicationUrl: vi.fn(),
+        } as any;
+      }
+      if (adapterName === 'mock_healthy_b' || adapterName === 'mock_healthy_c') {
+        return {
+          platformSlug: adapterName,
+          parserVersion: 'v1',
+          discover: vi.fn().mockResolvedValue([]), // Discovers 0 candidate jobs
+          fetch: vi.fn(),
+          parse: vi.fn(),
+          normalize: vi.fn(),
+          validate: vi.fn(),
+          resolveApplicationUrl: vi.fn(),
+        } as any;
+      }
+      return undefined;
     });
 
-    const finalStatus: ScrapeRunStatus =
-      summary.failed === summary.attempted && summary.attempted > 0 ? 'failed' : 'completed';
+    // Mock database update functions on ScraperRunner to avoid remote DB mutation during unit test
+    vi.spyOn(runner as any, 'updateSourceHealth').mockResolvedValue(undefined);
+    vi.spyOn(runner as any, 'recordSourceTelemetry').mockResolvedValue(undefined);
 
-    expect(finalStatus).toBe('completed');
+    // Execute real ScraperRunner orchestration
+    const runId = '00000000-0000-0000-0000-000000000099';
+    const results = await runner.processSources(mockSources, runId, 2);
+
+    // 1. Verify that all 3 sources were processed by the runner
+    expect(results).toHaveLength(3);
+
+    // 2. Verify Source A failed with exact error message and did not throw or halt execution
+    const resultA = results.find((r) => r.companySourceId === '10000000-0000-0000-0000-000000000001');
+    expect(resultA?.status).toBe('failed');
+    expect(resultA?.errorMessage).toBe('HTTP 500 Internal Server Error');
+
+    // 3. Verify Source B succeeded completely
+    const resultB = results.find((r) => r.companySourceId === '10000000-0000-0000-0000-000000000002');
+    expect(resultB?.status).toBe('succeeded');
+    expect(resultB?.errorMessage).toBeNull();
+
+    // 4. Verify Source C succeeded completely
+    const resultC = results.find((r) => r.companySourceId === '10000000-0000-0000-0000-000000000003');
+    expect(resultC?.status).toBe('succeeded');
+    expect(resultC?.errorMessage).toBeNull();
   });
 });
