@@ -8,7 +8,7 @@ describe('GreenhouseAdapter Contract & Parser Tests', () => {
 
   it('has valid platform slug and parser version', () => {
     expect(adapter.platformSlug).toBe('greenhouse');
-    expect(adapter.parserVersion).toBe('greenhouse_v1');
+    expect(adapter.parserVersion).toBe('greenhouse_v2');
   });
 
   it('correctly parses raw Greenhouse payload into RawJob', async () => {

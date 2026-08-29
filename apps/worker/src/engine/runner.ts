@@ -16,6 +16,7 @@ export interface ScraperRunnerOptions {
   concurrency?: number;
   forceUnlock?: boolean;
   workerId?: string;
+  limitSources?: number;
 }
 
 export interface SourceRunResult {
@@ -88,7 +89,7 @@ export class ScraperRunner {
    */
   public async run(options: ScraperRunnerOptions = {}): Promise<string> {
     const workerId = options.workerId || `worker_${crypto.randomBytes(6).toString('hex')}`;
-    logger.info('Starting JobPulse Scraper Run...', { options, workerId });
+    logger.info('Starting JobPulse Multi-Source Scraper Run...', { options, workerId });
 
     // 1. Acquire distributed lease lock
     const lockAcquired = await this.acquireLock(workerId, options.forceUnlock);
@@ -135,7 +136,7 @@ export class ScraperRunner {
           .eq('id', runId);
       }
 
-      // 3. Query active company sources
+      // 3. Query active company sources ordered by priority and scheduling
       let query = supabase
         .from('company_sources')
         .select(`
@@ -164,13 +165,18 @@ export class ScraperRunner {
             name
           )
         `)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .order('priority', { ascending: true })
+        .order('last_checked_at', { ascending: true, nullsFirst: true });
 
       if (options.companyIdentifier) {
         query = query.eq('source_identifier', options.companyIdentifier);
       }
       if (options.sourceId) {
         query = query.eq('source_id', options.sourceId);
+      }
+      if (options.limitSources) {
+        query = query.limit(options.limitSources);
       }
 
       const { data: companySources, error: fetchError } = await query;
@@ -182,7 +188,7 @@ export class ScraperRunner {
 
       const limit = pLimit(options.concurrency ?? this.defaultConcurrency);
 
-      // 4. Process each company source concurrently with immutable result collection
+      // 4. Process each company source concurrently with strict error isolation
       const sourceResults: SourceRunResult[] = await Promise.all(
         companySources.map((csRaw: any) =>
           limit(async (): Promise<SourceRunResult> => {
@@ -212,13 +218,13 @@ export class ScraperRunner {
               updatedAt: csRaw.updated_at || new Date().toISOString(),
             };
 
-            // If no adapter found, record telemetry and return failure result
+            // If no adapter found, record failure and update source health state
             if (!adapter) {
               const durationMs = Date.now() - startSourceTime;
-              const errorMsg = `No adapter registered for adapter_name: ${sourceInfo?.adapter_name}`;
+              const errorMsg = `No adapter registered for adapter_name: "${sourceInfo?.adapter_name}"`;
               logger.error(errorMsg);
 
-              await this.updateSourceHealth(companySource, false, errorMsg);
+              await this.updateSourceHealth(companySource, false, errorMsg, 0);
               await this.recordSourceTelemetry(runId!, companySource, 'failed', 0, 0, 0, 0, 0, errorMsg, durationMs);
 
               return {
@@ -245,7 +251,7 @@ export class ScraperRunner {
 
               logger.info(`Discovered ${discoveredCount} candidates for ${companySource.sourceIdentifier}. Ingesting...`);
 
-              // Candidate processing with sub-concurrency
+              // Candidate processing with sub-concurrency (bound to 5 per source)
               const candidateLimit = pLimit(5);
               const candidateResults = await Promise.all(
                 candidates.map((c) =>
@@ -267,7 +273,7 @@ export class ScraperRunner {
 
               const durationMs = Date.now() - startSourceTime;
 
-              await this.updateSourceHealth(companySource, true, null);
+              await this.updateSourceHealth(companySource, true, null, discoveredCount);
               await this.recordSourceTelemetry(
                 runId!,
                 companySource,
@@ -302,7 +308,7 @@ export class ScraperRunner {
               const errorMsg = srcErr instanceof Error ? srcErr.message : String(srcErr);
               logger.error(`Failed scraping for ${companySource.sourceIdentifier}:`, { error: errorMsg });
 
-              await this.updateSourceHealth(companySource, false, errorMsg);
+              await this.updateSourceHealth(companySource, false, errorMsg, 0);
               await this.recordSourceTelemetry(
                 runId!,
                 companySource,
@@ -458,7 +464,8 @@ export class ScraperRunner {
   private async updateSourceHealth(
     companySource: CompanySourceConfig,
     isSuccess: boolean,
-    errorMessage: string | null
+    errorMessage: string | null,
+    jobCount: number
   ): Promise<void> {
     const nowIso = new Date().toISOString();
 
@@ -468,7 +475,9 @@ export class ScraperRunner {
         .update({
           health_status: 'healthy',
           consecutive_failures: 0,
+          last_checked_at: nowIso,
           last_success_at: nowIso,
+          last_job_count: jobCount,
           last_error: null,
           updated_at: nowIso,
         })
@@ -489,6 +498,7 @@ export class ScraperRunner {
           health_status: newHealth,
           consecutive_failures: newConsecutive,
           is_active: newHealth !== 'disabled',
+          last_checked_at: nowIso,
           last_failure_at: nowIso,
           last_error: errorMessage,
           updated_at: nowIso,

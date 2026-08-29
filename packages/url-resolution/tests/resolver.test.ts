@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { URLResolver } from '../src/resolver.js';
+import { URLResolver, isDomainMatch } from '../src/resolver.js';
 
 describe('URLResolver & Safe Domain Matching', () => {
   it('correctly matches valid ATS domains and subdomains', () => {

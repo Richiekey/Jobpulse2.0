@@ -100,20 +100,21 @@ export class Normalizer {
     const targetText = rawSalary || description?.slice(0, 1500) || '';
     if (!targetText) return null;
 
-    // Matches patterns like "$120,000 - $160,000", "$120k - $160k", "$80/hr", "£60,000 - £80,000", "$200000 - $260000"
-    const rangeRegex = /([$€£¥])\s*([\d,.]+)\s*(k|m)?\s*(?:-|to|–)\s*(?:[$€£¥])?\s*([\d,.]+)\s*(k|m)?/i;
+    // Matches patterns like "$120,000 - $160,000", "$190000 - $250000 USD", "USD 120k - 160k", "£60,000 - £80,000"
+    const rangeRegex = /(?:([$€£¥])|(USD|EUR|GBP|CAD|AUD|CHF|SGD|JPY))\s*([\d,.]+)\s*(k|m)?\s*(?:-|to|–)\s*(?:[$€£¥]|USD|EUR|GBP|CAD|AUD|CHF|SGD|JPY)?\s*([\d,.]+)\s*(k|m)?/i;
     const match = targetText.match(rangeRegex);
 
-    if (match && match[1] && match[2] && match[4]) {
+    if (match && (match[1] || match[2]) && match[3] && match[5]) {
       const currencySymbol = match[1];
+      const currencyCode = match[2];
       const currencyMap: Record<string, string> = { '$': 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY' };
-      const currency = currencyMap[currencySymbol] || 'USD';
+      const currency = currencyCode ? currencyCode.toUpperCase() : (currencyMap[currencySymbol || '$'] || 'USD');
 
-      let min = parseFloat(match[2].replace(/,/g, ''));
-      let max = parseFloat(match[4].replace(/,/g, ''));
+      let min = parseFloat(match[3].replace(/,/g, ''));
+      let max = parseFloat(match[5].replace(/,/g, ''));
 
-      const minSuffix = match[3]?.toLowerCase();
-      const maxSuffix = match[5]?.toLowerCase();
+      const minSuffix = match[4]?.toLowerCase();
+      const maxSuffix = match[6]?.toLowerCase();
       const hasOverallK = match[0].toLowerCase().includes('k');
 
       if (minSuffix === 'k' || (hasOverallK && min < 1000)) min *= 1000;
@@ -129,6 +130,8 @@ export class Normalizer {
         interval = 'hourly';
       } else if (lower.includes('/mo') || lower.includes('/month') || lower.includes('per month') || lower.includes('monthly')) {
         interval = 'monthly';
+      } else if (lower.includes('/day') || lower.includes('per day') || lower.includes('daily')) {
+        interval = 'daily';
       }
 
       // Invariant: min must be <= max

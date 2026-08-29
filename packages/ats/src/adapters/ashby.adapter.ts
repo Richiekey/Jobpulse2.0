@@ -13,11 +13,25 @@ import { JobValidator, type JobValidationResult } from '@jobpulse/validation';
 import { httpClient } from '@jobpulse/shared';
 import type { ATSAdapter } from '../adapter.interface.js';
 
+interface AshbySecondaryLocation {
+  location?: string;
+  address?: {
+    postalAddress?: {
+      addressLocality?: string;
+      addressRegion?: string;
+      addressCountry?: string;
+    };
+  };
+}
+
 interface AshbyJobListing {
   id: string;
   title: string;
   location?: string;
+  secondaryLocations?: AshbySecondaryLocation[];
   department?: string;
+  team?: string;
+  employmentType?: string;
   isRemote?: boolean;
   compensationTierSummary?: string;
   jobUrl?: string;
@@ -32,7 +46,7 @@ interface AshbyBoardResponse {
 
 export class AshbyAdapter implements ATSAdapter {
   public readonly platformSlug = 'ashby';
-  public readonly parserVersion = 'ashby_v1';
+  public readonly parserVersion = 'ashby_v2';
 
   public detect(url: string, html?: string): ATSDetectionResult {
     const urlPattern = /jobs\.ashbyhq\.com\/([^/?#]+)/i;
@@ -149,32 +163,70 @@ export class AshbyAdapter implements ATSAdapter {
   public async parse(rawPayload: RawJobPayload): Promise<RawJob> {
     const data = rawPayload.payload as unknown as AshbyJobListing;
 
-    const rawLocations: string[] = [];
-    if (data.location) {
-      rawLocations.push(data.location);
+    // Multi-location and secondary locations aggregation
+    const locationSet = new Set<string>();
+    if (data.location && data.location.trim()) {
+      locationSet.add(data.location.trim());
     }
-    if (data.isRemote) {
-      rawLocations.push('Remote');
+    if (Array.isArray(data.secondaryLocations)) {
+      for (const sec of data.secondaryLocations) {
+        if (sec.location && sec.location.trim()) {
+          locationSet.add(sec.location.trim());
+        }
+        if (sec.address?.postalAddress) {
+          const p = sec.address.postalAddress;
+          const locStr = [p.addressLocality, p.addressRegion, p.addressCountry].filter(Boolean).join(', ');
+          if (locStr) locationSet.add(locStr);
+        }
+      }
+    }
+    const rawLocations = Array.from(locationSet);
+
+    // Text description extraction
+    let description = '';
+    if (data.descriptionPlain && data.descriptionPlain.trim()) {
+      description = data.descriptionPlain.trim();
+    } else if (data.descriptionHtml) {
+      description = data.descriptionHtml
+        .replace(/<br\s*[\/]?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<[^>]*>?/gm, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/[ \t]+/g, ' ')
+        .trim();
     }
 
-    const description = data.descriptionPlain || data.descriptionHtml?.replace(/<[^>]*>?/gm, ' ') || 'No description provided';
+    // Workplace type classification
+    let rawWorkplaceType: string | undefined = undefined;
+    const titleAndLoc = `${data.title || ''} ${rawLocations.join(' ')}`.toLowerCase();
+    if (data.isRemote || titleAndLoc.includes('remote') || titleAndLoc.includes('anywhere')) {
+      rawWorkplaceType = 'remote';
+    } else if (titleAndLoc.includes('hybrid')) {
+      rawWorkplaceType = 'hybrid';
+    } else if (titleAndLoc.includes('onsite') || titleAndLoc.includes('on-site')) {
+      rawWorkplaceType = 'onsite';
+    }
 
     return {
       sourceId: rawPayload.sourceId,
       externalJobId: data.id,
       rawTitle: data.title || 'Untitled Role',
-      rawDescription: description.trim(),
+      rawDescription: description || 'No description provided.',
       rawDescriptionHtml: data.descriptionHtml || null,
       rawLocations,
       rawSalary: data.compensationTierSummary || undefined,
       rawPostedAt: data.publishedAt || new Date().toISOString(),
-      rawWorkplaceType: data.isRemote ? 'remote' : undefined,
+      rawEmploymentType: data.employmentType || undefined,
+      rawWorkplaceType,
       // INVARIANT: Never synthesize /application suffix. Use explicit data.jobUrl without guessed path modifications.
       rawApplyUrl: data.jobUrl || undefined,
       sourceJobUrl: data.jobUrl || '',
       discoveryUrl: `https://api.ashbyhq.com/posting-api/job-board/job/${data.id}`,
       sourceMetadata: {
         department: data.department,
+        team: data.team,
+        isRemote: data.isRemote,
       },
     };
   }

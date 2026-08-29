@@ -13,6 +13,19 @@ import { JobValidator, type JobValidationResult } from '@jobpulse/validation';
 import { httpClient } from '@jobpulse/shared';
 import type { ATSAdapter } from '../adapter.interface.js';
 
+interface GreenhouseOffice {
+  id: number;
+  name: string;
+  location?: string;
+}
+
+interface GreenhouseDepartment {
+  id: number;
+  name: string;
+  parent_id?: number | null;
+  child_ids?: number[];
+}
+
 interface GreenhouseJobListing {
   id: number;
   title: string;
@@ -20,8 +33,14 @@ interface GreenhouseJobListing {
   absolute_url: string;
   location?: { name: string };
   content?: string;
-  departments?: Array<{ name: string }>;
-  offices?: Array<{ name: string; location?: string }>;
+  departments?: GreenhouseDepartment[];
+  offices?: GreenhouseOffice[];
+  metadata?: Array<{
+    id: number;
+    name: string;
+    value: string | string[] | null;
+    value_type: string;
+  }>;
 }
 
 interface GreenhouseBoardResponse {
@@ -30,10 +49,10 @@ interface GreenhouseBoardResponse {
 
 export class GreenhouseAdapter implements ATSAdapter {
   public readonly platformSlug = 'greenhouse';
-  public readonly parserVersion = 'greenhouse_v1';
+  public readonly parserVersion = 'greenhouse_v2';
 
   public detect(url: string, html?: string): ATSDetectionResult {
-    // 1. Direct URL regex
+    // 1. Direct URL pattern
     const urlPattern = /(?:boards|job-boards)\.greenhouse\.io\/(?:embed\/job_board(?:\.js)?\?for=)?([^/?#&\s]+)/i;
     const match = url.match(urlPattern);
 
@@ -47,10 +66,11 @@ export class GreenhouseAdapter implements ATSAdapter {
       };
     }
 
-    // 2. Embedded HTML script regex
+    // 2. Embedded HTML script detection
     if (html && (html.includes('greenhouse.io') || html.includes('grnh.se'))) {
-      const embedMatch = html.match(/boards\.greenhouse\.io\/embed\/job_board(?:\.js)?\?for=([^"&'\s]+)/i) ||
-                         html.match(/boards\.greenhouse\.io\/([^/"&'\s]+)/i);
+      const embedMatch =
+        html.match(/boards\.greenhouse\.io\/embed\/job_board(?:\.js)?\?for=([^"&'\s]+)/i) ||
+        html.match(/boards\.greenhouse\.io\/([^/"&'\s]+)/i);
       if (embedMatch && embedMatch[1] && embedMatch[1].toLowerCase() !== 'embed') {
         return {
           detected: true,
@@ -150,38 +170,57 @@ export class GreenhouseAdapter implements ATSAdapter {
   public async parse(rawPayload: RawJobPayload): Promise<RawJob> {
     const data = rawPayload.payload as unknown as GreenhouseJobListing;
 
-    const rawLocations: string[] = [];
-    if (data.location?.name) {
-      rawLocations.push(data.location.name);
+    // Structured multi-location aggregation
+    const locationSet = new Set<string>();
+    if (data.location?.name && data.location.name.trim()) {
+      locationSet.add(data.location.name.trim());
     }
     if (Array.isArray(data.offices)) {
       for (const office of data.offices) {
-        if (office.name) rawLocations.push(office.name);
+        if (office.name && office.name.trim()) {
+          locationSet.add(office.name.trim());
+        }
+        if (office.location && office.location.trim()) {
+          locationSet.add(office.location.trim());
+        }
       }
     }
+    const rawLocations = Array.from(locationSet);
 
+    // HTML cleaning and entity decoding
     const rawHtml = data.content || '';
-    const rawText = rawHtml
-      .replace(/<[^>]*>?/gm, ' ')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const cleanText = this.cleanHtmlContent(rawHtml);
+
+    // Workplace type classification
+    let rawWorkplaceType: string | undefined = undefined;
+    const fullTextSearch = `${data.title || ''} ${rawLocations.join(' ')}`.toLowerCase();
+    if (fullTextSearch.includes('remote') || fullTextSearch.includes('anywhere')) {
+      rawWorkplaceType = 'remote';
+    } else if (fullTextSearch.includes('hybrid')) {
+      rawWorkplaceType = 'hybrid';
+    } else if (fullTextSearch.includes('on-site') || fullTextSearch.includes('onsite')) {
+      rawWorkplaceType = 'onsite';
+    }
+
+    // Department extraction
+    const departments = data.departments?.map((d) => d.name).filter(Boolean) || [];
 
     return {
       sourceId: rawPayload.sourceId,
       externalJobId: String(data.id),
       rawTitle: data.title || 'Untitled Role',
-      rawDescription: rawText,
-      rawDescriptionHtml: rawHtml,
+      rawDescription: cleanText || 'No description provided.',
+      rawDescriptionHtml: rawHtml || null,
       rawLocations,
-      rawPostedAt: data.updated_at,
-      // INVARIANT: Never synthesize application URL suffix (e.g. #app). Use exact absolute_url provided by ATS.
+      rawPostedAt: data.updated_at || new Date().toISOString(),
+      rawWorkplaceType,
+      // INVARIANT: Never synthesize application URL suffix (#app). Use exact absolute_url provided by ATS.
       rawApplyUrl: data.absolute_url || undefined,
       sourceJobUrl: data.absolute_url || '',
       discoveryUrl: `https://boards-api.greenhouse.io/v1/boards/job/${data.id}`,
       sourceMetadata: {
-        departments: data.departments?.map((d) => d.name) || [],
+        departments,
+        offices: data.offices?.map((o) => o.name) || [],
       },
     };
   }
@@ -217,8 +256,33 @@ export class GreenhouseAdapter implements ATSAdapter {
   }
 
   public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
-    // INVARIANT: Never synthesize application URLs. Return explicit apply URL or fallback to sourceJobUrl.
+    // INVARIANT: Never synthesize application URLs.
     if (raw.rawApplyUrl) return raw.rawApplyUrl;
     return raw.sourceJobUrl || candidate.sourceJobUrl || '';
+  }
+
+  /**
+   * Sanitizes Greenhouse HTML job content and decodes standard HTML entities.
+   */
+  private cleanHtmlContent(html: string): string {
+    if (!html) return '';
+    return html
+      .replace(/<br\s*[\/]?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<[^>]*>?/gm, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#8217;/g, "'")
+      .replace(/&#8216;/g, "'")
+      .replace(/&#8220;/g, '"')
+      .replace(/&#8221;/g, '"')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n/g, '\n\n')
+      .trim();
   }
 }

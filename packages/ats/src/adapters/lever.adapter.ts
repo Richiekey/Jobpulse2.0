@@ -13,27 +13,38 @@ import { JobValidator, type JobValidationResult } from '@jobpulse/validation';
 import { httpClient } from '@jobpulse/shared';
 import type { ATSAdapter } from '../adapter.interface.js';
 
+interface LeverCategories {
+  location?: string;
+  commitment?: string;
+  team?: string;
+  department?: string;
+  allLocations?: string[];
+  workplaceType?: string;
+}
+
 interface LeverPosting {
   id: string;
   text: string;
   createdAt: number;
   hostedUrl: string;
-  applyUrl: string;
-  categories?: {
-    location?: string;
-    commitment?: string;
-    team?: string;
-    department?: string;
-    allLocations?: string[];
-  };
+  applyUrl?: string;
+  categories?: LeverCategories;
   descriptionPlain?: string;
   description?: string;
   additionalPlain?: string;
+  additional?: string;
+  workplaceType?: string;
+  salaryRange?: {
+    min?: number;
+    max?: number;
+    currency?: string;
+    interval?: string;
+  };
 }
 
 export class LeverAdapter implements ATSAdapter {
   public readonly platformSlug = 'lever';
-  public readonly parserVersion = 'lever_v1';
+  public readonly parserVersion = 'lever_v2';
 
   public detect(url: string, html?: string): ATSDetectionResult {
     const urlPattern = /jobs\.lever\.co\/([^/?#]+)/i;
@@ -150,27 +161,59 @@ export class LeverAdapter implements ATSAdapter {
   public async parse(rawPayload: RawJobPayload): Promise<RawJob> {
     const data = rawPayload.payload as unknown as LeverPosting;
 
-    const rawLocations: string[] = [];
-    if (data.categories?.location) {
-      rawLocations.push(data.categories.location);
+    // Multi-location extraction
+    const locationSet = new Set<string>();
+    if (data.categories?.location && data.categories.location.trim()) {
+      locationSet.add(data.categories.location.trim());
     }
     if (Array.isArray(data.categories?.allLocations)) {
       for (const loc of data.categories.allLocations) {
-        if (loc) rawLocations.push(loc);
+        if (loc && loc.trim()) {
+          locationSet.add(loc.trim());
+        }
       }
     }
+    const rawLocations = Array.from(locationSet);
 
-    const description = `${data.descriptionPlain || ''}\n\n${data.additionalPlain || ''}`.trim();
+    // Text description extraction
+    let description = '';
+    if (data.descriptionPlain || data.additionalPlain) {
+      description = `${data.descriptionPlain || ''}\n\n${data.additionalPlain || ''}`.trim();
+    } else if (data.description) {
+      description = data.description.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    // Workplace type classification
+    let rawWorkplaceType: string | undefined = undefined;
+    const wp = (data.workplaceType || data.categories?.workplaceType || '').toLowerCase();
+    const searchContext = `${data.text || ''} ${rawLocations.join(' ')} ${wp}`.toLowerCase();
+
+    if (wp === 'remote' || searchContext.includes('remote') || searchContext.includes('anywhere')) {
+      rawWorkplaceType = 'remote';
+    } else if (wp === 'hybrid' || searchContext.includes('hybrid')) {
+      rawWorkplaceType = 'hybrid';
+    } else if (wp === 'onsite' || searchContext.includes('onsite') || searchContext.includes('on-site')) {
+      rawWorkplaceType = 'onsite';
+    }
+
+    // Salary parsing if present in Lever structured fields
+    let rawSalary: string | undefined = undefined;
+    if (data.salaryRange?.min && data.salaryRange?.max) {
+      const currency = data.salaryRange.currency || 'USD';
+      rawSalary = `$${data.salaryRange.min} - $${data.salaryRange.max} ${currency} / ${data.salaryRange.interval || 'year'}`;
+    }
 
     return {
       sourceId: rawPayload.sourceId,
       externalJobId: data.id,
       rawTitle: data.text || 'Untitled Role',
-      rawDescription: description,
+      rawDescription: description || 'No description provided.',
       rawDescriptionHtml: data.description || null,
       rawLocations,
+      rawSalary,
       rawPostedAt: data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString(),
       rawEmploymentType: data.categories?.commitment || undefined,
+      rawWorkplaceType,
       // INVARIANT: Never synthesize /apply suffix. Only use explicit data.applyUrl if provided by Lever API.
       rawApplyUrl: data.applyUrl || undefined,
       sourceJobUrl: data.hostedUrl || '',
