@@ -3,6 +3,7 @@ import { ScraperRunner } from '../src/engine/runner.js';
 import * as atsModule from '@jobpulse/ats';
 import { supabase } from '../src/db.js';
 import { IngestionPipeline } from '../src/engine/pipeline.js';
+import { JobLifecycleService } from '@jobpulse/domain';
 
 describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () => {
   beforeEach(() => {
@@ -45,7 +46,6 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
     } as any);
 
     const runner = new ScraperRunner();
-    // Stub updateSourceHealth and recordSourceTelemetry
     (runner as any).updateSourceHealth = vi.fn().mockResolvedValue(undefined);
     (runner as any).recordSourceTelemetry = vi.fn().mockResolvedValue(undefined);
 
@@ -90,7 +90,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
     );
   });
 
-  it('strictly skips lifecycle reconciliation when crawl times out or is aborted', async () => {
+  it('strictly skips lifecycle reconciliation when crawl times out', async () => {
     const mockAdapter = {
       platformSlug: 'greenhouse',
       parserVersion: '1.0.0',
@@ -110,6 +110,64 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
     expect(result.errorMessage).toContain('ETIMEDOUT');
 
     // Hard Invariant: reconcile_company_source_job_lifecycle must NOT be called on timeout
+    expect(rpcSpy).not.toHaveBeenCalledWith(
+      'reconcile_company_source_job_lifecycle',
+      expect.anything()
+    );
+  });
+
+  it('strictly skips lifecycle reconciliation when crawl is cancelled or aborted', async () => {
+    const mockAdapter = {
+      platformSlug: 'greenhouse',
+      parserVersion: '1.0.0',
+      discover: vi.fn().mockRejectedValue(new Error('AbortError: Scrape run was cancelled by operator')),
+    };
+
+    vi.spyOn(atsModule, 'getAdapterForSource').mockReturnValue(mockAdapter as any);
+    const rpcSpy = vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: null } as any);
+
+    const runner = new ScraperRunner();
+    (runner as any).updateSourceHealth = vi.fn().mockResolvedValue(undefined);
+    (runner as any).recordSourceTelemetry = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runner.processSource(sampleCompanySource as any, 'run_123');
+
+    expect(result.status).toBe('failed');
+    expect(result.errorMessage).toContain('AbortError');
+
+    // Hard Invariant: reconcile_company_source_job_lifecycle must NOT be called on cancellation
+    expect(rpcSpy).not.toHaveBeenCalledWith(
+      'reconcile_company_source_job_lifecycle',
+      expect.anything()
+    );
+  });
+
+  it('strictly skips lifecycle reconciliation when complete-crawl contract is not satisfied', async () => {
+    const mockAdapter = {
+      platformSlug: 'greenhouse',
+      parserVersion: '1.0.0',
+      discover: vi.fn().mockResolvedValue([{ externalJobId: 'job_1', title: 'Eng' }]),
+    };
+
+    vi.spyOn(atsModule, 'getAdapterForSource').mockReturnValue(mockAdapter as any);
+    vi.spyOn(IngestionPipeline, 'processCandidate').mockResolvedValue({
+      status: 'inserted',
+      jobId: 'job_1',
+      action: 'inserted',
+    } as any);
+
+    // Mock isEligibleForReconciliation to return false
+    vi.spyOn(JobLifecycleService, 'isEligibleForReconciliation').mockReturnValue(false);
+
+    const rpcSpy = vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: null } as any);
+
+    const runner = new ScraperRunner();
+    (runner as any).updateSourceHealth = vi.fn().mockResolvedValue(undefined);
+    (runner as any).recordSourceTelemetry = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runner.processSource(sampleCompanySource as any, 'run_123');
+
+    expect(result.status).toBe('succeeded');
     expect(rpcSpy).not.toHaveBeenCalledWith(
       'reconcile_company_source_job_lifecycle',
       expect.anything()

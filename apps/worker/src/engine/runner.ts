@@ -4,7 +4,7 @@ import type {
   CompanySourceConfig,
   ScrapeRunStatus,
 } from '@jobpulse/domain';
-import { SourceScheduler, SourceHealthEngine, JobLifecycleService } from '@jobpulse/domain';
+import { SourceScheduler, SourceHealthEngine, JobLifecycleService, CrawlExecutionResult } from '@jobpulse/domain';
 import { getAdapterForSource } from '@jobpulse/ats';
 import { logger } from '@jobpulse/shared';
 import { supabase } from '../db.js';
@@ -151,31 +151,43 @@ export class ScraperRunner {
 
       const durationMs = Date.now() - startSourceTime;
 
-      // Execute Job Lifecycle Reconciliation ONLY upon verified complete & successful crawl (P0)
-      const crawledExternalIds = candidates.map((c) => c.externalJobId).filter(Boolean);
-      try {
-        const { data: reconciliationResult, error: reconcileError } = await supabase.rpc(
-          'reconcile_company_source_job_lifecycle',
-          {
-            p_company_id: companySource.companyId,
-            p_crawled_external_ids: crawledExternalIds,
-            p_scrape_time: new Date().toISOString(),
-            p_consecutive_miss_threshold: JobLifecycleService.CONSECUTIVE_MISS_THRESHOLD,
-            p_max_staleness_days: JobLifecycleService.MAX_STALENESS_DAYS,
-          }
-        );
+      // HARD DATA-INTEGRITY INVARIANT (P0):
+      // A failed, timed-out, cancelled, or incomplete crawl can NEVER cause lifecycle reconciliation or job expiration.
+      const crawlResult: CrawlExecutionResult = {
+        status: 'completed',
+        isComplete: true,
+        crawledJobIds: candidates.map((c) => c.externalJobId).filter(Boolean),
+      };
 
-        if (reconcileError) {
-          logger.warn(`Job lifecycle reconciliation notice for ${companySource.sourceIdentifier}:`, {
-            error: reconcileError.message,
-          });
-        } else {
-          logger.info(`Job lifecycle reconciled for ${companySource.sourceIdentifier}:`, reconciliationResult);
-        }
-      } catch (lifecycleErr) {
-        logger.warn(`Lifecycle reconciliation exception for ${companySource.sourceIdentifier}:`, {
-          error: String(lifecycleErr),
+      if (!JobLifecycleService.isEligibleForReconciliation(crawlResult)) {
+        logger.warn(`Skipping lifecycle reconciliation for ${companySource.sourceIdentifier}: Crawl not eligible.`, {
+          crawlResult,
         });
+      } else {
+        try {
+          const { data: reconciliationResult, error: reconcileError } = await supabase.rpc(
+            'reconcile_company_source_job_lifecycle',
+            {
+              p_company_id: companySource.companyId,
+              p_crawled_external_ids: crawlResult.crawledJobIds,
+              p_scrape_time: new Date().toISOString(),
+              p_consecutive_miss_threshold: JobLifecycleService.CONSECUTIVE_MISS_THRESHOLD,
+              p_max_staleness_days: JobLifecycleService.MAX_STALENESS_DAYS,
+            }
+          );
+
+          if (reconcileError) {
+            logger.warn(`Job lifecycle reconciliation notice for ${companySource.sourceIdentifier}:`, {
+              error: reconcileError.message,
+            });
+          } else {
+            logger.info(`Job lifecycle reconciled for ${companySource.sourceIdentifier}:`, reconciliationResult);
+          }
+        } catch (lifecycleErr) {
+          logger.warn(`Lifecycle reconciliation exception for ${companySource.sourceIdentifier}:`, {
+            error: String(lifecycleErr),
+          });
+        }
       }
 
       await this.updateSourceHealth(companySource, true, null, discoveredCount);
