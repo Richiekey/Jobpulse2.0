@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { AlertMatchResult, JobAlert } from '@jobpulse/domain';
+import { AlertMatchResult, JobAlert, JobAlertMatchingService, JobAlertMatchCandidate } from '@jobpulse/domain';
 import { SSRFGuard } from '@jobpulse/validation';
 import { logger } from '@jobpulse/shared';
 import crypto from 'crypto';
@@ -24,7 +24,7 @@ export class AlertDispatcher {
   }
 
   /**
-   * Dispatches matched jobs to user alerts with database-level idempotency and bounded retries.
+   * Dispatches matched jobs to user alerts with database-level claim/delivered separation and bounded retries.
    */
   public async dispatchMatches(
     matches: AlertMatchResult[],
@@ -58,13 +58,14 @@ export class AlertDispatcher {
         }
       }
 
-      // 1. HARD IDEMPOTENCY INVARIANT (Database-level atomic claim)
-      // Atomically inserts into public.job_alert_delivered_jobs and returns only previously unclaimed IDs
+      // 1. HARD IDEMPOTENCY & LEASE CLAIM (status = 'claimed')
+      // Atomically claims undelivered jobs, re-claiming failed jobs and expired leases (> 10 mins)
       const { data: claimedIds, error: claimError } = await this.supabase.rpc(
         'claim_undelivered_alert_jobs',
         {
           p_alert_id: alert.id,
           p_job_ids: newMatchedJobIds,
+          p_lease_seconds: 600,
         }
       );
 
@@ -78,7 +79,7 @@ export class AlertDispatcher {
       const activeClaimedJobIds = Array.isArray(claimedIds) ? claimedIds : [];
 
       if (activeClaimedJobIds.length === 0) {
-        // All candidate jobs were already delivered by a concurrent worker or prior execution
+        // All candidate jobs were already delivered or actively locked by an in-flight worker
         report.totalDuplicatesSkipped++;
         continue;
       }
@@ -96,8 +97,8 @@ export class AlertDispatcher {
           await this.dispatchInApp(alert, eligibleJobs);
         }
 
-        // Record successful delivery atomically in PostgreSQL
-        await this.supabase.rpc('record_job_alert_delivery', {
+        // 2. CONFIRM DELIVERY: Record delivery ledger and mark jobs as 'delivered'
+        const { data: deliveryId } = await this.supabase.rpc('record_job_alert_delivery', {
           p_alert_id: alert.id,
           p_user_id: alert.userId,
           p_matched_job_ids: activeClaimedJobIds,
@@ -110,6 +111,12 @@ export class AlertDispatcher {
           },
         });
 
+        await this.supabase.rpc('mark_alert_jobs_delivered', {
+          p_alert_id: alert.id,
+          p_job_ids: activeClaimedJobIds,
+          p_delivery_id: deliveryId || null,
+        });
+
         report.totalDeliveriesSent++;
       } catch (err: any) {
         const errorMsg = err?.message || String(err);
@@ -118,7 +125,7 @@ export class AlertDispatcher {
         report.totalDeliveriesFailed++;
         report.errors.push(`Alert ${alert.id}: ${errorMsg}`);
 
-        // Record failed delivery attempt in audit log
+        // 3. FAILED DELIVERY: Record failed attempt and mark claimed jobs as 'failed' (eligible for retry)
         await this.supabase.rpc('record_job_alert_delivery', {
           p_alert_id: alert.id,
           p_user_id: alert.userId,
@@ -128,10 +135,104 @@ export class AlertDispatcher {
           p_error_message: errorMsg,
           p_metadata: { frequency: alert.frequency, job_count: eligibleJobs.length },
         });
+
+        await this.supabase.rpc('mark_alert_jobs_failed', {
+          p_alert_id: alert.id,
+          p_job_ids: activeClaimedJobIds,
+          p_error_message: errorMsg,
+        });
       }
     }
 
     return report;
+  }
+
+  /**
+   * Executes scheduled digest processing for daily or weekly alerts.
+   * Aggregates deferred matches from active jobs ingested within the window and dispatches digests.
+   */
+  public async runScheduledDigests(
+    frequency: 'daily' | 'weekly',
+    windowHours?: number
+  ): Promise<AlertDispatchReport> {
+    const hours = windowHours || (frequency === 'daily' ? 24 : 168);
+    const windowStart = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+    // 1. Fetch active alerts configured for this frequency
+    const { data: alerts, error: alertError } = await this.supabase
+      .from('job_alerts')
+      .select('*')
+      .eq('is_active', true)
+      .eq('frequency', frequency);
+
+    if (alertError || !alerts || alerts.length === 0) {
+      return {
+        totalAlertsProcessed: 0,
+        totalDeliveriesSent: 0,
+        totalDeliveriesFailed: 0,
+        totalDuplicatesSkipped: 0,
+        errors: [],
+      };
+    }
+
+    // 2. Fetch active jobs ingested within the frequency window
+    const { data: recentJobs, error: jobError } = await this.supabase
+      .from('jobs')
+      .select('id, title, company_id, location_raw, department, employment_type, workplace_type, description_text, canonical_url, posted_at, companies (name)')
+      .eq('status', 'active')
+      .gte('first_seen_at', windowStart)
+      .order('first_seen_at', { ascending: false })
+      .limit(500);
+
+    if (jobError || !recentJobs || recentJobs.length === 0) {
+      return {
+        totalAlertsProcessed: alerts.length,
+        totalDeliveriesSent: 0,
+        totalDeliveriesFailed: 0,
+        totalDuplicatesSkipped: 0,
+        errors: [],
+      };
+    }
+
+    const candidateJobs: JobAlertMatchCandidate[] = recentJobs.map((j: any) => ({
+      id: j.id,
+      title: j.title,
+      companyName: j.companies?.name || 'Company',
+      locationRaw: j.location_raw,
+      department: j.department,
+      employmentType: j.employment_type,
+      remoteType: j.workplace_type,
+      descriptionText: j.description_text,
+      url: j.canonical_url,
+    }));
+
+    const mappedAlerts: JobAlert[] = alerts.map((a: any) => ({
+      id: a.id,
+      userId: a.user_id,
+      title: a.title,
+      query: a.query,
+      location: a.location,
+      department: a.department,
+      employmentType: a.employment_type,
+      remoteType: a.remote_type,
+      frequency: a.frequency,
+      channel: a.channel,
+      webhookUrl: a.webhook_url,
+      isActive: a.is_active,
+      lastDispatchedAt: a.last_dispatched_at,
+      createdAt: a.created_at,
+      updatedAt: a.updated_at,
+    }));
+
+    // 3. Evaluate multi-criteria matches across candidate jobs
+    const matches = JobAlertMatchingService.evaluateAlerts(
+      candidateJobs,
+      mappedAlerts,
+      new Map() // Database claim RPC will handle atomic deduplication
+    );
+
+    // 4. Dispatch aggregated digest deliveries
+    return this.dispatchMatches(matches, true);
   }
 
   /**
@@ -210,7 +311,6 @@ export class AlertDispatcher {
         clearTimeout(timeoutId);
         lastError = err;
 
-        // Abort errors or network failures are retryable
         if (attempt >= this.maxRetries) {
           break;
         }
