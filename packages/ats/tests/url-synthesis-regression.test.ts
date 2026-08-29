@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { GreenhouseAdapter, LeverAdapter, AshbyAdapter, JobrightAdapter } from '../src/index.js';
+import { GreenhouseAdapter, LeverAdapter, AshbyAdapter } from '../src/index.js';
 import type { RawJobPayload } from '@jobpulse/domain';
 
 describe('Application URL Non-Fabrication Regression Tests (Section 7-10 Audit)', () => {
   const gh = new GreenhouseAdapter();
   const lever = new LeverAdapter();
   const ashby = new AshbyAdapter();
-  const jobright = new JobrightAdapter();
 
   it('Greenhouse: does NOT synthesize #app when only absolute_url is present', async () => {
     const rawPayload: RawJobPayload = {
@@ -29,7 +28,13 @@ describe('Application URL Non-Fabrication Regression Tests (Section 7-10 Audit)'
     expect(raw.rawApplyUrl).not.toContain('#app');
 
     const appUrl = await gh.resolveApplicationUrl(
-      { sourceId: raw.sourceId, externalJobId: raw.externalJobId, discoveryUrl: raw.discoveryUrl, sourceJobUrl: raw.sourceJobUrl },
+      {
+        sourceId: raw.sourceId,
+        externalJobId: raw.externalJobId,
+        discoveryUrl: raw.discoveryUrl,
+        sourceJobUrl: raw.sourceJobUrl,
+        companyIdentifier: 'stripe',
+      },
       raw
     );
     expect(appUrl).toBe('https://boards.greenhouse.io/stripe/jobs/12345');
@@ -55,7 +60,13 @@ describe('Application URL Non-Fabrication Regression Tests (Section 7-10 Audit)'
     expect(raw.rawApplyUrl).toBeUndefined(); // Missing in ATS -> undefined
 
     const appUrl = await lever.resolveApplicationUrl(
-      { sourceId: raw.sourceId, externalJobId: raw.externalJobId, discoveryUrl: raw.discoveryUrl, sourceJobUrl: raw.sourceJobUrl },
+      {
+        sourceId: raw.sourceId,
+        externalJobId: raw.externalJobId,
+        discoveryUrl: raw.discoveryUrl,
+        sourceJobUrl: raw.sourceJobUrl,
+        companyIdentifier: 'netflix',
+      },
       raw
     );
     // Fallback must be sourceJobUrl without synthetic /apply
@@ -82,7 +93,13 @@ describe('Application URL Non-Fabrication Regression Tests (Section 7-10 Audit)'
     expect(raw.rawApplyUrl).not.toContain('/application');
 
     const appUrl = await ashby.resolveApplicationUrl(
-      { sourceId: raw.sourceId, externalJobId: raw.externalJobId, discoveryUrl: raw.discoveryUrl, sourceJobUrl: raw.sourceJobUrl },
+      {
+        sourceId: raw.sourceId,
+        externalJobId: raw.externalJobId,
+        discoveryUrl: raw.discoveryUrl,
+        sourceJobUrl: raw.sourceJobUrl,
+        companyIdentifier: 'openai',
+      },
       raw
     );
     expect(appUrl).toBe('https://jobs.ashbyhq.com/openai/ash_888');
