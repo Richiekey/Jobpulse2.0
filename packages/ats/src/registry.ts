@@ -171,6 +171,20 @@ export class ATSAdapterRegistry {
   }
 
   /**
+   * Retrieves all registered ATS adapter instances.
+   */
+  public static getAllAdapters(): ATSAdapter[] {
+    return Array.from(this.adapters.values()).map((factory) => factory());
+  }
+
+  /**
+   * Retrieves all registered platform slugs.
+   */
+  public static getAllRegisteredSlugs(): string[] {
+    return Array.from(this.adapters.keys());
+  }
+
+  /**
    * Retrieves platform definition metadata for a given slug.
    */
   public static getDefinition(slug: string): ATSDefinition | null {

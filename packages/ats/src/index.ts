@@ -4,6 +4,8 @@ export * from './adapters/greenhouse.adapter.js';
 export * from './adapters/lever.adapter.js';
 export * from './adapters/ashby.adapter.js';
 export * from './adapters/jobright.adapter.js';
+export * from './discovery/ats-detector.js';
+export * from './discovery/source-validator.js';
 
 import type { ATSAdapter } from './adapter.interface.js';
 import { ATSAdapterRegistry } from './registry.js';

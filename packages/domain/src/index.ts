@@ -7,3 +7,5 @@ export * from './normalizer.js';
 export * from './deduplication.js';
 export * from './scheduler.js';
 export * from './health.js';
+export * from './onboarding.js';
+export * from './seed/catalog-seed.js';
