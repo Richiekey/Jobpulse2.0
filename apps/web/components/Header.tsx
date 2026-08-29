@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Briefcase, Bookmark, CheckSquare, Sparkles, RefreshCw } from 'lucide-react';
+import { Briefcase, Bookmark, CheckSquare, Sparkles, RefreshCw, ShieldCheck } from 'lucide-react';
 
 interface HeaderProps {
   activeTab: 'feed' | 'saved' | 'applications';
@@ -154,6 +154,20 @@ export const Header: React.FC<HeaderProps> = ({
               <span>{isScraping ? 'Syncing...' : 'Sync ATS'}</span>
             </button>
           )}
+
+          <a
+            href="/admin"
+            className="btn btn-secondary"
+            title="Open Admin Control Plane"
+            style={{
+              padding: '8px 12px',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              background: 'rgba(255, 255, 255, 0.05)',
+            }}
+          >
+            <ShieldCheck size={16} />
+            <span>Admin</span>
+          </a>
         </nav>
       </div>
     </header>
