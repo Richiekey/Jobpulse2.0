@@ -233,7 +233,7 @@ export const JobCard: React.FC<JobCardProps> = ({
           )}
 
           <a
-            href={job.apply_url}
+            href={`/api/jobs/${job.id}/apply`}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary"

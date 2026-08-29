@@ -11,7 +11,7 @@ const ApplicationSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const authResult = await AuthGuard.requireAuthenticatedUser();
     if ('errorResponse' in authResult) {
@@ -19,12 +19,21 @@ export async function GET() {
     }
 
     const { user, supabase } = authResult;
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
 
-    const { data: applications, error: queryError } = await supabase
+    let query = supabase
       .from('applications')
       .select('*')
-      .eq('user_id', user.id)
-      .order('applied_at', { ascending: false });
+      .eq('user_id', user.id);
+
+    if (status && status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    query = query.order('applied_at', { ascending: false });
+
+    const { data: applications, error: queryError } = await query;
 
     if (queryError) {
       return ApiResponse.error('Failed to retrieve applications.', queryError, 500);
@@ -60,16 +69,19 @@ export async function POST(request: NextRequest) {
 
     const { data, error: insertError } = await supabase
       .from('applications')
-      .upsert({
-        user_id: user.id,
-        job_id: jobId || null,
-        company_name: companyName,
-        job_title: jobTitle,
-        status,
-        notes: notes || null,
-        applied_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .upsert(
+        {
+          user_id: user.id,
+          job_id: jobId || null,
+          company_name: companyName,
+          job_title: jobTitle,
+          status,
+          notes: notes || null,
+          applied_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        jobId ? { onConflict: 'user_id, job_id' } : undefined
+      )
       .select('*')
       .single();
 
@@ -77,7 +89,7 @@ export async function POST(request: NextRequest) {
       return ApiResponse.error('Failed to record application.', insertError, 500);
     }
 
-    return ApiResponse.success(data);
+    return ApiResponse.success(data, undefined, { status: 201 });
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred.', err, 500);
   }

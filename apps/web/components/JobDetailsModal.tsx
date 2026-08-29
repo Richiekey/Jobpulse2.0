@@ -253,7 +253,7 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </div>
 
           <a
-            href={job.apply_url}
+            href={`/api/jobs/${job.id}/apply`}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary"
