@@ -22,4 +22,13 @@ describe('HttpClient SSRF Defense & Protocol Safety (M09.4, M13.4)', () => {
     await expect(httpClient.get('file:///etc/passwd')).rejects.toThrow('SSRF_REJECTED');
     await expect(httpClient.get('ftp://attacker.com/file')).rejects.toThrow('SSRF_REJECTED');
   });
+
+  it('assertSafeUrl throws on private/loopback/metadata URLs and passes on public HTTPS URLs', async () => {
+    const { assertSafeUrl } = await import('../src/index.js');
+    expect(() => assertSafeUrl('https://boards.greenhouse.io/stripe')).not.toThrow();
+    expect(() => assertSafeUrl('http://127.0.0.1:8000')).toThrow('SSRF_REJECTED');
+    expect(() => assertSafeUrl('http://localhost:3000')).toThrow('SSRF_REJECTED');
+    expect(() => assertSafeUrl('http://169.254.169.254/latest')).toThrow('SSRF_REJECTED');
+    expect(() => assertSafeUrl('http://0.0.0.0')).toThrow('SSRF_REJECTED');
+  });
 });

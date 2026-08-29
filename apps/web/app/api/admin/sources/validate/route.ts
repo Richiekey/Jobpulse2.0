@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { SourceValidator } from '@jobpulse/ats';
+import { assertSafeUrl } from '@jobpulse/shared';
 import { z } from 'zod';
 import type { CompanySourceConfig } from '@jobpulse/domain';
 
@@ -30,6 +31,15 @@ export async function POST(request: NextRequest) {
     }
 
     const { atsType, sourceIdentifier, sourceUrl } = parseResult.data;
+
+    // SSRF Defense: If sourceUrl is explicitly provided, validate it
+    if (sourceUrl) {
+      try {
+        assertSafeUrl(sourceUrl);
+      } catch (err: any) {
+        return ApiResponse.error(`SSRF Protection: Blocked target URL: ${err.message}`, undefined, 400);
+      }
+    }
 
     const mockConfig: CompanySourceConfig = {
       id: 'preflight_validation',

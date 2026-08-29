@@ -51,7 +51,7 @@ function isPrivateIPv4(ip: string): boolean {
   return false;
 }
 
-function assertSafeUrl(urlStr: string): void {
+export function assertSafeUrl(urlStr: string): void {
   const parsed = new URL(urlStr);
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(`SSRF_REJECTED: Unapproved protocol ${parsed.protocol}`);

@@ -62,14 +62,26 @@ export class AshbyAdapter implements ATSAdapter {
       };
     }
 
-    if (html && html.includes('jobs.ashbyhq.com')) {
+    if (html && (html.includes('jobs.ashbyhq.com') || html.includes('ashby-embed'))) {
+      const scriptEmbedMatch = html.match(/jobs\.ashbyhq\.com\/embed\/([^/"&'\s]+)/i) ||
+        html.match(/<script[^>]+jobs\.ashbyhq\.com\/([^/"&'\s]+)/i);
+      if (scriptEmbedMatch && scriptEmbedMatch[1]) {
+        return {
+          detected: true,
+          atsType: 'ashby',
+          boardIdentifier: scriptEmbedMatch[1].toLowerCase(),
+          confidence: 0.90,
+          sourceUrl: url,
+        };
+      }
+
       const inlineMatch = html.match(/jobs\.ashbyhq\.com\/([^/"&'\s]+)/i);
       if (inlineMatch && inlineMatch[1]) {
         return {
           detected: true,
           atsType: 'ashby',
           boardIdentifier: inlineMatch[1].toLowerCase(),
-          confidence: 0.85,
+          confidence: 0.70,
           sourceUrl: url,
         };
       }

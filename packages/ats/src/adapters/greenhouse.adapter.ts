@@ -68,15 +68,24 @@ export class GreenhouseAdapter implements ATSAdapter {
 
     // 2. Embedded HTML script detection
     if (html && (html.includes('greenhouse.io') || html.includes('grnh.se'))) {
-      const embedMatch =
-        html.match(/boards\.greenhouse\.io\/embed\/job_board(?:\.js)?\?for=([^"&'\s]+)/i) ||
-        html.match(/boards\.greenhouse\.io\/([^/"&'\s]+)/i);
-      if (embedMatch && embedMatch[1] && embedMatch[1].toLowerCase() !== 'embed') {
+      const scriptEmbedMatch = html.match(/boards\.greenhouse\.io\/embed\/job_board(?:\.js)?\?for=([^"&'\s]+)/i);
+      if (scriptEmbedMatch && scriptEmbedMatch[1] && scriptEmbedMatch[1].toLowerCase() !== 'embed') {
         return {
           detected: true,
           atsType: 'greenhouse',
-          boardIdentifier: embedMatch[1].toLowerCase(),
-          confidence: 0.85,
+          boardIdentifier: scriptEmbedMatch[1].toLowerCase(),
+          confidence: 0.90,
+          sourceUrl: url,
+        };
+      }
+
+      const genericMatch = html.match(/boards\.greenhouse\.io\/([^/"&'\s]+)/i);
+      if (genericMatch && genericMatch[1] && genericMatch[1].toLowerCase() !== 'embed') {
+        return {
+          detected: true,
+          atsType: 'greenhouse',
+          boardIdentifier: genericMatch[1].toLowerCase(),
+          confidence: 0.70,
           sourceUrl: url,
         };
       }

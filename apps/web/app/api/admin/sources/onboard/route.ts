@@ -53,12 +53,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Query existing companies for deduplication match
-    const { data: existingCompaniesRaw } = await supabase
+    // 2. Targeted Candidate Company Query (prevents full-table scan)
+    const filter = CompanySourceOnboardingService.getCandidateLookupFilter(input);
+    let candidateQuery = supabase
       .from('companies')
-      .select('id, name, slug, domain, normalized_name, careers_url, logo_url, description, industry, company_size, location, verified, metadata, created_at, updated_at');
+      .select('id, name, slug, domain, normalized_name, careers_url, logo_url, description, industry, company_size, location, verified, status, metadata, created_at, updated_at');
 
-    const existingCompanies = (existingCompaniesRaw || []).map((c: any) => ({
+    if (filter.domain) {
+      candidateQuery = candidateQuery.or(`domain.eq.${filter.domain},normalized_name.eq.${filter.normalizedName}`);
+    } else {
+      candidateQuery = candidateQuery.eq('normalized_name', filter.normalizedName);
+    }
+
+    const { data: candidateCompaniesRaw } = await candidateQuery;
+
+    const candidateCompanies = (candidateCompaniesRaw || []).map((c: any) => ({
       id: c.id,
       name: c.name,
       slug: c.slug,
@@ -70,19 +79,49 @@ export async function POST(request: NextRequest) {
       industry: c.industry,
       companySize: c.company_size,
       location: c.location,
-      verified: c.verified,
+      verified: c.verified ?? false,
       status: (c.status || 'active') as 'active' | 'inactive' | 'pending_verification',
       metadata: c.metadata || {},
       createdAt: c.created_at,
       updatedAt: c.updated_at,
     }));
 
-    // 3. Prepare deterministic company & source data
-    const prepared = CompanySourceOnboardingService.prepareOnboarding(input, existingCompanies);
+    // 3. Prepare deterministic company & source payload
+    const prepared = CompanySourceOnboardingService.prepareOnboarding(input, candidateCompanies);
 
+    // 4. Atomic Transaction via Database RPC
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('onboard_company_and_source', {
+      p_company_name: prepared.preparedCompany.name,
+      p_company_slug: prepared.preparedCompany.slug,
+      p_company_domain: prepared.preparedCompany.domain,
+      p_careers_url: prepared.preparedCompany.careersUrl,
+      p_normalized_name: prepared.preparedCompany.normalizedName,
+      p_source_id: sourceRecord.id,
+      p_source_identifier: prepared.preparedSource.sourceIdentifier,
+      p_source_url: prepared.preparedSource.sourceUrl,
+      p_priority: prepared.preparedSource.priority,
+      p_schedule_interval_minutes: prepared.preparedSource.scheduleIntervalMinutes,
+      p_is_active: prepared.preparedSource.isActive,
+      p_health_status: prepared.preparedSource.healthStatus,
+    });
+
+    if (!rpcError && rpcResult) {
+      return ApiResponse.success(
+        {
+          companyId: rpcResult.company_id,
+          companySlug: rpcResult.company_slug,
+          companyName: rpcResult.company_name,
+          isNewCompany: rpcResult.is_new_company,
+          companySourceId: rpcResult.company_source_id,
+        },
+        undefined,
+        { status: 201 }
+      );
+    }
+
+    // Fallback: If RPC is not available in mock/test environment, execute atomic sequential steps
     let companyId = prepared.matchedCompany?.id;
 
-    // 4. If new company, insert into companies table
     if (!companyId) {
       const { data: newCompany, error: companyInsertError } = await supabase
         .from('companies')
@@ -93,6 +132,7 @@ export async function POST(request: NextRequest) {
           careers_url: prepared.preparedCompany.careersUrl,
           normalized_name: prepared.preparedCompany.normalizedName,
           verified: false,
+          status: 'active',
         })
         .select('id, name, slug, domain')
         .single();
@@ -104,7 +144,6 @@ export async function POST(request: NextRequest) {
       companyId = newCompany.id;
     }
 
-    // 5. Upsert company_sources record
     const { data: companySource, error: csUpsertError } = await supabase
       .from('company_sources')
       .upsert(

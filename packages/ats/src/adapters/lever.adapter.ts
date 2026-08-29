@@ -60,14 +60,26 @@ export class LeverAdapter implements ATSAdapter {
       };
     }
 
-    if (html && html.includes('jobs.lever.co')) {
+    if (html && (html.includes('jobs.lever.co') || html.includes('lever-jobs-embed'))) {
+      const scriptEmbedMatch = html.match(/jobs\.lever\.co\/embed\/([^/"&'\s]+)/i) ||
+        html.match(/<script[^>]+jobs\.lever\.co\/([^/"&'\s]+)/i);
+      if (scriptEmbedMatch && scriptEmbedMatch[1]) {
+        return {
+          detected: true,
+          atsType: 'lever',
+          boardIdentifier: scriptEmbedMatch[1].toLowerCase(),
+          confidence: 0.90,
+          sourceUrl: url,
+        };
+      }
+
       const inlineMatch = html.match(/jobs\.lever\.co\/([^/"&'\s]+)/i);
       if (inlineMatch && inlineMatch[1]) {
         return {
           detected: true,
           atsType: 'lever',
           boardIdentifier: inlineMatch[1].toLowerCase(),
-          confidence: 0.85,
+          confidence: 0.70,
           sourceUrl: url,
         };
       }

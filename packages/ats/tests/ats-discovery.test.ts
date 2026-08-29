@@ -52,6 +52,46 @@ describe('ATS Discovery & Detection Engine (S12 & S13)', () => {
     expect(result.confidence).toBe(0.95);
   });
 
+  it('resolves competing matches deterministically based on confidence score', () => {
+    // HTML with embedded Greenhouse embed (0.85) AND an external link to Ashby (0.65)
+    const html = `
+      <html>
+        <body>
+          <script src="https://boards.greenhouse.io/embed/job_board.js?for=uber"></script>
+          <a href="https://jobs.ashbyhq.com/uber_engineering">Ashby link</a>
+        </body>
+      </html>
+    `;
+    const result = ATSDetector.detect('https://uber.com/careers', html);
+    expect(result.detected).toBe(true);
+    expect(result.atsType).toBe('greenhouse');
+    expect(result.boardIdentifier).toBe('uber');
+    expect(result.confidence).toBeGreaterThan(0.80);
+  });
+
+  it('direct board URL (0.99) wins deterministically over lower-confidence HTML matches (0.65)', () => {
+    const html = `<a href="https://jobs.lever.co/stripe">Old Lever link</a>`;
+    // Direct URL is Greenhouse (0.99)
+    const result = ATSDetector.detect('https://boards.greenhouse.io/stripe', html);
+    expect(result.detected).toBe(true);
+    expect(result.atsType).toBe('greenhouse');
+    expect(result.boardIdentifier).toBe('stripe');
+    expect(result.confidence).toBeGreaterThanOrEqual(0.95);
+  });
+
+  it('breaks ties between equal-confidence matches deterministically', () => {
+    // Both Greenhouse link and Lever link in HTML with equal confidence (0.65)
+    const html = `
+      <a href="https://jobs.lever.co/acme">Lever</a>
+      <a href="https://boards.greenhouse.io/acme">Greenhouse</a>
+    `;
+    const result = ATSDetector.detect('https://acme.com/careers', html);
+    expect(result.detected).toBe(true);
+    // Greenhouse comes before Lever alphabetically as tie-breaker
+    expect(result.atsType).toBe('greenhouse');
+    expect(result.boardIdentifier).toBe('acme');
+  });
+
   it('returns non-detected for unknown custom career sites without ATS signature', () => {
     const result = ATSDetector.detect('https://example.com/careers', '<div>Work with us</div>');
     expect(result.detected).toBe(false);

@@ -12,6 +12,7 @@ export interface Company {
   description?: string | null;
   industry?: string | null;
   companySize?: string | null;
+  verified?: boolean;
   status: CompanyStatus;
   metadata: Record<string, unknown>;
   createdAt: string;

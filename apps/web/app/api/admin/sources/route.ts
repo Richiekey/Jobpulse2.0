@@ -1,6 +1,13 @@
 import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
+import { z } from 'zod';
+
+const SourcesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1, 'Limit must be at least 1').max(100, 'Limit cannot exceed 100').default(50),
+  offset: z.coerce.number().int().min(0, 'Offset cannot be negative').default(0),
+  healthStatus: z.enum(['healthy', 'degraded', 'failing', 'disabled']).optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,8 +19,23 @@ export async function GET(request: NextRequest) {
     const { supabase } = authResult;
     const { searchParams } = new URL(request.url);
 
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
-    const healthStatus = searchParams.get('healthStatus');
+    const rawParams = {
+      limit: searchParams.get('limit') ?? undefined,
+      offset: searchParams.get('offset') ?? undefined,
+      healthStatus: searchParams.get('healthStatus') ?? undefined,
+    };
+
+    const parseResult = SourcesQuerySchema.safeParse(rawParams);
+
+    if (!parseResult.success) {
+      return ApiResponse.error(
+        `Invalid query parameters: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+        parseResult.error,
+        400
+      );
+    }
+
+    const { limit, offset, healthStatus } = parseResult.data;
 
     let query = supabase
       .from('company_sources')
@@ -50,7 +72,7 @@ export async function GET(request: NextRequest) {
       `)
       .order('priority', { ascending: true })
       .order('last_checked_at', { ascending: true, nullsFirst: true })
-      .limit(limit);
+      .range(offset, offset + limit - 1);
 
     if (healthStatus) {
       query = query.eq('health_status', healthStatus);
@@ -64,6 +86,8 @@ export async function GET(request: NextRequest) {
 
     return ApiResponse.success({
       count: (sources || []).length,
+      limit,
+      offset,
       sources: sources || [],
     });
   } catch (err) {
