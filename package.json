@@ -1,0 +1,30 @@
+{
+  "name": "jobpulse",
+  "version": "2.0.0",
+  "private": true,
+  "description": "JobPulse 2.0 — Production-grade job aggregation, normalization, and discovery engine",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --recursive run build",
+    "test": "pnpm --recursive run test",
+    "lint": "pnpm --recursive run lint",
+    "typecheck": "pnpm --recursive run typecheck",
+    "clean": "pnpm --recursive run clean",
+    "worker:dev": "pnpm --filter @jobpulse/worker dev",
+    "worker:start": "pnpm --filter @jobpulse/worker start",
+    "web:dev": "pnpm --filter @jobpulse/web dev",
+    "web:build": "pnpm --filter @jobpulse/web build",
+    "web:start": "pnpm --filter @jobpulse/web start",
+    "db:types": "pnpm --filter @jobpulse/domain generate:types"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "prettier": "^3.5.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
+  }
+}
