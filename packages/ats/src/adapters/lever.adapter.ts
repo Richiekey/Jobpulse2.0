@@ -4,6 +4,8 @@ import type {
   RawJob,
   NormalizedJob,
   CompanySourceConfig,
+  SourceValidationResult,
+  ATSDetectionResult,
 } from '@jobpulse/domain';
 import { Normalizer, DeduplicationEngine } from '@jobpulse/domain';
 import { URLResolver } from '@jobpulse/url-resolution';
@@ -32,6 +34,84 @@ interface LeverPosting {
 export class LeverAdapter implements ATSAdapter {
   public readonly platformSlug = 'lever';
   public readonly parserVersion = 'lever_v1';
+
+  public detect(url: string, html?: string): ATSDetectionResult {
+    const urlPattern = /jobs\.lever\.co\/([^/?#]+)/i;
+    const match = url.match(urlPattern);
+
+    if (match && match[1]) {
+      return {
+        detected: true,
+        atsType: 'lever',
+        boardIdentifier: match[1].toLowerCase(),
+        confidence: 0.99,
+        sourceUrl: url,
+      };
+    }
+
+    if (html && html.includes('jobs.lever.co')) {
+      const inlineMatch = html.match(/jobs\.lever\.co\/([^/"&'\s]+)/i);
+      if (inlineMatch && inlineMatch[1]) {
+        return {
+          detected: true,
+          atsType: 'lever',
+          boardIdentifier: inlineMatch[1].toLowerCase(),
+          confidence: 0.85,
+          sourceUrl: url,
+        };
+      }
+    }
+
+    return {
+      detected: false,
+      atsType: null,
+      boardIdentifier: null,
+      confidence: 0,
+      sourceUrl: url,
+    };
+  }
+
+  public async validateSource(config: CompanySourceConfig): Promise<SourceValidationResult> {
+    const start = Date.now();
+    const site = config.sourceIdentifier;
+    const url = `https://api.lever.co/v0/postings/${site}?mode=json&limit=5`;
+
+    try {
+      const response = await httpClient.get<LeverPosting[]>(url, { timeoutMs: 10000 });
+      const durationMs = Date.now() - start;
+
+      if (response.status === 200 && Array.isArray(response.data)) {
+        return {
+          isValid: true,
+          atsType: 'lever',
+          boardIdentifier: site,
+          jobsDiscoveredCount: response.data.length,
+          sampleJobTitles: response.data.slice(0, 3).map((j) => j.text),
+          durationMs,
+        };
+      }
+
+      return {
+        isValid: false,
+        atsType: 'lever',
+        boardIdentifier: site,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: `Lever returned HTTP ${response.status}`,
+        durationMs,
+      };
+    } catch (err: any) {
+      return {
+        isValid: false,
+        atsType: 'lever',
+        boardIdentifier: site,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: err.message || 'Validation request failed',
+        durationMs: Date.now() - start,
+      };
+    }
+  }
 
   public async discover(companySource: CompanySourceConfig): Promise<JobCandidate[]> {
     const site = companySource.sourceIdentifier;
@@ -129,5 +209,11 @@ export class LeverAdapter implements ATSAdapter {
 
   public validate(job: NormalizedJob): JobValidationResult {
     return JobValidator.validate(job);
+  }
+
+  public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
+    if (raw.rawApplyUrl) return raw.rawApplyUrl;
+    if (raw.sourceJobUrl) return `${raw.sourceJobUrl}/apply`;
+    return candidate.sourceJobUrl || '';
   }
 }

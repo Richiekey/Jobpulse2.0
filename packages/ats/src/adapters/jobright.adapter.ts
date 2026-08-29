@@ -4,6 +4,8 @@ import type {
   RawJob,
   NormalizedJob,
   CompanySourceConfig,
+  SourceValidationResult,
+  ATSDetectionResult,
 } from '@jobpulse/domain';
 import { Normalizer, DeduplicationEngine } from '@jobpulse/domain';
 import { URLResolver, type UrlCandidate } from '@jobpulse/url-resolution';
@@ -34,6 +36,70 @@ interface JobrightListing {
 export class JobrightAdapter implements ATSAdapter {
   public readonly platformSlug = 'jobright';
   public readonly parserVersion = 'jobright_v1';
+
+  public detect(url: string): ATSDetectionResult {
+    const urlPattern = /jobright\.ai\/jobs\/([a-zA-Z0-9_-]+)/i;
+    const match = url.match(urlPattern);
+
+    if (match && match[1]) {
+      return {
+        detected: true,
+        atsType: 'jobright',
+        boardIdentifier: match[1],
+        confidence: 0.95,
+        sourceUrl: url,
+      };
+    }
+
+    return {
+      detected: false,
+      atsType: null,
+      boardIdentifier: null,
+      confidence: 0,
+      sourceUrl: url,
+    };
+  }
+
+  public async validateSource(config: CompanySourceConfig): Promise<SourceValidationResult> {
+    const start = Date.now();
+    const url = config.sourceUrl || `https://jobright.ai/api/jobs/company/${config.sourceIdentifier}`;
+
+    try {
+      const response = await httpClient.get<{ jobs?: JobrightListing[] }>(url, { timeoutMs: 10000 });
+      const durationMs = Date.now() - start;
+
+      if (response.status === 200 && response.data?.jobs && Array.isArray(response.data.jobs)) {
+        return {
+          isValid: true,
+          atsType: 'jobright',
+          boardIdentifier: config.sourceIdentifier,
+          jobsDiscoveredCount: response.data.jobs.length,
+          sampleJobTitles: response.data.jobs.slice(0, 3).map((j) => j.title),
+          durationMs,
+        };
+      }
+
+      return {
+        isValid: false,
+        atsType: 'jobright',
+        boardIdentifier: config.sourceIdentifier,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: `Jobright returned HTTP ${response.status}`,
+        durationMs,
+      };
+    } catch (err: any) {
+      return {
+        isValid: false,
+        atsType: 'jobright',
+        boardIdentifier: config.sourceIdentifier,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: err.message || 'Validation request failed',
+        durationMs: Date.now() - start,
+      };
+    }
+  }
 
   public async discover(companySource: CompanySourceConfig): Promise<JobCandidate[]> {
     const url = companySource.sourceUrl || `https://jobright.ai/api/jobs/company/${companySource.sourceIdentifier}`;
@@ -147,7 +213,18 @@ export class JobrightAdapter implements ATSAdapter {
     return Normalizer.normalize(raw, resolvedUrls, payloadHash);
   }
 
-  public validate(normalized: NormalizedJob): JobValidationResult {
-    return JobValidator.validate(normalized);
+  public validate(job: NormalizedJob): JobValidationResult {
+    return JobValidator.validate(job);
+  }
+
+  public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
+    const meta = raw.sourceMetadata || {};
+    if (typeof meta['original_apply_url'] === 'string' && meta['original_apply_url'].trim()) {
+      return meta['original_apply_url'].trim();
+    }
+    if (typeof meta['ats_url'] === 'string' && meta['ats_url'].trim()) {
+      return meta['ats_url'].trim();
+    }
+    return raw.sourceJobUrl || candidate.sourceJobUrl || '';
   }
 }

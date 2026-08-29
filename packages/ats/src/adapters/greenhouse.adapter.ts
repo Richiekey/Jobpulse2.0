@@ -4,6 +4,8 @@ import type {
   RawJob,
   NormalizedJob,
   CompanySourceConfig,
+  SourceValidationResult,
+  ATSDetectionResult,
 } from '@jobpulse/domain';
 import { Normalizer, DeduplicationEngine } from '@jobpulse/domain';
 import { URLResolver } from '@jobpulse/url-resolution';
@@ -29,6 +31,87 @@ interface GreenhouseBoardResponse {
 export class GreenhouseAdapter implements ATSAdapter {
   public readonly platformSlug = 'greenhouse';
   public readonly parserVersion = 'greenhouse_v1';
+
+  public detect(url: string, html?: string): ATSDetectionResult {
+    // 1. Direct URL regex
+    const urlPattern = /(?:boards|job-boards)\.greenhouse\.io\/(?:embed\/job_board(?:\.js)?\?for=)?([^/?#&\s]+)/i;
+    const match = url.match(urlPattern);
+
+    if (match && match[1] && match[1].toLowerCase() !== 'embed') {
+      return {
+        detected: true,
+        atsType: 'greenhouse',
+        boardIdentifier: match[1].toLowerCase(),
+        confidence: 0.99,
+        sourceUrl: url,
+      };
+    }
+
+    // 2. Embedded HTML script regex
+    if (html && (html.includes('greenhouse.io') || html.includes('grnh.se'))) {
+      const embedMatch = html.match(/boards\.greenhouse\.io\/embed\/job_board(?:\.js)?\?for=([^"&'\s]+)/i) ||
+                         html.match(/boards\.greenhouse\.io\/([^/"&'\s]+)/i);
+      if (embedMatch && embedMatch[1] && embedMatch[1].toLowerCase() !== 'embed') {
+        return {
+          detected: true,
+          atsType: 'greenhouse',
+          boardIdentifier: embedMatch[1].toLowerCase(),
+          confidence: 0.85,
+          sourceUrl: url,
+        };
+      }
+    }
+
+    return {
+      detected: false,
+      atsType: null,
+      boardIdentifier: null,
+      confidence: 0,
+      sourceUrl: url,
+    };
+  }
+
+  public async validateSource(config: CompanySourceConfig): Promise<SourceValidationResult> {
+    const start = Date.now();
+    const boardToken = config.sourceIdentifier;
+    const url = `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=false`;
+
+    try {
+      const response = await httpClient.get<GreenhouseBoardResponse>(url, { timeoutMs: 10000 });
+      const durationMs = Date.now() - start;
+
+      if (response.status === 200 && response.data && Array.isArray(response.data.jobs)) {
+        return {
+          isValid: true,
+          atsType: 'greenhouse',
+          boardIdentifier: boardToken,
+          jobsDiscoveredCount: response.data.jobs.length,
+          sampleJobTitles: response.data.jobs.slice(0, 3).map((j) => j.title),
+          durationMs,
+        };
+      }
+
+      return {
+        isValid: false,
+        atsType: 'greenhouse',
+        boardIdentifier: boardToken,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: `Greenhouse returned HTTP ${response.status}`,
+        durationMs,
+      };
+    } catch (err: any) {
+      return {
+        isValid: false,
+        atsType: 'greenhouse',
+        boardIdentifier: boardToken,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: err.message || 'Validation request failed',
+        durationMs: Date.now() - start,
+      };
+    }
+  }
 
   public async discover(companySource: CompanySourceConfig): Promise<JobCandidate[]> {
     const boardToken = companySource.sourceIdentifier;
@@ -77,7 +160,6 @@ export class GreenhouseAdapter implements ATSAdapter {
       }
     }
 
-    // Strip HTML tags for clean text description
     const rawHtml = data.content || '';
     const rawText = rawHtml
       .replace(/<[^>]*>?/gm, ' ')
@@ -131,5 +213,11 @@ export class GreenhouseAdapter implements ATSAdapter {
 
   public validate(job: NormalizedJob): JobValidationResult {
     return JobValidator.validate(job);
+  }
+
+  public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
+    if (raw.rawApplyUrl) return raw.rawApplyUrl;
+    if (raw.sourceJobUrl) return `${raw.sourceJobUrl}#app`;
+    return candidate.sourceJobUrl || '';
   }
 }

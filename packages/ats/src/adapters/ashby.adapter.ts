@@ -4,6 +4,8 @@ import type {
   RawJob,
   NormalizedJob,
   CompanySourceConfig,
+  SourceValidationResult,
+  ATSDetectionResult,
 } from '@jobpulse/domain';
 import { Normalizer, DeduplicationEngine } from '@jobpulse/domain';
 import { URLResolver } from '@jobpulse/url-resolution';
@@ -31,6 +33,84 @@ interface AshbyBoardResponse {
 export class AshbyAdapter implements ATSAdapter {
   public readonly platformSlug = 'ashby';
   public readonly parserVersion = 'ashby_v1';
+
+  public detect(url: string, html?: string): ATSDetectionResult {
+    const urlPattern = /jobs\.ashbyhq\.com\/([^/?#]+)/i;
+    const match = url.match(urlPattern);
+
+    if (match && match[1]) {
+      return {
+        detected: true,
+        atsType: 'ashby',
+        boardIdentifier: match[1].toLowerCase(),
+        confidence: 0.99,
+        sourceUrl: url,
+      };
+    }
+
+    if (html && html.includes('jobs.ashbyhq.com')) {
+      const inlineMatch = html.match(/jobs\.ashbyhq\.com\/([^/"&'\s]+)/i);
+      if (inlineMatch && inlineMatch[1]) {
+        return {
+          detected: true,
+          atsType: 'ashby',
+          boardIdentifier: inlineMatch[1].toLowerCase(),
+          confidence: 0.85,
+          sourceUrl: url,
+        };
+      }
+    }
+
+    return {
+      detected: false,
+      atsType: null,
+      boardIdentifier: null,
+      confidence: 0,
+      sourceUrl: url,
+    };
+  }
+
+  public async validateSource(config: CompanySourceConfig): Promise<SourceValidationResult> {
+    const start = Date.now();
+    const jobBoardName = config.sourceIdentifier;
+    const url = `https://api.ashbyhq.com/posting-api/job-board/${jobBoardName}`;
+
+    try {
+      const response = await httpClient.get<AshbyBoardResponse>(url, { timeoutMs: 10000 });
+      const durationMs = Date.now() - start;
+
+      if (response.status === 200 && response.data && Array.isArray(response.data.jobs)) {
+        return {
+          isValid: true,
+          atsType: 'ashby',
+          boardIdentifier: jobBoardName,
+          jobsDiscoveredCount: response.data.jobs.length,
+          sampleJobTitles: response.data.jobs.slice(0, 3).map((j) => j.title),
+          durationMs,
+        };
+      }
+
+      return {
+        isValid: false,
+        atsType: 'ashby',
+        boardIdentifier: jobBoardName,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: `Ashby returned HTTP ${response.status}`,
+        durationMs,
+      };
+    } catch (err: any) {
+      return {
+        isValid: false,
+        atsType: 'ashby',
+        boardIdentifier: jobBoardName,
+        jobsDiscoveredCount: 0,
+        sampleJobTitles: [],
+        error: err.message || 'Validation request failed',
+        durationMs: Date.now() - start,
+      };
+    }
+  }
 
   public async discover(companySource: CompanySourceConfig): Promise<JobCandidate[]> {
     const jobBoardName = companySource.sourceIdentifier;
@@ -126,5 +206,11 @@ export class AshbyAdapter implements ATSAdapter {
 
   public validate(job: NormalizedJob): JobValidationResult {
     return JobValidator.validate(job);
+  }
+
+  public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
+    if (raw.rawApplyUrl) return raw.rawApplyUrl;
+    if (raw.sourceJobUrl) return `${raw.sourceJobUrl}/application`;
+    return candidate.sourceJobUrl || '';
   }
 }

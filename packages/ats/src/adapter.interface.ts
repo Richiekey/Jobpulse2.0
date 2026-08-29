@@ -4,6 +4,8 @@ import type {
   RawJob,
   NormalizedJob,
   CompanySourceConfig,
+  SourceValidationResult,
+  ATSDetectionResult,
 } from '@jobpulse/domain';
 import type { JobValidationResult } from '@jobpulse/validation';
 
@@ -12,9 +14,19 @@ export interface ATSAdapter {
   readonly parserVersion: string;
 
   /**
-   * Discovers job candidates for a given company configuration.
+   * Evaluates whether a given URL or HTML content matches this ATS platform.
    */
-  discover(companySource: CompanySourceConfig): Promise<JobCandidate[]>;
+  detect(url: string, html?: string): ATSDetectionResult;
+
+  /**
+   * Validates connectivity and discovering capabilities for a given company source prior to activation.
+   */
+  validateSource(config: CompanySourceConfig): Promise<SourceValidationResult>;
+
+  /**
+   * Discovers job candidates for a given company source configuration.
+   */
+  discover(config: CompanySourceConfig): Promise<JobCandidate[]>;
 
   /**
    * Fetches the raw job payload for a specific candidate.
@@ -27,12 +39,17 @@ export interface ATSAdapter {
   parse(rawPayload: RawJobPayload): Promise<RawJob>;
 
   /**
-   * Normalizes the RawJob into a canonical NormalizedJob.
+   * Normalizes the RawJob into a canonical NormalizedJob with resolved URLs and payload hash.
    */
   normalize(rawJob: RawJob, payloadHash: string): Promise<NormalizedJob>;
 
   /**
-   * Validates the NormalizedJob against data quality invariants.
+   * Validates a normalized job against data quality invariants.
    */
   validate(job: NormalizedJob): JobValidationResult;
+
+  /**
+   * Resolves the original application destination URL from candidate and raw job metadata.
+   */
+  resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string>;
 }
