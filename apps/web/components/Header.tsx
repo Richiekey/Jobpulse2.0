@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Briefcase, Bookmark, CheckSquare, Sparkles, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Briefcase, Bookmark, CheckSquare, Sparkles, RefreshCw, ShieldCheck, Bell } from 'lucide-react';
 
 interface HeaderProps {
-  activeTab: 'feed' | 'saved' | 'applications';
-  onTabChange: (tab: 'feed' | 'saved' | 'applications') => void;
+  activeTab: 'feed' | 'saved' | 'applications' | 'alerts';
+  onTabChange: (tab: 'feed' | 'saved' | 'applications' | 'alerts') => void;
   savedCount: number;
   applicationCount: number;
   onTriggerScrape?: () => void;
@@ -135,6 +135,15 @@ export const Header: React.FC<HeaderProps> = ({
                 {applicationCount}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => onTabChange('alerts')}
+            className={`btn ${activeTab === 'alerts' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 16px' }}
+          >
+            <Bell size={16} />
+            <span>Alerts</span>
           </button>
 
           {onTriggerScrape && (

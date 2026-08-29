@@ -7,10 +7,13 @@ import { SearchFilters } from '@/components/SearchFilters';
 import { JobCard } from '@/components/JobCard';
 import { JobDetailsModal } from '@/components/JobDetailsModal';
 import { ApplicationTrackerModal } from '@/components/ApplicationTrackerModal';
-import { Sparkles, Bookmark, CheckSquare, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { JobAlertModal } from '@/components/alerts/JobAlertModal';
+import { JobAlertManager } from '@/components/alerts/JobAlertManager';
+import { Sparkles, Bookmark, CheckSquare, Loader2, AlertCircle, RefreshCw, Bell } from 'lucide-react';
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
   const [savedJobs, setSavedJobs] = useState<any[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
@@ -293,14 +296,33 @@ export default function HomePage() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 marginBottom: '16px',
+                flexWrap: 'wrap',
+                gap: '12px',
               }}
             >
               <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>
                 {searchQuery ? `Search results for "${searchQuery}"` : 'Fresh Job Openings'}
               </h2>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Showing {jobs.length} postings
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Showing {jobs.length} postings
+                </span>
+                <button
+                  onClick={() => setIsAlertModalOpen(true)}
+                  className="btn btn-secondary"
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.8rem',
+                    borderColor: 'rgba(99, 102, 241, 0.4)',
+                    background: 'rgba(99, 102, 241, 0.1)',
+                    color: '#a5b4fc',
+                  }}
+                  title="Create automated alert for this search criteria"
+                >
+                  <Bell size={14} />
+                  <span>Create Alert</span>
+                </button>
+              </div>
             </div>
 
             {isLoading ? (
@@ -512,6 +534,13 @@ export default function HomePage() {
             )}
           </div>
         )}
+
+        {/* TAB 4: JOB ALERTS */}
+        {activeTab === 'alerts' && (
+          <div style={{ marginTop: '24px' }}>
+            <JobAlertManager />
+          </div>
+        )}
       </main>
 
       {/* MODALS */}
@@ -535,6 +564,17 @@ export default function HomePage() {
           onSubmit={handleSaveApplication}
         />
       )}
+
+      <JobAlertModal
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+        initialCriteria={{
+          query: searchQuery,
+          remoteType: workplace === 'all' ? undefined : workplace,
+          employmentType: employment === 'all' ? undefined : employment,
+        }}
+      />
     </div>
   );
 }
+
