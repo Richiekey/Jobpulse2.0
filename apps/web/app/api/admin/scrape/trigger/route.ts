@@ -8,6 +8,13 @@ const ScrapeTriggerSchema = z.object({
   sourceId: z.string().uuid().optional(),
 });
 
+/**
+ * POST /api/admin/scrape/trigger
+ * 
+ * Atomically schedules a scrape run for a target company source or global crawl.
+ * HARD INVARIANT (P0): Uses PostgreSQL `schedule_admin_scrape_run` RPC with `pg_advisory_xact_lock`
+ * to guarantee true atomic concurrency serialization and eliminate all TOCTOU race conditions.
+ */
 export async function POST(request: NextRequest) {
   try {
     // 1. Authorize Admin
@@ -32,96 +39,47 @@ export async function POST(request: NextRequest) {
 
     const { companyIdentifier, sourceId } = parseResult.data;
 
-    // 3. Verify target source existence & active state if sourceId is provided
-    if (sourceId) {
-      const { data: source, error: sourceError } = await supabase
-        .from('company_sources')
-        .select('id, is_active, source_identifier')
-        .eq('id', sourceId)
-        .single();
+    // 3. Atomically schedule scrape run via PostgreSQL RPC with transactional advisory locking
+    const { data: result, error: rpcError } = await supabase.rpc('schedule_admin_scrape_run', {
+      p_admin_id: profile.id,
+      p_company_identifier: companyIdentifier || 'all',
+      p_source_id: sourceId || null,
+      p_ttl_seconds: 900,
+    });
 
-      if (sourceError || !source) {
-        return ApiResponse.error(
-          `Company source with ID "${sourceId}" was not found.`,
-          sourceError,
-          404
-        );
-      }
-
-      if (!source.is_active) {
-        return ApiResponse.error(
-          `Company source "${source.source_identifier}" is disabled and cannot be crawled. Enable it first in the source manager.`,
-          { sourceId, isActive: false },
-          400
-        );
-      }
-    }
-
-    // 4. Concurrency Safety: Check if an active scrape run is already in progress
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    let existingQuery = supabase
-      .from('scrape_runs')
-      .select('id, started_at, status')
-      .in('status', ['pending', 'running'])
-      .gte('started_at', fifteenMinutesAgo);
-
-    if (sourceId) {
-      existingQuery = existingQuery.contains('metadata', { source_id: sourceId });
-    } else if (companyIdentifier) {
-      existingQuery = existingQuery.contains('metadata', { company_identifier: companyIdentifier });
-    } else {
-      existingQuery = existingQuery.contains('metadata', { company_identifier: 'all' });
-    }
-
-    const { data: existingRuns } = await existingQuery.limit(1);
-
-    if (existingRuns && existingRuns.length > 0) {
+    if (rpcError || !result) {
       return ApiResponse.error(
-        `A crawl run is already in progress or queued for this target (Run ID: ${existingRuns[0].id}). Please wait for it to complete.`,
-        { existingRunId: existingRuns[0].id, status: existingRuns[0].status },
-        409
-      );
-    }
-
-    // 5. Create durable scrape_runs record with status 'pending'
-    const { data: scrapeRun, error: insertError } = await supabase
-      .from('scrape_runs')
-      .insert({
-        started_at: new Date().toISOString(),
-        status: 'pending',
-        companies_attempted: 0,
-        companies_succeeded: 0,
-        companies_failed: 0,
-        jobs_discovered: 0,
-        jobs_inserted: 0,
-        jobs_updated: 0,
-        jobs_rejected: 0,
-        jobs_failed: 0,
-        metadata: {
-          triggered_by_admin: profile.id,
-          company_identifier: companyIdentifier || 'all',
-          source_id: sourceId || null,
-        },
-      })
-      .select('id, started_at, status')
-      .single();
-
-    if (insertError || !scrapeRun) {
-      return ApiResponse.error(
-        'Failed to schedule scrape run in database.',
-        insertError,
+        'Failed to execute atomic scrape scheduling RPC in database.',
+        rpcError,
         500
       );
+    }
+
+    if (!result.success) {
+      if (result.conflict) {
+        return ApiResponse.error(
+          result.message || 'A crawl run is already in progress or queued for this target.',
+          { existingRunId: result.existing_run_id, status: result.existing_status },
+          409
+        );
+      }
+      if (result.error_type === 'NOT_FOUND') {
+        return ApiResponse.error(result.message, undefined, 404);
+      }
+      if (result.error_type === 'DISABLED') {
+        return ApiResponse.error(result.message, { sourceId, isActive: false }, 400);
+      }
+      return ApiResponse.error(result.message || 'Could not schedule scrape run.', undefined, 400);
     }
 
     return ApiResponse.success(
       {
         message: 'Scrape run successfully scheduled and queued for execution.',
-        runId: scrapeRun.id,
-        status: scrapeRun.status,
-        companyIdentifier: companyIdentifier || 'all',
-        sourceId: sourceId || null,
-        scheduledAt: scrapeRun.started_at,
+        runId: result.run_id,
+        status: result.status,
+        companyIdentifier: result.company_identifier,
+        sourceId: result.source_id,
+        scheduledAt: result.scheduled_at,
       },
       undefined,
       { status: 202 }
