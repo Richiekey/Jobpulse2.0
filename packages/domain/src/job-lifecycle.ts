@@ -16,7 +16,22 @@ export interface JobStalenessEvaluationResult {
   reason?: string;
 }
 
+export interface CrawlExecutionResult {
+  status: 'completed' | 'failed' | 'partial' | 'timeout' | 'cancelled';
+  isComplete: boolean;
+  crawledJobIds: string[];
+}
+
 export class JobLifecycleService {
+  /**
+   * Enforces the Complete-Crawl Contract (P0/P1).
+   * Verifies if a crawl execution result is eligible for lifecycle reconciliation.
+   * Hard Invariant: Failed, partial, timeout, or cancelled crawls MUST NEVER trigger reconciliation.
+   */
+  public static isEligibleForReconciliation(crawlResult: CrawlExecutionResult): boolean {
+    return crawlResult.status === 'completed' && crawlResult.isComplete === true;
+  }
+
   /**
    * Minimum number of consecutive successful scrapes a job must be absent from
    * before transitioning from 'active' to 'expired'.
@@ -46,9 +61,14 @@ export class JobLifecycleService {
       };
     }
 
-    const lastSeen = new Date(input.lastSeenAt);
-    const diffMs = scrapeCompletedAt.getTime() - lastSeen.getTime();
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    // Validate and sanitize timestamp edge cases (P1)
+    let lastSeen: Date | null = null;
+    if (input.lastSeenAt) {
+      const parsed = new Date(input.lastSeenAt);
+      if (!isNaN(parsed.getTime())) {
+        lastSeen = parsed;
+      }
+    }
 
     // Rule 1: Exceeded consecutive miss threshold
     if (input.consecutiveMisses >= this.CONSECUTIVE_MISS_THRESHOLD) {
@@ -61,15 +81,21 @@ export class JobLifecycleService {
       };
     }
 
-    // Rule 2: Exceeded absolute staleness window
-    if (diffDays >= this.MAX_STALENESS_DAYS) {
-      return {
-        jobId: input.jobId,
-        shouldExpire: true,
-        newStatus: 'expired',
-        consecutiveMisses: input.consecutiveMisses,
-        reason: `Last seen ${Math.floor(diffDays)} days ago (exceeds ${this.MAX_STALENESS_DAYS} day max window).`,
-      };
+    // Rule 2: Exceeded absolute staleness window (only if a valid lastSeen timestamp exists)
+    if (lastSeen) {
+      const diffMs = scrapeCompletedAt.getTime() - lastSeen.getTime();
+      // Handle future timestamps / clock skew safely by clamping age to 0
+      const diffDays = diffMs > 0 ? diffMs / (1000 * 60 * 60 * 24) : 0;
+
+      if (diffDays >= this.MAX_STALENESS_DAYS) {
+        return {
+          jobId: input.jobId,
+          shouldExpire: true,
+          newStatus: 'expired',
+          consecutiveMisses: input.consecutiveMisses,
+          reason: `Last seen ${Math.floor(diffDays)} days ago (exceeds ${this.MAX_STALENESS_DAYS} day max window).`,
+        };
+      }
     }
 
     return {
