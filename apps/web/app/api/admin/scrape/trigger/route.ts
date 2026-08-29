@@ -32,7 +32,58 @@ export async function POST(request: NextRequest) {
 
     const { companyIdentifier, sourceId } = parseResult.data;
 
-    // 3. Create durable scrape_runs record in Supabase with status 'pending'
+    // 3. Verify target source existence & active state if sourceId is provided
+    if (sourceId) {
+      const { data: source, error: sourceError } = await supabase
+        .from('company_sources')
+        .select('id, is_active, source_identifier')
+        .eq('id', sourceId)
+        .single();
+
+      if (sourceError || !source) {
+        return ApiResponse.error(
+          `Company source with ID "${sourceId}" was not found.`,
+          sourceError,
+          404
+        );
+      }
+
+      if (!source.is_active) {
+        return ApiResponse.error(
+          `Company source "${source.source_identifier}" is disabled and cannot be crawled. Enable it first in the source manager.`,
+          { sourceId, isActive: false },
+          400
+        );
+      }
+    }
+
+    // 4. Concurrency Safety: Check if an active scrape run is already in progress
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    let existingQuery = supabase
+      .from('scrape_runs')
+      .select('id, started_at, status')
+      .in('status', ['pending', 'running'])
+      .gte('started_at', fifteenMinutesAgo);
+
+    if (sourceId) {
+      existingQuery = existingQuery.contains('metadata', { source_id: sourceId });
+    } else if (companyIdentifier) {
+      existingQuery = existingQuery.contains('metadata', { company_identifier: companyIdentifier });
+    } else {
+      existingQuery = existingQuery.contains('metadata', { company_identifier: 'all' });
+    }
+
+    const { data: existingRuns } = await existingQuery.limit(1);
+
+    if (existingRuns && existingRuns.length > 0) {
+      return ApiResponse.error(
+        `A crawl run is already in progress or queued for this target (Run ID: ${existingRuns[0].id}). Please wait for it to complete.`,
+        { existingRunId: existingRuns[0].id, status: existingRuns[0].status },
+        409
+      );
+    }
+
+    // 5. Create durable scrape_runs record with status 'pending'
     const { data: scrapeRun, error: insertError } = await supabase
       .from('scrape_runs')
       .insert({
