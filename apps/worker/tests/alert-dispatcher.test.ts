@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertDispatcher } from '../src/alerts/dispatcher';
 import { AlertMatchResult, JobAlert } from '@jobpulse/domain';
 
-describe('AlertDispatcher Integration (Batch G)', () => {
+describe('AlertDispatcher — Idempotency, Retries, Frequency & SSRF (Batch G Remediation)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -35,54 +35,146 @@ describe('AlertDispatcher Integration (Batch G)', () => {
     newMatchedJobIds: ['job-1001'],
   };
 
-  it('dispatches email alerts and records delivery via PostgreSQL RPC', async () => {
-    const mockSupabase = {
-      rpc: vi.fn().mockResolvedValue({ data: 'delivery-uuid-1', error: null }),
-    };
+  describe('Durable Database Idempotency (P0)', () => {
+    it('claims undelivered jobs atomically and dispatches new matches', async () => {
+      const mockSupabase = {
+        rpc: vi.fn().mockImplementation((fnName: string, params: any) => {
+          if (fnName === 'claim_undelivered_alert_jobs') {
+            return Promise.resolve({ data: ['job-1001'], error: null }); // Successfully claimed
+          }
+          if (fnName === 'record_job_alert_delivery') {
+            return Promise.resolve({ data: 'delivery-uuid-1', error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        }),
+      };
 
-    const dispatcher = new AlertDispatcher(mockSupabase as any);
-    const report = await dispatcher.dispatchMatches([sampleMatch]);
+      const dispatcher = new AlertDispatcher(mockSupabase as any);
+      const report = await dispatcher.dispatchMatches([sampleMatch]);
 
-    expect(report.totalDeliveriesSent).toBe(1);
-    expect(report.totalDeliveriesFailed).toBe(0);
-    expect(mockSupabase.rpc).toHaveBeenCalledWith('record_job_alert_delivery', {
-      p_alert_id: sampleAlert.id,
-      p_user_id: sampleAlert.userId,
-      p_matched_job_ids: ['job-1001'],
-      p_channel: 'email',
-      p_status: 'sent',
-      p_metadata: {
-        job_count: 1,
-        sample_titles: ['Staff Frontend Engineer'],
-      },
+      expect(report.totalDeliveriesSent).toBe(1);
+      expect(report.totalDuplicatesSkipped).toBe(0);
+      expect(mockSupabase.rpc).toHaveBeenCalledWith('claim_undelivered_alert_jobs', {
+        p_alert_id: sampleAlert.id,
+        p_job_ids: ['job-1001'],
+      });
+      expect(mockSupabase.rpc).toHaveBeenCalledWith('record_job_alert_delivery', expect.objectContaining({
+        p_alert_id: sampleAlert.id,
+        p_status: 'sent',
+      }));
+    });
+
+    it('skips delivery when claim RPC returns empty array (duplicate / concurrent execution)', async () => {
+      const mockSupabase = {
+        rpc: vi.fn().mockImplementation((fnName: string) => {
+          if (fnName === 'claim_undelivered_alert_jobs') {
+            return Promise.resolve({ data: [], error: null }); // 0 new claims (already delivered)
+          }
+          return Promise.resolve({ data: null, error: null });
+        }),
+      };
+
+      const dispatcher = new AlertDispatcher(mockSupabase as any);
+      const report = await dispatcher.dispatchMatches([sampleMatch]);
+
+      expect(report.totalDeliveriesSent).toBe(0);
+      expect(report.totalDuplicatesSkipped).toBe(1);
+      // Delivery recording should NOT be called since delivery was skipped
+      expect(mockSupabase.rpc).not.toHaveBeenCalledWith('record_job_alert_delivery', expect.anything());
     });
   });
 
-  it('rejects webhook delivery if URL fails SSRF security check', async () => {
-    const mockSupabase = {
-      rpc: vi.fn().mockResolvedValue({ data: 'delivery-uuid-2', error: null }),
-    };
+  describe('Pre-Dispatch SSRF Protection (P0)', () => {
+    it('blocks outbound HTTP dispatch if webhook URL fails SSRF validation immediately before fetch', async () => {
+      const mockSupabase = {
+        rpc: vi.fn().mockImplementation((fnName: string) => {
+          if (fnName === 'claim_undelivered_alert_jobs') {
+            return Promise.resolve({ data: ['job-1001'], error: null });
+          }
+          if (fnName === 'record_job_alert_delivery') {
+            return Promise.resolve({ data: 'delivery-uuid-2', error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        }),
+      };
 
-    const ssrfAlert: JobAlert = {
-      ...sampleAlert,
-      channel: 'webhook',
-      webhookUrl: 'http://169.254.169.254/latest/meta-data', // Forbidden AWS metadata endpoint
-    };
+      const ssrfAlert: JobAlert = {
+        ...sampleAlert,
+        channel: 'webhook',
+        webhookUrl: 'http://169.254.169.254/latest/meta-data', // AWS metadata endpoint
+      };
 
-    const ssrfMatch: AlertMatchResult = {
-      ...sampleMatch,
-      alert: ssrfAlert,
-    };
+      const ssrfMatch: AlertMatchResult = {
+        ...sampleMatch,
+        alert: ssrfAlert,
+      };
 
-    const dispatcher = new AlertDispatcher(mockSupabase as any);
-    const report = await dispatcher.dispatchMatches([ssrfMatch]);
+      const dispatcher = new AlertDispatcher(mockSupabase as any);
+      const report = await dispatcher.dispatchMatches([ssrfMatch]);
 
-    expect(report.totalDeliveriesFailed).toBe(1);
-    expect(report.errors[0]).toContain('SSRF Security Guard Rejected');
-    expect(mockSupabase.rpc).toHaveBeenCalledWith('record_job_alert_delivery', expect.objectContaining({
-      p_alert_id: ssrfAlert.id,
-      p_status: 'failed',
-      p_channel: 'webhook',
-    }));
+      expect(report.totalDeliveriesFailed).toBe(1);
+      expect(report.errors[0]).toContain('SSRF Security Guard Blocked Outbound Dispatch');
+      expect(mockSupabase.rpc).toHaveBeenCalledWith('record_job_alert_delivery', expect.objectContaining({
+        p_alert_id: ssrfAlert.id,
+        p_status: 'failed',
+        p_channel: 'webhook',
+      }));
+    });
+  });
+
+  describe('Frequency Semantics (P0)', () => {
+    it('defers daily alert delivery if 24h window has not elapsed and not a force scheduled digest', async () => {
+      const mockSupabase = {
+        rpc: vi.fn(),
+      };
+
+      const dailyAlert: JobAlert = {
+        ...sampleAlert,
+        frequency: 'daily',
+        lastDispatchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
+      };
+
+      const match: AlertMatchResult = {
+        ...sampleMatch,
+        alert: dailyAlert,
+      };
+
+      const dispatcher = new AlertDispatcher(mockSupabase as any);
+      const report = await dispatcher.dispatchMatches([match], false); // Regular crawl
+
+      expect(report.totalDeliveriesSent).toBe(0);
+      expect(report.totalDeliveriesFailed).toBe(0);
+      expect(mockSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('processes daily alert delivery when forceScheduledDigest is true', async () => {
+      const mockSupabase = {
+        rpc: vi.fn().mockImplementation((fnName: string) => {
+          if (fnName === 'claim_undelivered_alert_jobs') {
+            return Promise.resolve({ data: ['job-1001'], error: null });
+          }
+          if (fnName === 'record_job_alert_delivery') {
+            return Promise.resolve({ data: 'delivery-uuid-3', error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        }),
+      };
+
+      const dailyAlert: JobAlert = {
+        ...sampleAlert,
+        frequency: 'daily',
+        lastDispatchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const match: AlertMatchResult = {
+        ...sampleMatch,
+        alert: dailyAlert,
+      };
+
+      const dispatcher = new AlertDispatcher(mockSupabase as any);
+      const report = await dispatcher.dispatchMatches([match], true); // Force scheduled daily digest
+
+      expect(report.totalDeliveriesSent).toBe(1);
+    });
   });
 });

@@ -20,7 +20,7 @@ const CreateAlertSchema = z.object({
  * GET /api/alerts
  * Lists active and paused job alerts for the authenticated user.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const authResult = await AuthGuard.requireAuthenticatedUser();
     if ('errorResponse' in authResult) {
@@ -28,12 +28,15 @@ export async function GET() {
     }
 
     const { user, supabase } = authResult;
+    const url = new URL(request.url);
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10), 1), 100);
 
     const { data: alerts, error } = await supabase
       .from('job_alerts')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (error) {
       return ApiResponse.error('Failed to retrieve job alerts.', error, 500);
@@ -51,6 +54,7 @@ export async function GET() {
 /**
  * POST /api/alerts
  * Creates a new search alert with multi-criteria filters, frequency, and channel.
+ * INVARIANT: Enforces channel/URL consistency and strict SSRFGuard validation.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -74,9 +78,11 @@ export async function POST(request: NextRequest) {
 
     const payload = parseResult.data;
 
-    // Strict SSRF check if webhook channel is selected
+    // Strict SSRF check & channel consistency
+    let sanitizedWebhookUrl: string | null = null;
+
     if (payload.channel === 'webhook') {
-      if (!payload.webhookUrl) {
+      if (!payload.webhookUrl || payload.webhookUrl.trim().length === 0) {
         return ApiResponse.error('Webhook URL is required when webhook channel is selected.', undefined, 400);
       }
 
@@ -84,6 +90,7 @@ export async function POST(request: NextRequest) {
       if (!ssrfCheck.safe) {
         return ApiResponse.error(`Invalid webhook URL: ${ssrfCheck.reason}`, undefined, 400);
       }
+      sanitizedWebhookUrl = payload.webhookUrl;
     }
 
     const { data: newAlert, error: insertError } = await supabase
@@ -98,7 +105,7 @@ export async function POST(request: NextRequest) {
         remote_type: payload.remoteType || null,
         frequency: payload.frequency,
         channel: payload.channel,
-        webhook_url: payload.webhookUrl || null,
+        webhook_url: sanitizedWebhookUrl,
         is_active: true,
       })
       .select('*')
