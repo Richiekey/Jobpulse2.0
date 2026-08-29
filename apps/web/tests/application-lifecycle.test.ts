@@ -4,7 +4,7 @@ import { GET as getApps, POST as postApps } from '../app/api/applications/route'
 import { PATCH as patchApp, DELETE as deleteApp } from '../app/api/applications/[id]/route';
 import { AuthGuard } from '../lib/auth-guard';
 
-describe('Application Lifecycle & State Machine (S20/S21)', () => {
+describe('Application Lifecycle & State Machine (S20/S21, P1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -108,33 +108,74 @@ describe('Application Lifecycle & State Machine (S20/S21)', () => {
     expect(json.data.notes).toContain('Passed technical screen');
   });
 
-  it('allows user to delete or archive their application', async () => {
-    const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        delete: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ error: null }),
+  // DELETE Semantics Tests (P1)
+  describe('DELETE Application Semantics', () => {
+    it('returns 404 Not Found when attempting to delete a non-existent or unauthorized application', async () => {
+      const mockSupabase = {
+        from: vi.fn().mockReturnValue({
+          delete: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                select: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
           }),
         }),
-      }),
-    };
+      };
 
-    vi.spyOn(AuthGuard, 'requireAuthenticatedUser').mockResolvedValue({
-      user: { id: 'usr_1' },
-      profile: { id: 'usr_1', role: 'user' },
-      supabase: mockSupabase as any,
-    } as any);
+      vi.spyOn(AuthGuard, 'requireAuthenticatedUser').mockResolvedValue({
+        user: { id: 'usr_1' },
+        profile: { id: 'usr_1', role: 'user' },
+        supabase: mockSupabase as any,
+      } as any);
 
-    const req = new NextRequest('http://localhost:3000/api/applications/00000000-0000-0000-0000-000000000001', {
-      method: 'DELETE',
+      const req = new NextRequest('http://localhost:3000/api/applications/00000000-0000-0000-0000-000000000001', {
+        method: 'DELETE',
+      });
+
+      const res = await deleteApp(req, {
+        params: Promise.resolve({ id: '00000000-0000-0000-0000-000000000001' }),
+      });
+
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json.error).toContain('Application not found or unauthorized to delete');
     });
 
-    const res = await deleteApp(req, {
-      params: Promise.resolve({ id: '00000000-0000-0000-0000-000000000001' }),
-    });
+    it('returns 200 with deleted: true when application is successfully deleted', async () => {
+      const mockSupabase = {
+        from: vi.fn().mockReturnValue({
+          delete: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                select: vi.fn().mockResolvedValue({
+                  data: [{ id: '00000000-0000-0000-0000-000000000001' }],
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
 
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.data.deleted).toBe(true);
+      vi.spyOn(AuthGuard, 'requireAuthenticatedUser').mockResolvedValue({
+        user: { id: 'usr_1' },
+        profile: { id: 'usr_1', role: 'user' },
+        supabase: mockSupabase as any,
+      } as any);
+
+      const req = new NextRequest('http://localhost:3000/api/applications/00000000-0000-0000-0000-000000000001', {
+        method: 'DELETE',
+      });
+
+      const res = await deleteApp(req, {
+        params: Promise.resolve({ id: '00000000-0000-0000-0000-000000000001' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.data.deleted).toBe(true);
+      expect(json.data.id).toBe('00000000-0000-0000-0000-000000000001');
+    });
   });
 });

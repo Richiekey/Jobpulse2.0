@@ -84,14 +84,19 @@ export async function DELETE(
 
     const { user, supabase } = authResult;
 
-    const { error: deleteError } = await supabase
+    const { data: deletedRows, error: deleteError } = await supabase
       .from('applications')
       .delete()
       .eq('id', applicationId)
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      .select('id');
 
     if (deleteError) {
       return ApiResponse.error('Failed to remove application record.', deleteError, 500);
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      return ApiResponse.error('Application not found or unauthorized to delete.', null, 404);
     }
 
     return ApiResponse.success({ id: applicationId, deleted: true });

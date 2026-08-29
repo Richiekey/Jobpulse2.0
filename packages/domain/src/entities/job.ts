@@ -3,7 +3,8 @@ import type { Database } from '../database.types.js';
 export type JobStatus = Database['public']['Enums']['job_status_enum'];
 export type WorkplaceType = Database['public']['Enums']['workplace_type_enum'];
 export type EmploymentType = Database['public']['Enums']['employment_type_enum'];
-export type ApplicationStatus = Database['public']['Enums']['application_status_enum'];
+import type { ApplicationStatus } from '../application-lifecycle.js';
+export type { ApplicationStatus };
 
 export interface SalaryRange {
   min?: number | null;

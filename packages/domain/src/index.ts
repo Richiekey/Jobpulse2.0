@@ -8,4 +8,5 @@ export * from './deduplication.js';
 export * from './scheduler.js';
 export * from './health.js';
 export * from './onboarding.js';
+export * from './application-lifecycle.js';
 export * from './seed/catalog-seed.js';
