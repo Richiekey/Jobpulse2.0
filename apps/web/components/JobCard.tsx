@@ -4,15 +4,12 @@ import React from 'react';
 import {
   Building2,
   MapPin,
-  DollarSign,
   Clock,
   ExternalLink,
   Bookmark,
   CheckSquare,
-  Sparkles,
   Zap,
 } from 'lucide-react';
-
 import { formatSalary } from '@/lib/format-salary';
 
 export interface JobCardProps {
@@ -55,7 +52,7 @@ export const JobCard: React.FC<JobCardProps> = ({
   onOpenDetails,
   onTrackApplication,
 }) => {
-  const companyName = job.companies?.name || 'Verified Company';
+  const companyName = job.companies?.name || 'Verified Tech Employer';
   const companyLogo = job.companies?.logo_url;
 
   // Format compensation deterministically using domain helper
@@ -66,27 +63,37 @@ export const JobCard: React.FC<JobCardProps> = ({
     interval: job.salary_interval,
   });
 
-  // Format relative time
+  // Format relative posting time
   const postedDate = new Date(job.posted_at);
   const diffDays = Math.floor((Date.now() - postedDate.getTime()) / (1000 * 60 * 60 * 24));
-  const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays}d ago`;
+  const timeAgo =
+    diffDays === 0 ? 'Today' : diffDays === 1 ? '1d ago' : `${diffDays}d ago`;
 
-  // Detect ATS slug from apply URL
-  let atsName = 'Direct ATS';
-  if (job.apply_url.includes('greenhouse.io')) atsName = 'Greenhouse';
-  else if (job.apply_url.includes('lever.co')) atsName = 'Lever';
-  else if (job.apply_url.includes('ashbyhq.com')) atsName = 'Ashby';
-  else if (job.apply_url.includes('myworkdayjobs.com')) atsName = 'Workday';
+  // Detect ATS platform from apply URL
+  let atsSource = 'Direct ATS';
+  if (job.apply_url.includes('greenhouse.io')) atsSource = 'Greenhouse';
+  else if (job.apply_url.includes('lever.co')) atsSource = 'Lever';
+  else if (job.apply_url.includes('ashbyhq.com')) atsSource = 'Ashby';
+  else if (job.apply_url.includes('myworkdayjobs.com')) atsSource = 'Workday';
 
   return (
-    <div
-      className="glass-card"
+    <article
+      className="job-card-container"
       style={{
-        padding: '20px 24px',
-        marginBottom: '16px',
+        padding: '18px 20px',
+        marginBottom: '12px',
         cursor: 'pointer',
+        position: 'relative',
       }}
       onClick={() => onOpenDetails?.(job.id)}
+      tabIndex={0}
+      role="button"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenDetails?.(job.id);
+        }
+      }}
     >
       <div
         style={{
@@ -97,15 +104,16 @@ export const JobCard: React.FC<JobCardProps> = ({
           flexWrap: 'wrap',
         }}
       >
-        {/* Left Side: Company Logo + Title + Metadata */}
-        <div style={{ display: 'flex', gap: '16px', flex: '1 1 400px' }}>
+        {/* Main Content Area */}
+        <div style={{ display: 'flex', gap: '14px', flex: '1 1 420px', minWidth: 0 }}>
+          {/* Company Avatar / Logo */}
           <div
             style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '12px',
-              background: 'var(--bg-tertiary)',
-              border: '1px solid var(--border-color)',
+              width: '44px',
+              height: '44px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -116,15 +124,17 @@ export const JobCard: React.FC<JobCardProps> = ({
             {companyLogo ? (
               <img
                 src={companyLogo}
-                alt={companyName}
+                alt={`${companyName} logo`}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
-              <Building2 size={24} color="var(--text-muted)" />
+              <Building2 size={22} color="var(--text-muted)" />
             )}
           </div>
 
-          <div>
+          {/* Core Job Details */}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            {/* Row 1: Company + Source + Time */}
             <div
               style={{
                 display: 'flex',
@@ -134,59 +144,83 @@ export const JobCard: React.FC<JobCardProps> = ({
                 marginBottom: '4px',
               }}
             >
-              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              <span
+                style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)',
+                }}
+              >
                 {companyName}
               </span>
-              <span className="badge badge-ats">
-                <Sparkles size={11} />
-                {atsName}
+
+              <span className="badge badge-source" style={{ fontSize: '0.6875rem' }}>
+                {atsSource}
               </span>
-              {job.workplace_type === 'remote' && <span className="badge badge-remote">Remote</span>}
-              {job.workplace_type === 'hybrid' && <span className="badge badge-hybrid">Hybrid</span>}
-              {job.workplace_type === 'on_site' && <span className="badge badge-onsite">On-Site</span>}
+
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <Clock size={12} />
+                <span>{timeAgo}</span>
+              </span>
             </div>
 
-            <h3
+            {/* Row 2: Dominant Job Title */}
+            <h2
               style={{
-                fontSize: '1.15rem',
+                fontSize: '1.125rem',
                 fontWeight: 700,
                 color: 'var(--text-primary)',
+                lineHeight: 1.35,
                 marginBottom: '8px',
-                lineHeight: 1.3,
               }}
             >
               {job.display_title}
-            </h3>
+            </h2>
 
-            {/* Badges & Info row */}
+            {/* Row 3: Metadata Badges (Location, Mode, Salary, Equity) */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '16px',
+                gap: '10px',
                 flexWrap: 'wrap',
-                fontSize: '0.8rem',
-                color: 'var(--text-muted)',
+                fontSize: '0.8125rem',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <MapPin size={14} />
-                <span>{job.locations.slice(0, 2).join(', ')}</span>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <MapPin size={14} color="var(--text-muted)" />
+                <span>{(job.locations || []).slice(0, 2).join(', ') || 'Remote'}</span>
               </div>
 
+              {job.workplace_type === 'remote' && (
+                <span className="badge badge-remote">Remote</span>
+              )}
+              {job.workplace_type === 'hybrid' && (
+                <span className="badge badge-hybrid">Hybrid</span>
+              )}
+              {job.workplace_type === 'on_site' && (
+                <span className="badge badge-onsite">On-Site</span>
+              )}
+
               {salaryString && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    color: '#34d399',
-                    fontWeight: 700,
-                  }}
-                >
-                  <DollarSign size={14} />
-                  <span>{salaryString}</span>
-                </div>
+                <span className="badge badge-salary">
+                  {salaryString}
+                </span>
               )}
 
               {job.equity_mentioned && (
@@ -194,30 +228,25 @@ export const JobCard: React.FC<JobCardProps> = ({
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '4px',
+                    gap: '3px',
                     fontSize: '0.75rem',
                     fontWeight: 600,
                     color: '#c084fc',
-                    background: 'rgba(192, 132, 252, 0.12)',
-                    padding: '2px 8px',
-                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'rgba(192, 132, 252, 0.1)',
                     border: '1px solid rgba(192, 132, 252, 0.25)',
+                    padding: '2px 7px',
+                    borderRadius: 'var(--radius-xs)',
                   }}
                 >
                   <Zap size={11} />
                   <span>Equity</span>
                 </span>
               )}
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Clock size={14} />
-                <span>{timeAgo}</span>
-              </div>
             </div>
           </div>
         </div>
 
-        {/* Right Side: Quick Action Buttons */}
+        {/* Action Controls */}
         <div
           style={{
             display: 'flex',
@@ -231,14 +260,15 @@ export const JobCard: React.FC<JobCardProps> = ({
             <button
               onClick={() => onToggleSave(job.id)}
               className="btn btn-icon"
-              title={isSaved ? 'Remove from Saved' : 'Save Job'}
+              title={isSaved ? 'Remove from Saved' : 'Save this job'}
+              aria-label={isSaved ? 'Remove from Saved' : 'Save this job'}
               style={{
-                color: isSaved ? 'var(--accent-primary)' : 'var(--text-muted)',
-                borderColor: isSaved ? 'var(--accent-primary)' : 'var(--border-color)',
-                background: isSaved ? 'var(--accent-glow)' : 'var(--bg-secondary)',
+                color: isSaved ? 'var(--brand-primary)' : 'var(--text-muted)',
+                borderColor: isSaved ? 'var(--brand-primary)' : 'var(--border-subtle)',
+                backgroundColor: isSaved ? 'var(--brand-surface)' : 'var(--bg-surface)',
               }}
             >
-              <Bookmark size={18} fill={isSaved ? 'currentColor' : 'none'} />
+              <Bookmark size={17} fill={isSaved ? 'currentColor' : 'none'} />
             </button>
           )}
 
@@ -246,10 +276,10 @@ export const JobCard: React.FC<JobCardProps> = ({
             <button
               onClick={() => onTrackApplication(job)}
               className="btn btn-secondary"
-              title="Track your application progress"
-              style={{ padding: '8px 12px', fontSize: '0.8rem' }}
+              title="Track application progress"
+              style={{ padding: '8px 12px', fontSize: '0.8125rem' }}
             >
-              <CheckSquare size={16} />
+              <CheckSquare size={15} />
               <span>Track</span>
             </button>
           )}
@@ -259,15 +289,15 @@ export const JobCard: React.FC<JobCardProps> = ({
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary"
-            style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+            style={{ padding: '8px 14px', fontSize: '0.8125rem' }}
           >
-            <span>Apply Direct</span>
-            <ExternalLink size={14} />
+            <span>Apply</span>
+            <ExternalLink size={13} />
           </a>
         </div>
       </div>
 
-      {/* Skills tags preview */}
+      {/* Skills Footer */}
       {job.skills && job.skills.length > 0 && (
         <div
           style={{
@@ -275,21 +305,22 @@ export const JobCard: React.FC<JobCardProps> = ({
             alignItems: 'center',
             gap: '6px',
             flexWrap: 'wrap',
-            marginTop: '16px',
-            paddingTop: '12px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+            marginTop: '12px',
+            paddingTop: '10px',
+            borderTop: '1px solid var(--border-subtle)',
           }}
         >
           {job.skills.slice(0, 6).map((skill) => (
             <span
               key={skill}
               style={{
-                fontSize: '0.75rem',
-                padding: '2px 8px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'rgba(255, 255, 255, 0.04)',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                padding: '2px 7px',
+                borderRadius: 'var(--radius-xs)',
+                backgroundColor: 'var(--bg-surface-elevated)',
                 color: 'var(--text-secondary)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
+                border: '1px solid var(--border-subtle)',
               }}
             >
               {skill}
@@ -297,6 +328,6 @@ export const JobCard: React.FC<JobCardProps> = ({
           ))}
         </div>
       )}
-    </div>
+    </article>
   );
 };

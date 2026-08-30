@@ -13,7 +13,6 @@ import {
   CheckSquare,
   Globe,
   Zap,
-  TrendingUp,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
 
@@ -34,11 +33,11 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 }) => {
   if (!job) return null;
 
-  const companyName = job.companies?.name || 'Verified Tech Employer';
+  const companyName = job.companies?.name || 'Verified Employer';
   const companyLogo = job.companies?.logo_url;
   const companyWebsite = job.companies?.website;
 
-  // Format compensation details
+  // Format compensation
   const formattedSalary = formatSalary({
     min: job.salary_min,
     max: job.salary_max,
@@ -46,10 +45,14 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     interval: job.salary_interval,
   });
 
-  const displaySalary = formattedSalary || 'Not Disclosed by Employer';
+  const displaySalary = formattedSalary || 'Not Disclosed';
 
   let annualizedEst: string | null = null;
-  if (job.salary_interval && job.salary_interval !== 'yearly' && (job.annualized_min || job.annualized_max)) {
+  if (
+    job.salary_interval &&
+    job.salary_interval !== 'yearly' &&
+    (job.annualized_min || job.annualized_max)
+  ) {
     const formattedAnnual = formatSalary({
       min: job.annualized_min,
       max: job.annualized_max,
@@ -61,12 +64,25 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     }
   }
 
+  // Detect ATS Name
+  let atsName = 'Direct Employer ATS';
+  if (job.apply_url?.includes('greenhouse.io')) atsName = 'Greenhouse ATS';
+  else if (job.apply_url?.includes('lever.co')) atsName = 'Lever ATS';
+  else if (job.apply_url?.includes('ashbyhq.com')) atsName = 'Ashby ATS';
+  else if (job.apply_url?.includes('myworkdayjobs.com')) atsName = 'Workday ATS';
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="job-details-title"
+    >
       <div
-        className="modal-content"
+        className="modal-surface"
         onClick={(e) => e.stopPropagation()}
-        style={{ padding: '32px' }}
+        style={{ padding: '28px' }}
       >
         {/* Header */}
         <div
@@ -75,17 +91,17 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             alignItems: 'flex-start',
             justifyContent: 'space-between',
             gap: '16px',
-            marginBottom: '24px',
+            marginBottom: '20px',
           }}
         >
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
             <div
               style={{
-                width: '56px',
-                height: '56px',
-                borderRadius: '14px',
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-color)',
+                width: '52px',
+                height: '52px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-default)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -100,13 +116,13 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               ) : (
-                <Building2 size={28} color="var(--text-muted)" />
+                <Building2 size={26} color="var(--text-muted)" />
               )}
             </div>
 
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                   {companyName}
                 </span>
                 {companyWebsite && (
@@ -115,34 +131,39 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: 'var(--text-muted)', display: 'inline-flex' }}
+                    title="Company Website"
                   >
                     <Globe size={14} />
                   </a>
                 )}
               </div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ffffff' }}>
+              <h1
+                id="job-details-title"
+                style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}
+              >
                 {job.display_title}
-              </h2>
+              </h1>
             </div>
           </div>
 
           <button
             onClick={onClose}
             className="btn-icon"
-            style={{ borderRadius: '50%' }}
+            style={{ borderRadius: 'var(--radius-full)' }}
+            aria-label="Close dialog"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
-        {/* Compensation & Market Transparency Card (Batch H) */}
+        {/* Compensation & Transparency Box */}
         <div
           style={{
-            padding: '20px',
+            padding: '16px 20px',
             borderRadius: 'var(--radius-md)',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(99, 102, 241, 0.08) 100%)',
-            border: '1px solid rgba(16, 185, 129, 0.25)',
-            marginBottom: '24px',
+            backgroundColor: 'var(--bg-surface-elevated)',
+            border: '1px solid var(--border-default)',
+            marginBottom: '20px',
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: '16px',
@@ -150,27 +171,53 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           }}
         >
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-              <DollarSign size={16} />
+            <div
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--success-text)',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                marginBottom: '4px',
+              }}
+            >
+              <DollarSign size={14} />
               <span>Base Compensation</span>
             </div>
-            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff' }}>
+            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
               {displaySalary}
             </div>
             {annualizedEst && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                 Estimated Annualized: {annualizedEst}
               </div>
             )}
           </div>
 
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#a5b4fc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-              <Zap size={15} />
-              <span>Equity & Perks</span>
+            <div
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--brand-text)',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                marginBottom: '4px',
+              }}
+            >
+              <Zap size={14} />
+              <span>Equity & Benefits</span>
             </div>
-            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: job.equity_mentioned ? '#c084fc' : 'var(--text-secondary)' }}>
-              {job.equity_mentioned ? '✨ Stock Options / Equity Disclosed' : 'Standard Benefits Package'}
+            <div
+              style={{
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: job.equity_mentioned ? '#c084fc' : 'var(--text-secondary)',
+              }}
+            >
+              {job.equity_mentioned ? 'Stock Options / Equity Disclosed' : 'Standard Employer Benefits'}
             </div>
           </div>
         </div>
@@ -179,37 +226,38 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
             gap: '12px',
-            padding: '16px',
-            background: 'var(--bg-tertiary)',
+            padding: '14px',
+            backgroundColor: 'var(--bg-surface-elevated)',
             borderRadius: 'var(--radius-md)',
-            marginBottom: '24px',
+            border: '1px solid var(--border-subtle)',
+            marginBottom: '20px',
           }}
         >
           <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '2px' }}>
               Workplace
             </div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, textTransform: 'capitalize' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, textTransform: 'capitalize' }}>
               {job.workplace_type || 'Unspecified'}
             </div>
           </div>
 
           <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-              Locations
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '2px' }}>
+              Location
             </div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
               {(job.locations || []).join(', ') || 'Remote'}
             </div>
           </div>
 
           <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '2px' }}>
               Posted
             </div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
               {new Date(job.posted_at).toLocaleDateString(undefined, {
                 year: 'numeric',
                 month: 'short',
@@ -219,33 +267,42 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </div>
 
           <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-              ATS Application Link
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '2px' }}>
+              Source Verification
             </div>
-            <div style={{ fontSize: '0.85rem', color: '#34d399', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ fontSize: '0.8125rem', color: 'var(--success-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <ShieldCheck size={14} />
-              <span>Verified Direct ATS</span>
+              <span>{atsName}</span>
             </div>
           </div>
         </div>
 
-        {/* Skills */}
+        {/* Required Technical Stack */}
         {job.skills && job.skills.length > 0 && (
-          <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
+          <div style={{ marginBottom: '20px' }}>
+            <h2
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: '8px',
+              }}
+            >
               Required Technical Stack
-            </h4>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            </h2>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {job.skills.map((skill: string) => (
                 <span
                   key={skill}
                   style={{
-                    padding: '4px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'rgba(99, 102, 241, 0.15)',
-                    color: '#a5b4fc',
-                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                    fontSize: '0.85rem',
+                    padding: '3px 9px',
+                    borderRadius: 'var(--radius-xs)',
+                    backgroundColor: 'var(--bg-surface-elevated)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-default)',
+                    fontSize: '0.8125rem',
                     fontWeight: 500,
                   }}
                 >
@@ -257,14 +314,23 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
         )}
 
         {/* Job Description */}
-        <div style={{ marginBottom: '32px' }}>
-          <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-            Job Description & Responsibilities
-          </h4>
+        <div style={{ marginBottom: '28px' }}>
+          <h2
+            style={{
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '10px',
+            }}
+          >
+            Role Overview & Responsibilities
+          </h2>
           <div
             style={{
-              fontSize: '0.95rem',
-              lineHeight: 1.7,
+              fontSize: '0.9375rem',
+              lineHeight: 1.65,
               color: 'var(--text-secondary)',
               whiteSpace: 'pre-wrap',
             }}
@@ -284,15 +350,15 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </div>
         </div>
 
-        {/* Modal Action Bar */}
+        {/* Action Footer */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '12px',
-            borderTop: '1px solid var(--border-color)',
-            paddingTop: '20px',
+            borderTop: '1px solid var(--border-subtle)',
+            paddingTop: '18px',
           }}
         >
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -300,7 +366,7 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               <button
                 onClick={() => onToggleSave(job.id)}
                 className="btn btn-secondary"
-                style={{ color: isSaved ? 'var(--accent-primary)' : 'inherit' }}
+                style={{ color: isSaved ? 'var(--brand-primary)' : 'inherit' }}
               >
                 <Bookmark size={16} fill={isSaved ? 'currentColor' : 'none'} />
                 <span>{isSaved ? 'Saved' : 'Save'}</span>
@@ -308,10 +374,7 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             )}
 
             {onTrackApplication && (
-              <button
-                onClick={() => onTrackApplication(job)}
-                className="btn btn-secondary"
-              >
+              <button onClick={() => onTrackApplication(job)} className="btn btn-secondary">
                 <CheckSquare size={16} />
                 <span>Track Application</span>
               </button>
@@ -323,10 +386,10 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary"
-            style={{ padding: '10px 24px', fontSize: '0.95rem' }}
+            style={{ padding: '9px 20px', fontSize: '0.875rem' }}
           >
             <span>Apply on {companyName} ATS</span>
-            <ExternalLink size={16} />
+            <ExternalLink size={15} />
           </a>
         </div>
       </div>

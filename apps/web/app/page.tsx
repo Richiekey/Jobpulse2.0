@@ -2,14 +2,73 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/Header';
-import { MetricBar } from '@/components/MetricBar';
 import { SearchFilters } from '@/components/SearchFilters';
 import { JobCard } from '@/components/JobCard';
 import { JobDetailsModal } from '@/components/JobDetailsModal';
 import { ApplicationTrackerModal } from '@/components/ApplicationTrackerModal';
 import { JobAlertModal } from '@/components/alerts/JobAlertModal';
 import { JobAlertManager } from '@/components/alerts/JobAlertManager';
-import { Sparkles, Bookmark, CheckSquare, Loader2, AlertCircle, RefreshCw, Bell, Zap } from 'lucide-react';
+import {
+  Bookmark,
+  CheckSquare,
+  Loader2,
+  AlertCircle,
+  Bell,
+  Search,
+  Plus,
+} from 'lucide-react';
+
+function JobCardSkeleton() {
+  return (
+    <div
+      className="job-card-container"
+      style={{
+        padding: '18px 20px',
+        marginBottom: '12px',
+        opacity: 0.6,
+      }}
+    >
+      <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+        <div
+          style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: 'var(--radius-md)',
+            backgroundColor: 'var(--bg-surface-elevated)',
+          }}
+        />
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              width: '120px',
+              height: '14px',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              borderRadius: '4px',
+              marginBottom: '8px',
+            }}
+          />
+          <div
+            style={{
+              width: '60%',
+              height: '20px',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              borderRadius: '4px',
+              marginBottom: '10px',
+            }}
+          />
+          <div
+            style={{
+              width: '40%',
+              height: '14px',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              borderRadius: '4px',
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
@@ -33,20 +92,18 @@ export default function HomePage() {
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Modals state
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [trackingJob, setTrackingJob] = useState<any | null>(null);
-
-  // Scraper status
-  const [isScraping, setIsScraping] = useState(false);
-  const [scrapeNotification, setScrapeNotification] = useState<string | null>(null);
 
   // Fetch feed jobs
   const fetchFeedJobs = useCallback(
     async (resetCursor = true) => {
       if (resetCursor) {
         setIsLoading(true);
+        setFetchError(null);
       } else {
         setIsLoadingMore(true);
       }
@@ -64,6 +121,9 @@ export default function HomePage() {
         if (!resetCursor && cursor) params.set('cursor', cursor);
 
         const res = await fetch(`/api/jobs/feed?${params.toString()}`);
+        if (!res.ok) {
+          throw new Error(`Feed API returned status ${res.status}`);
+        }
         const data = await res.json();
 
         if (data.data) {
@@ -75,23 +135,24 @@ export default function HomePage() {
           setCursor(data.meta?.pagination?.next_cursor || data.pagination?.next_cursor || null);
           setHasMore(data.meta?.pagination?.has_more || data.pagination?.has_more || false);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching jobs feed:', err);
+        setFetchError(err?.message || 'Failed to load jobs feed. Please try again.');
       } finally {
         setIsLoading(false);
         setIsLoadingMore(false);
       }
     },
-    [searchQuery, workplace, employment, salaryMin, hasSalaryOnly, selectedSkill, cursor]
+    [searchQuery, workplace, employment, salaryMin, selectedCurrency, hasSalaryOnly, selectedSkill, cursor]
   );
 
   // Initial load and filter change
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchFeedJobs(true);
-    }, 250);
+    }, 200);
     return () => clearTimeout(timer);
-  }, [searchQuery, workplace, employment, salaryMin, hasSalaryOnly, selectedSkill]);
+  }, [searchQuery, workplace, employment, salaryMin, selectedCurrency, hasSalaryOnly, selectedSkill]);
 
   // Load Saved Jobs and Applications
   useEffect(() => {
@@ -182,28 +243,6 @@ export default function HomePage() {
     }
   };
 
-  // Handle Scraper Trigger
-  const handleTriggerScrape = async () => {
-    setIsScraping(true);
-    setScrapeNotification('Triggering live ATS pipeline sync...');
-    try {
-      const res = await fetch('/api/admin/scrape/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyIdentifier: 'stripe' }),
-      });
-      const data = await res.json();
-      setScrapeNotification('ATS sync run dispatched successfully!');
-      setTimeout(() => setScrapeNotification(null), 4000);
-      fetchFeedJobs(true);
-    } catch (err) {
-      setScrapeNotification('Sync failed to dispatch');
-      setTimeout(() => setScrapeNotification(null), 3000);
-    } finally {
-      setIsScraping(false);
-    }
-  };
-
   const handleClearFilters = () => {
     setSearchQuery('');
     setWorkplace('all');
@@ -215,7 +254,7 @@ export default function HomePage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-app)' }}>
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -223,78 +262,11 @@ export default function HomePage() {
         applicationCount={applications.length}
       />
 
-      {/* Main Content Area */}
-      <main className="container" style={{ flex: 1, padding: '32px 24px' }}>
-        {/* Scrape Notification Banner */}
-        {scrapeNotification && (
-          <div
-            className="glass-card"
-            style={{
-              padding: '12px 20px',
-              marginBottom: '20px',
-              background: 'rgba(99, 102, 241, 0.15)',
-              borderColor: 'var(--accent-primary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              color: '#818cf8',
-              fontSize: '0.9rem',
-              fontWeight: 600,
-            }}
-          >
-            <Zap size={16} />
-            <span>{scrapeNotification}</span>
-          </div>
-        )}
-
-        {/* FEED HEADER & METRICS */}
+      <main style={{ flex: 1, maxWidth: '1200px', width: '100%', margin: '0 auto', padding: '24px 20px 48px' }}>
+        {/* TAB 1: JOBS / DISCOVERY FEED */}
         {activeTab === 'feed' && (
-          <>
-            <div style={{ textAlign: 'center', margin: '24px 0 36px 0' }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '6px 14px',
-                  borderRadius: '9999px',
-                  background: 'rgba(99, 102, 241, 0.1)',
-                  border: '1px solid rgba(99, 102, 241, 0.2)',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: 'var(--accent-secondary)',
-                  marginBottom: '16px',
-                }}
-              >
-                <Sparkles size={14} />
-                <span>Direct Ingestion from Verified ATS Endpoints</span>
-              </div>
-              <h1
-                style={{
-                  fontSize: '2.5rem',
-                  fontWeight: 800,
-                  letterSpacing: '-0.03em',
-                  marginBottom: '12px',
-                }}
-              >
-                Production-Grade{' '}
-                <span
-                  style={{
-                    background: 'var(--accent-gradient)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                  }}
-                >
-                  Tech Job Engine
-                </span>
-              </h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', maxWidth: '640px', margin: '0 auto' }}>
-                Normalized directly from Greenhouse, Lever, Ashby, and Workday employer ATS endpoints. 100% verified application URLs.
-              </p>
-            </div>
-
-            <MetricBar totalJobs={jobs.length || 5} totalCompanies={5} />
-
+          <div>
+            {/* Search & Filter Component */}
             <SearchFilters
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
@@ -311,13 +283,10 @@ export default function HomePage() {
               selectedSkill={selectedSkill}
               onSkillChange={setSelectedSkill}
               onClearFilters={handleClearFilters}
+              totalResults={jobs.length}
             />
-          </>
-        )}
 
-        {/* TAB 1: LIVE FEED */}
-        {activeTab === 'feed' && (
-          <div>
+            {/* Results Header */}
             <div
               style={{
                 display: 'flex',
@@ -328,53 +297,96 @@ export default function HomePage() {
                 gap: '12px',
               }}
             >
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>
-                {searchQuery ? `Search results for "${searchQuery}"` : 'Fresh Job Openings'}
-              </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  Showing {jobs.length} postings
-                </span>
-                <button
-                  onClick={() => setIsAlertModalOpen(true)}
-                  className="btn btn-secondary"
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '0.8rem',
-                    borderColor: 'rgba(99, 102, 241, 0.4)',
-                    background: 'rgba(99, 102, 241, 0.1)',
-                    color: '#a5b4fc',
-                  }}
-                  title="Create automated alert for this search criteria"
-                >
-                  <Bell size={14} />
-                  <span>Create Alert</span>
-                </button>
+              <div>
+                <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {searchQuery ? `Results for "${searchQuery}"` : 'Verified Job Openings'}
+                </h1>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {jobs.length > 0 ? `Showing ${jobs.length} postings from direct ATS endpoints` : 'Live opportunity feed'}
+                </p>
               </div>
+
+              <button
+                onClick={() => setIsAlertModalOpen(true)}
+                className="btn btn-secondary"
+                style={{ fontSize: '0.8125rem', padding: '7px 12px' }}
+                title="Create automated alert for this search"
+              >
+                <Bell size={14} />
+                <span>Create Alert</span>
+              </button>
             </div>
 
+            {/* Fetch Error Banner */}
+            {fetchError && (
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--danger-surface)',
+                  border: '1px solid var(--danger-border)',
+                  color: 'var(--danger-text)',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlertCircle size={18} />
+                  <span style={{ fontSize: '0.875rem' }}>{fetchError}</span>
+                </div>
+                <button
+                  onClick={() => fetchFeedJobs(true)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.8125rem', padding: '5px 12px' }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* Loading State */}
             {isLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
-                <Loader2 size={36} color="var(--accent-primary)" className="animate-spin" />
+              <div>
+                <JobCardSkeleton />
+                <JobCardSkeleton />
+                <JobCardSkeleton />
+                <JobCardSkeleton />
+                <JobCardSkeleton />
               </div>
             ) : jobs.length === 0 ? (
+              /* Empty State */
               <div
-                className="glass-card"
                 style={{
-                  padding: '60px 24px',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '56px 24px',
                   textAlign: 'center',
                 }}
               >
-                <AlertCircle size={40} color="var(--text-muted)" style={{ margin: '0 auto 16px' }} />
-                <h3 style={{ fontSize: '1.15rem', marginBottom: '8px' }}>No matching postings found</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', maxWidth: '400px', margin: '0 auto 20px' }}>
-                  Try resetting your search query, location, or salary filters to explore available roles.
+                <Search size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
+                  No matching jobs found
+                </h3>
+                <p
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.875rem',
+                    maxWidth: '420px',
+                    margin: '0 auto 18px',
+                  }}
+                >
+                  Try adjusting your keywords, removing salary constraints, or selecting &quot;All Modes&quot; to discover available opportunities.
                 </p>
                 <button onClick={handleClearFilters} className="btn btn-primary">
-                  Clear Filters
+                  Reset All Filters
                 </button>
               </div>
             ) : (
+              /* Postings List */
               <div>
                 {jobs.map((job) => (
                   <JobCard
@@ -387,21 +399,22 @@ export default function HomePage() {
                   />
                 ))}
 
+                {/* Pagination Load More */}
                 {hasMore && (
-                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '28px' }}>
                     <button
                       onClick={() => fetchFeedJobs(false)}
                       disabled={isLoadingMore}
                       className="btn btn-secondary"
-                      style={{ padding: '12px 32px', fontSize: '0.95rem' }}
+                      style={{ padding: '10px 28px', fontSize: '0.875rem' }}
                     >
                       {isLoadingMore ? (
                         <>
-                          <Loader2 size={18} className="animate-spin" />
-                          <span>Loading more jobs...</span>
+                          <Loader2 size={16} className="animate-spin" />
+                          <span>Loading next page...</span>
                         </>
                       ) : (
-                        <span>Load More Jobs</span>
+                        <span>Load More Postings</span>
                       )}
                     </button>
                   </div>
@@ -413,23 +426,40 @@ export default function HomePage() {
 
         {/* TAB 2: SAVED JOBS */}
         {activeTab === 'saved' && (
-          <div style={{ marginTop: '24px' }}>
-            <div style={{ marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '6px' }}>Saved Jobs</h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                Your personal bookmarked opportunities.
+          <div>
+            <div style={{ marginBottom: '20px' }}>
+              <h1 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>Saved Jobs</h1>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '2px' }}>
+                Your personal bookmarked positions for quick review and direct application.
               </p>
             </div>
 
             {savedJobs.length === 0 ? (
-              <div className="glass-card" style={{ padding: '60px 24px', textAlign: 'center' }}>
-                <Bookmark size={40} color="var(--text-muted)" style={{ margin: '0 auto 16px' }} />
-                <h3 style={{ fontSize: '1.15rem', marginBottom: '8px' }}>No saved jobs yet</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '20px' }}>
-                  Click the bookmark icon on any job card in the live feed to save it for later.
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '56px 24px',
+                  textAlign: 'center',
+                }}
+              >
+                <Bookmark size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
+                  No saved jobs yet
+                </h3>
+                <p
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.875rem',
+                    maxWidth: '400px',
+                    margin: '0 auto 18px',
+                  }}
+                >
+                  Click the bookmark icon on any job card in the main feed to save it to your personal shortlist.
                 </p>
                 <button onClick={() => setActiveTab('feed')} className="btn btn-primary">
-                  Browse Live Feed
+                  Browse Jobs Feed
                 </button>
               </div>
             ) : (
@@ -454,23 +484,23 @@ export default function HomePage() {
 
         {/* TAB 3: APPLICATION TRACKER */}
         {activeTab === 'applications' && (
-          <div style={{ marginTop: '24px' }}>
+          <div>
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                marginBottom: '24px',
+                marginBottom: '20px',
                 flexWrap: 'wrap',
                 gap: '12px',
               }}
             >
               <div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '6px' }}>
+                <h1 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                   Application Tracker
-                </h2>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Track interviews, offers, and statuses across your job applications.
+                </h1>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '2px' }}>
+                  Manage interviews, stages, and personal notes across your direct applications.
                 </p>
               </div>
 
@@ -478,75 +508,100 @@ export default function HomePage() {
                 onClick={() => setTrackingJob({ company_name: '', job_title: '', status: 'applied' })}
                 className="btn btn-primary"
               >
-                <CheckSquare size={16} />
-                <span>+ Add Application</span>
+                <Plus size={16} />
+                <span>Add Application</span>
               </button>
             </div>
 
             {applications.length === 0 ? (
-              <div className="glass-card" style={{ padding: '60px 24px', textAlign: 'center' }}>
-                <CheckSquare size={40} color="var(--text-muted)" style={{ margin: '0 auto 16px' }} />
-                <h3 style={{ fontSize: '1.15rem', marginBottom: '8px' }}>No tracked applications yet</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '20px' }}>
-                  Start tracking your applications directly from job cards or add one manually.
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '56px 24px',
+                  textAlign: 'center',
+                }}
+              >
+                <CheckSquare size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
+                  No tracked applications yet
+                </h3>
+                <p
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.875rem',
+                    maxWidth: '400px',
+                    margin: '0 auto 18px',
+                  }}
+                >
+                  Track your job applications directly from job cards or add an external application manually.
                 </p>
                 <button onClick={() => setActiveTab('feed')} className="btn btn-primary">
-                  Find Jobs to Apply
+                  Explore Openings
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: '14px' }}>
+              <div style={{ display: 'grid', gap: '10px' }}>
                 {applications.map((app) => (
                   <div
                     key={app.id}
-                    className="glass-card"
+                    className="job-card-container"
                     style={{
-                      padding: '20px 24px',
+                      padding: '16px 20px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       flexWrap: 'wrap',
-                      gap: '16px',
+                      gap: '14px',
                     }}
                   >
                     <div>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
                         {app.company_name}
                       </span>
-                      <h4 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#ffffff' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                         {app.job_title}
-                      </h4>
+                      </h3>
                       {app.notes && (
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                          📝 {app.notes}
+                        <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                          Note: {app.notes}
                         </p>
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <span
                         className="badge"
                         style={{
-                          background:
+                          backgroundColor:
                             app.status === 'offer'
-                              ? 'rgba(16, 185, 129, 0.2)'
+                              ? 'var(--success-surface)'
                               : app.status === 'interview'
-                              ? 'rgba(99, 102, 241, 0.2)'
+                              ? 'var(--brand-surface)'
                               : app.status === 'rejected'
-                              ? 'rgba(239, 68, 68, 0.2)'
-                              : 'rgba(245, 158, 11, 0.2)',
+                              ? 'var(--danger-surface)'
+                              : 'var(--warning-surface)',
                           color:
                             app.status === 'offer'
-                              ? '#34d399'
+                              ? 'var(--success-text)'
                               : app.status === 'interview'
-                              ? '#a5b4fc'
+                              ? 'var(--brand-text)'
                               : app.status === 'rejected'
-                              ? '#f87171'
-                              : '#fbbf24',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
-                          padding: '6px 14px',
-                          fontSize: '0.8rem',
+                              ? 'var(--danger-text)'
+                              : 'var(--warning-text)',
+                          border: `1px solid ${
+                            app.status === 'offer'
+                              ? 'var(--success-border)'
+                              : app.status === 'interview'
+                              ? 'var(--brand-border)'
+                              : app.status === 'rejected'
+                              ? 'var(--danger-border)'
+                              : 'var(--warning-border)'
+                          }`,
+                          padding: '4px 10px',
                           textTransform: 'capitalize',
+                          fontSize: '0.75rem',
                         }}
                       >
                         {app.status}
@@ -565,7 +620,7 @@ export default function HomePage() {
 
         {/* TAB 4: JOB ALERTS */}
         {activeTab === 'alerts' && (
-          <div style={{ marginTop: '24px' }}>
+          <div>
             <JobAlertManager />
           </div>
         )}
@@ -605,4 +660,3 @@ export default function HomePage() {
     </div>
   );
 }
-

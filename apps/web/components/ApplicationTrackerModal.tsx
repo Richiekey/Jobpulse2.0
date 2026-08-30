@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, CheckSquare, Building2, Calendar, FileText } from 'lucide-react';
+import { X, CheckSquare } from 'lucide-react';
 
 interface ApplicationTrackerModalProps {
   job: any | null;
@@ -55,112 +55,124 @@ export const ApplicationTrackerModal: React.FC<ApplicationTrackerModalProps> = (
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tracker-modal-title"
+    >
       <div
-        className="modal-content"
+        className="modal-surface"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: '540px', padding: '28px' }}
+        style={{ maxWidth: '520px', padding: '24px' }}
       >
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: '20px',
+            marginBottom: '18px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div
               style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
-                background: 'rgba(99, 102, 241, 0.15)',
-                color: '#818cf8',
+                width: '32px',
+                height: '32px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--brand-surface)',
+                color: 'var(--brand-text)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <CheckSquare size={20} />
+              <CheckSquare size={18} />
             </div>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Track Application</h3>
+            <h2 id="tracker-modal-title" style={{ fontSize: '1.125rem', fontWeight: 700 }}>
+              Track Application
+            </h2>
           </div>
 
-          <button onClick={onClose} className="btn-icon" style={{ borderRadius: '50%' }}>
-            <X size={18} />
+          <button onClick={onClose} className="btn-icon" style={{ borderRadius: 'var(--radius-full)' }} aria-label="Close">
+            <X size={16} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
               Company Name
             </label>
             <input
               type="text"
-              className="input-control"
+              className="input-field"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               required
             />
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
               Job Title
             </label>
             <input
               type="text"
-              className="input-control"
+              className="input-field"
               value={jobTitle}
               onChange={(e) => setJobTitle(e.target.value)}
               required
             />
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-              Stage / Status
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              Current Stage
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-              {APPLICATION_STAGES.map((stage) => (
-                <button
-                  type="button"
-                  key={stage.id}
-                  onClick={() => setStatus(stage.id)}
-                  style={{
-                    padding: '8px 10px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    borderRadius: 'var(--radius-md)',
-                    border: status === stage.id ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                    background: status === stage.id ? 'var(--accent-glow)' : 'var(--bg-tertiary)',
-                    color: status === stage.id ? '#c7d2fe' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    transition: 'var(--transition)',
-                  }}
-                >
-                  {stage.label}
-                </button>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+              {APPLICATION_STAGES.map((stage) => {
+                const isSelected = status === stage.id;
+                return (
+                  <button
+                    type="button"
+                    key={stage.id}
+                    onClick={() => setStatus(stage.id)}
+                    style={{
+                      padding: '7px 8px',
+                      fontSize: '0.75rem',
+                      fontWeight: isSelected ? 700 : 500,
+                      borderRadius: 'var(--radius-sm)',
+                      border: isSelected ? '1px solid var(--brand-border)' : '1px solid var(--border-subtle)',
+                      backgroundColor: isSelected ? 'var(--brand-surface)' : 'var(--bg-surface-elevated)',
+                      color: isSelected ? 'var(--brand-text)' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all var(--transition-fast)',
+                    }}
+                  >
+                    {stage.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-              Personal Notes (Interviewer names, compensation discussed, next steps)
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              Personal Notes
             </label>
             <textarea
-              className="input-control"
-              rows={4}
+              className="input-field"
+              rows={3}
               placeholder="e.g. Recruiter phone screen scheduled for next Tuesday..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              style={{ resize: 'vertical' }}
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
             <button type="button" onClick={onClose} className="btn btn-secondary">
               Cancel
             </button>

@@ -1,15 +1,13 @@
 'use client';
 
 import React from 'react';
-import { Briefcase, Bookmark, CheckSquare, Sparkles, RefreshCw, ShieldCheck, Bell } from 'lucide-react';
+import { Briefcase, Bookmark, CheckSquare, Bell, Shield, Layers } from 'lucide-react';
 
 interface HeaderProps {
   activeTab: 'feed' | 'saved' | 'applications' | 'alerts';
   onTabChange: (tab: 'feed' | 'saved' | 'applications' | 'alerts') => void;
   savedCount: number;
   applicationCount: number;
-  onTriggerScrape?: () => void;
-  isScraping?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,98 +15,118 @@ export const Header: React.FC<HeaderProps> = ({
   onTabChange,
   savedCount,
   applicationCount,
-  onTriggerScrape,
-  isScraping = false,
 }) => {
   return (
     <header
       style={{
-        borderBottom: '1px solid var(--border-color)',
-        background: 'rgba(10, 13, 20, 0.8)',
-        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid var(--border-subtle)',
+        backgroundColor: 'var(--bg-app)',
         position: 'sticky',
         top: 0,
         zIndex: 100,
-        padding: '16px 24px',
       }}
     >
       <div
         style={{
-          maxWidth: '1280px',
+          maxWidth: '1200px',
           margin: '0 auto',
+          padding: '14px 20px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
           gap: '16px',
         }}
       >
-        {/* Logo */}
+        {/* Brand / Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '12px',
-              background: 'var(--accent-gradient)',
+              width: '34px',
+              height: '34px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--brand-primary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 0 16px rgba(99, 102, 241, 0.5)',
+              color: '#ffffff',
             }}
           >
-            <Briefcase size={22} color="#ffffff" />
+            <Briefcase size={18} strokeWidth={2.5} />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
+              <span
+                style={{
+                  fontSize: '1.125rem',
+                  fontWeight: 800,
+                  letterSpacing: '-0.03em',
+                  color: 'var(--text-primary)',
+                }}
+              >
                 JobPulse
               </span>
               <span
                 style={{
-                  fontSize: '0.7rem',
+                  fontSize: '0.6875rem',
                   fontWeight: 700,
-                  background: 'var(--accent-gradient)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-subtle)',
                   textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
+                  letterSpacing: '0.04em',
                 }}
               >
-                2.0 Production
+                Verified ATS
               </span>
             </div>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Verified High-Quality Job Pipeline
-            </p>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Primary Product Navigation */}
+        <nav
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+          aria-label="Main Navigation"
+        >
           <button
             onClick={() => onTabChange('feed')}
-            className={`btn ${activeTab === 'feed' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 16px' }}
+            className={`btn ${activeTab === 'feed' ? 'btn-secondary' : 'btn-ghost'}`}
+            style={{
+              fontWeight: activeTab === 'feed' ? 700 : 500,
+              backgroundColor: activeTab === 'feed' ? 'var(--bg-surface-elevated)' : 'transparent',
+              borderColor: activeTab === 'feed' ? 'var(--border-default)' : 'transparent',
+            }}
           >
-            <Sparkles size={16} />
-            <span>Live Feed</span>
+            <Layers size={16} />
+            <span>Jobs</span>
           </button>
 
           <button
             onClick={() => onTabChange('saved')}
-            className={`btn ${activeTab === 'saved' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 16px' }}
+            className={`btn ${activeTab === 'saved' ? 'btn-secondary' : 'btn-ghost'}`}
+            style={{
+              fontWeight: activeTab === 'saved' ? 700 : 500,
+              backgroundColor: activeTab === 'saved' ? 'var(--bg-surface-elevated)' : 'transparent',
+              borderColor: activeTab === 'saved' ? 'var(--border-default)' : 'transparent',
+            }}
           >
             <Bookmark size={16} />
             <span>Saved</span>
             {savedCount > 0 && (
               <span
                 style={{
-                  background: 'rgba(255, 255, 255, 0.2)',
-                  borderRadius: '999px',
-                  padding: '1px 6px',
-                  fontSize: '0.7rem',
+                  backgroundColor: 'var(--border-strong)',
+                  color: 'var(--text-primary)',
+                  borderRadius: 'var(--radius-full)',
+                  padding: '1px 7px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 700,
+                  marginLeft: '2px',
                 }}
               >
                 {savedCount}
@@ -118,18 +136,26 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => onTabChange('applications')}
-            className={`btn ${activeTab === 'applications' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 16px' }}
+            className={`btn ${activeTab === 'applications' ? 'btn-secondary' : 'btn-ghost'}`}
+            style={{
+              fontWeight: activeTab === 'applications' ? 700 : 500,
+              backgroundColor: activeTab === 'applications' ? 'var(--bg-surface-elevated)' : 'transparent',
+              borderColor: activeTab === 'applications' ? 'var(--border-default)' : 'transparent',
+            }}
           >
             <CheckSquare size={16} />
-            <span>Tracker</span>
+            <span>Applications</span>
             {applicationCount > 0 && (
               <span
                 style={{
-                  background: 'rgba(255, 255, 255, 0.2)',
-                  borderRadius: '999px',
-                  padding: '1px 6px',
-                  fontSize: '0.7rem',
+                  backgroundColor: 'var(--brand-surface)',
+                  color: 'var(--brand-text)',
+                  border: '1px solid var(--brand-border)',
+                  borderRadius: 'var(--radius-full)',
+                  padding: '1px 7px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 700,
+                  marginLeft: '2px',
                 }}
               >
                 {applicationCount}
@@ -139,42 +165,37 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => onTabChange('alerts')}
-            className={`btn ${activeTab === 'alerts' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 16px' }}
+            className={`btn ${activeTab === 'alerts' ? 'btn-secondary' : 'btn-ghost'}`}
+            style={{
+              fontWeight: activeTab === 'alerts' ? 700 : 500,
+              backgroundColor: activeTab === 'alerts' ? 'var(--bg-surface-elevated)' : 'transparent',
+              borderColor: activeTab === 'alerts' ? 'var(--border-default)' : 'transparent',
+            }}
           >
             <Bell size={16} />
             <span>Alerts</span>
           </button>
 
-          {onTriggerScrape && (
-            <button
-              onClick={onTriggerScrape}
-              disabled={isScraping}
-              className="btn btn-secondary"
-              title="Trigger live ATS scrape ingestion run"
-              style={{
-                padding: '8px 14px',
-                borderColor: 'rgba(99, 102, 241, 0.4)',
-                background: 'rgba(99, 102, 241, 0.1)',
-                color: '#a5b4fc',
-              }}
-            >
-              <RefreshCw size={15} className={isScraping ? 'animate-spin' : ''} />
-              <span>{isScraping ? 'Syncing...' : 'Sync ATS'}</span>
-            </button>
-          )}
+          <div
+            style={{
+              width: '1px',
+              height: '20px',
+              backgroundColor: 'var(--border-subtle)',
+              margin: '0 4px',
+            }}
+          />
 
           <a
             href="/admin"
-            className="btn btn-secondary"
-            title="Open Admin Control Plane"
+            className="btn btn-ghost"
             style={{
+              fontSize: '0.8125rem',
+              color: 'var(--text-muted)',
               padding: '8px 12px',
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-              background: 'rgba(255, 255, 255, 0.05)',
             }}
+            title="Admin Control Plane"
           >
-            <ShieldCheck size={16} />
+            <Shield size={15} />
             <span>Admin</span>
           </a>
         </nav>

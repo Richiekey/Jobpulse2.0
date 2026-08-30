@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { X, Bell, ShieldCheck } from 'lucide-react';
 
 export interface JobAlertModalProps {
   isOpen: boolean;
@@ -29,7 +30,7 @@ export function JobAlertModal({
   const [department, setDepartment] = useState(initialCriteria.department || '');
   const [remoteType, setRemoteType] = useState(initialCriteria.remoteType || 'any');
   const [frequency, setFrequency] = useState<'instant' | 'daily' | 'weekly'>('daily');
-  const [channel, setChannel] = useState<'email' | 'webhook' | 'in_app'>('email');
+  const [channel, setChannel] = useState<'email' | 'webhook' | 'in_app'>('webhook');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,129 +80,179 @@ export function JobAlertModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="alert-modal-title"
+    >
+      <div
+        className="modal-surface"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: '520px', padding: '24px' }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-          <div className="flex items-center space-x-2">
-            <span className="text-xl">🔔</span>
-            <h3 className="text-lg font-semibold text-white">Create Automated Job Alert</h3>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '18px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--brand-surface)',
+                color: 'var(--brand-text)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Bell size={18} />
+            </div>
+            <h2 id="alert-modal-title" style={{ fontSize: '1.125rem', fontWeight: 700 }}>
+              Create Automated Job Alert
+            </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors text-lg p-1"
-          >
-            ✕
+
+          <button onClick={onClose} className="btn-icon" style={{ borderRadius: 'var(--radius-full)' }} aria-label="Close">
+            <X size={16} />
           </button>
         </div>
 
         {/* Content Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit}>
           {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm rounded-lg flex items-center space-x-2">
-              <span>⚠️</span>
-              <span>{error}</span>
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--danger-surface)',
+                color: 'var(--danger-text)',
+                border: '1px solid var(--danger-border)',
+                fontSize: '0.8125rem',
+                marginBottom: '14px',
+              }}
+            >
+              {error}
             </div>
           )}
 
           {success && (
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm rounded-lg flex items-center space-x-2">
-              <span>✓</span>
-              <span>Job alert successfully created and active!</span>
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--success-surface)',
+                color: 'var(--success-text)',
+                border: '1px solid var(--success-border)',
+                fontSize: '0.8125rem',
+                marginBottom: '14px',
+              }}
+            >
+              Job alert activated successfully!
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-              Alert Title
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              Alert Name
             </label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Staff Frontend in SF"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm"
+              placeholder="e.g. Senior Frontend Engineer (Remote)"
+              className="input-field"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                Keywords
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                Keyword Query
               </label>
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="React, TypeScript"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm"
+                placeholder="e.g. React, Stripe"
+                className="input-field"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
                 Location
               </label>
               <input
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="San Francisco, Remote"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm"
+                placeholder="e.g. San Francisco, London"
+                className="input-field"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '14px' }}>
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
                 Workplace
               </label>
               <select
                 value={remoteType}
                 onChange={(e) => setRemoteType(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="input-field"
               >
-                <option value="any">Any Workplace</option>
+                <option value="any">Any Mode</option>
                 <option value="remote">Remote Only</option>
                 <option value="hybrid">Hybrid</option>
                 <option value="onsite">On-Site</option>
               </select>
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
                 Frequency
               </label>
               <select
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="input-field"
               >
                 <option value="daily">Daily Digest</option>
                 <option value="instant">Instant Realtime</option>
                 <option value="weekly">Weekly Digest</option>
               </select>
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
                 Channel
               </label>
               <select
                 value={channel}
                 onChange={(e) => setChannel(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="input-field"
               >
-                <option value="email">Email</option>
-                <option value="webhook">Webhook</option>
-                <option value="in_app">In-App Only</option>
+                <option value="webhook">Webhook HTTPS</option>
+                <option value="email" disabled>Email (Coming Soon)</option>
+                <option value="in_app" disabled>In-App (Coming Soon)</option>
               </select>
             </div>
           </div>
 
           {channel === 'webhook' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                Webhook HTTPS Endpoint (SSRF Protected)
+            <div style={{ marginBottom: '18px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                Webhook HTTPS Endpoint (SSRF Protected & Cryptographically Signed)
               </label>
               <input
                 type="url"
@@ -209,32 +260,25 @@ export function JobAlertModal({
                 value={webhookUrl}
                 onChange={(e) => setWebhookUrl(e.target.value)}
                 placeholder="https://api.yourdomain.com/webhooks/jobpulse"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm"
+                className="input-field"
               />
             </div>
           )}
 
-          <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+              className="btn btn-secondary"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors flex items-center space-x-2"
+              className="btn btn-primary"
             >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Creating...</span>
-                </>
-              ) : (
-                <span>Activate Alert</span>
-              )}
+              {loading ? 'Creating...' : 'Activate Alert'}
             </button>
           </div>
         </form>
