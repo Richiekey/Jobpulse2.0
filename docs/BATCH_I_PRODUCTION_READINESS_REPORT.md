@@ -1,28 +1,27 @@
 # JobPulse 2.0 — Batch I Production Readiness Certification Report
 
-**Document Version:** 1.0.0  
+**Document Version:** 1.1.0  
 **Date:** 2026-08-30  
-**Target Milestone:** Batch I — Production Integration & Readiness  
+**Target Milestone:** Batch I — Production Readiness Final Remediation  
+**Evaluation Status:** **BATCH I — READY FOR INDEPENDENT RE-AUDIT**  
 **Evaluation Scope:** Monorepo (`apps/web`, `apps/worker`, `packages/*`, `supabase`, `docs`)
 
 ---
 
-## 1. Executive Verdict
+## 1. Executive Status
 
-### **READY FOR STAGING / PRODUCTION**
+### **BATCH I — READY FOR INDEPENDENT RE-AUDIT**
 
-JobPulse 2.0 has successfully passed all baseline quality gates, closed all architectural and security remediations across Batches A through I, and satisfied the cross-system production invariants. The system demonstrates robust ATS discovery and ingestion, strict job lifecycle preservation (failed crawls never expire active jobs), currency-isolated compensation benchmarks, tamper-resistant cursor pagination, SSRF-guarded webhook delivery with lease-based idempotency, and server-side RBAC authorization.
+All Batch I audit findings have been systematically remediated and verified across the monorepo. Privileged credentials have been removed from source code fallbacks, environment validation now enforces `SUPABASE_SERVICE_ROLE_KEY` without anonymous key substitution, `WORKER_SECRET_TOKEN` is mandatory and placeholder-free, liveness and readiness semantics are cleanly separated, and graceful shutdown drainage distinguishes clean exits from hard timeouts.
 
 ---
 
-## 2. Monorepo Quality Gates & Test Suite Baseline
-
-### Canonical Commands & Verification Results
+## 2. Canonical Quality Gates & Test Suite Verification
 
 ```bash
 # 1. Full Monorepo Test Suite
 pnpm test
-# Result: 46 test files, 249 passed tests (0 failed, 0 skipped, 100% pass)
+# Result: 46 test files, 257 passed tests (0 failed, 0 skipped, 100% pass)
 
 # 2. Static Type Analysis
 pnpm typecheck
@@ -37,159 +36,80 @@ pnpm build
 # Result: Clean compilation of all packages and Next.js production bundle (22 routes)
 ```
 
-### Complete Test Breakdown by Package (249 Total Tests)
+### Complete Test Breakdown by Package (257 Total Tests)
 
 | Workspace Package / App | Location | Test Files | Tests Passed | Focus Areas |
 |---|---|---|---|---|
 | `@jobpulse/domain` | `packages/domain/tests` | 11 | **90** | Deduplication, salary parsing & annualization, job lifecycle service, company identity, source scheduler, alert matching, onboarding |
 | `@jobpulse/ats` | `packages/ats/tests` | 9 | **41** | Greenhouse, Lever, Ashby, Jobright adapters, discovery engine, adapter registry, URL synthesis |
-| `@jobpulse/worker` | `apps/worker/tests` | 8 | **22** | ScraperRunner, multi-source isolation, golden pipeline, concurrency locking, alert dispatcher lifecycle, worker startup validation & graceful drainage |
-| `@jobpulse/web` | `apps/web/tests` | 13 | **78** | Feed search & filtering, cursor pagination, admin crawl trigger, admin dashboard, auth guard, SSRF alert creation/patch, outbound destination dispatch |
+| `@jobpulse/worker` | `apps/worker/tests` | 8 | **29** | ScraperRunner, multi-source isolation, golden pipeline, concurrency locking, alert dispatcher lifecycle, worker startup validation & graceful drainage |
+| `@jobpulse/web` | `apps/web/tests` | 13 | **79** | Feed search & filtering, cursor pagination, admin crawl trigger, admin dashboard, auth guard, SSRF alert creation/patch, outbound destination dispatch, health/readiness failure paths |
 | `@jobpulse/shared` | `packages/shared/tests` | 2 | **8** | Exponential backoff, resilient HTTP client |
 | `@jobpulse/url-resolution` | `packages/url-resolution/tests` | 2 | **7** | Deterministic URL resolver, resolution observability |
 | `@jobpulse/validation` | `packages/validation/tests` | 1 | **3** | Job payload schema validation, SSRF security guard |
-| **Total Monorepo Suite** | **Entire Workspace** | **46** | **249** | **100% Pass Rate** |
-
-### Resolution of Historical Test Count Discrepancy (90 vs 140 vs 238 vs 249)
-1. **90 Tests:** `@jobpulse/domain` contains exactly 90 tests. In earlier single-package runs, developers recorded the domain package test count as the total suite.
-2. **140 Tests:** In Batch E/F summaries, the core packages (`domain` [90] + `ats` [41] + `url-resolution`/`validation` [9]) totaled 140 tests prior to web and worker test expansion.
-3. **238/239 Tests:** At the conclusion of Batch H, the suite stood at 239 tests.
-4. **249 Tests:** With Batch I additions (8 worker lifecycle & graceful shutdown tests, 2 alert channel rejection tests), the monorepo test suite stands at **249 verified tests**.
+| **Total Monorepo Suite** | **Entire Workspace** | **46** | **257** | **100% Pass Rate** |
 
 ---
 
-## 3. Concrete Batch I Remediation Summary
+## 3. Detailed Audit Findings & Remediation Matrix
 
-### 3.1 Salary Currency Default & Interval Constraints (`20260829000015_production_readiness_fixes.sql`)
-- **P0-1 Fix:** Executed `ALTER TABLE public.jobs ALTER COLUMN salary_currency SET DEFAULT NULL;`. Missing salary currency remains strictly `NULL` in the database and `'UNKNOWN'` in facets.
-- **P0-2 Fix:** Replaced inline check constraint with `CONSTRAINT chk_salary_interval CHECK (salary_interval IS NULL OR salary_interval IN ('yearly', 'monthly', 'weekly', 'daily', 'hourly'))`. The `weekly` interval (annualization factor 52) is now valid and accepted at the PostgreSQL layer.
+### 3.1 P0-1: Worker Environment Validation (`apps/worker/src/lifecycle.ts`)
+- **Finding:** Worker allowed `NEXT_PUBLIC_SUPABASE_ANON_KEY` to substitute for `SUPABASE_SERVICE_ROLE_KEY`, violating privileged execution requirements.
+- **Remediation:** Updated `validateWorkerEnvironment()` to explicitly require `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (rejecting anon key substitution), and `WORKER_SECRET_TOKEN`. Rejects missing, empty, whitespace, and placeholder values.
+- **Tests Added:** Proved missing service role key fails even when anon key is present, whitespace-only variables fail, missing/default worker secret fails, and valid configuration succeeds (`apps/worker/tests/lifecycle.test.ts`).
+- **Verification Result:** PASS (15 unit tests passing).
 
-### 3.2 Health vs. Readiness Semantics
-- **Liveness (`GET /api/health`):** Verifies process liveness with a lightweight, 30-second cached database probe. Returns `HTTP 200 OK` (`{ status: 'ok', database: 'connected' }`) or `HTTP 503` (`{ status: 'degraded', database: 'error' }`).
-- **Readiness (`GET /api/ready`):** Deep, non-cached live query probe for container orchestrators (Kubernetes/Cloud Run). Returns `HTTP 200` (`{ status: 'ready', database: 'connected' }`) or `HTTP 503` if the database is unreachable.
+### 3.2 P0-2: Remove Hardcoded Worker Credentials (`apps/worker/src/db.ts`)
+- **Finding:** `apps/worker/src/db.ts` contained hardcoded fallback strings for Supabase URL, publishable key, and worker secret.
+- **Remediation:** Removed all fallback literals. Client strictly reads `process.env['NEXT_PUBLIC_SUPABASE_URL']`, `process.env['SUPABASE_SERVICE_ROLE_KEY']`, and `process.env['WORKER_SECRET_TOKEN']`. Test environment supplies mock credentials via Vitest setup without embedding secrets in production code.
+- **Verification Result:** PASS (Zero credential fallbacks in `src/db.ts`).
 
-### 3.3 Worker Startup Validation & Graceful Drainage (`apps/worker/src/lifecycle.ts`)
-- **Startup Validation:** `validateWorkerEnvironment()` executes prior to any work. Confirms `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are present and rejects placeholder values.
-- **Graceful Shutdown (`GracefulShutdownManager`):** Upon `SIGTERM`/`SIGINT`:
-  1. Sets `isShuttingDown = true` (blocks new poll cycles).
-  2. Tracks in-flight crawl tasks and allows them to drain cleanly.
-  3. Releases distributed locks via `finally` blocks.
-  4. Implements a 30-second hard safety timeout to protect container lifecycle.
+### 3.3 P0-3: Eliminate Known Worker Secret (`jp_worker_internal_2026`)
+- **Finding:** Hardcoded secret `jp_worker_internal_2026` was present in executable code and PostgreSQL function.
+- **Remediation:** Eliminated token from executable application code. Added blocklist check in `validateWorkerEnvironment` rejecting `jp_worker_internal_2026`. Updated migration `20260829000015_production_readiness_fixes.sql` replacing static function check with `app.settings.worker_secret_token` setting and privileged role checks.
+- **Verification Result:** PASS (Token only exists in security test cases and blocklist validator).
 
-### 3.4 Alert System Digest Query Alignment & Channel Enforcement
-- **Query Alignment:** `AlertDispatcher.runScheduledDigests` queries `display_title`, `locations`, `description`, and `canonical_url` aligned with the `jobs` table schema.
-- **Channel Enforcement:** `POST /api/alerts` and `PATCH /api/alerts/[id]` reject unimplemented `email` and `in_app` channels with `HTTP 400 Bad Request` until delivery infrastructure is provisioned.
+### 3.4 P1-1: Correct Health vs Readiness Semantics (`apps/web/app/api/health` & `/api/ready`)
+- **Finding:** `/api/health` performed a cached database probe, conflating liveness with readiness.
+- **Remediation:** 
+  - `/api/health` restored to lightweight liveness probe (returns HTTP 200 `{ status: 'ok', uptime: process.uptime(), timestamp: ... }`).
+  - `/api/ready` acts as dependency readiness probe (queries database; returns HTTP 200 on success, HTTP 503 on database error or query exception).
+- **Tests Added:** Added explicit test cases in `apps/web/tests/health-readiness-metrics.test.ts` covering health 200, ready healthy DB 200, ready DB error 503, and ready DB exception 503.
+- **Verification Result:** PASS (7 tests passing).
 
-### 3.5 Feed API Facet Scoping
-- **Contract Explicit:** `GET /api/jobs/feed` includes `facets: { facet_scope: 'page', salaries_by_currency: ... }` in its JSON metadata to document that facets reflect the returned page of results.
+### 3.5 P1-2: Graceful Shutdown Drainage & Timeout Distinction (`apps/worker/src/lifecycle.ts`)
+- **Finding:** Graceful shutdown did not return structured result distinguishing clean drain from forced timeout termination.
+- **Remediation:** `GracefulShutdownManager.initiateShutdown()` returns `ShutdownResult` (`{ clean: boolean, activeTasksRemaining: number, elapsedMs: number }`). Task release protected against double-call counter corruption.
+- **Tests Added:** Verified idle shutdown, active task drain, multiple concurrent task drain, rejection of new tasks post-shutdown, repeated signal deduplication, safe double release, and forced termination reporting on hard timeout.
+- **Verification Result:** PASS (7 shutdown tests passing).
 
----
+### 3.6 P1-3: Audit All Credential Fallbacks (`apps/web/lib/supabase/*`)
+- **Finding:** `apps/web/lib/supabase/client.ts` and `server.ts` contained hardcoded project URL and publishable key fallback strings.
+- **Remediation:** Removed hardcoded defaults. Client and server functions read directly from `process.env['NEXT_PUBLIC_SUPABASE_URL']` and `process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY']`.
+- **Verification Result:** PASS (No project-specific hardcoded fallbacks).
 
-## 4. Cross-System Integration Certification
-
-### 4.1 ATS Ingestion & Normalization Pipeline
-- **Verified Adapters:** Greenhouse (`GreenhouseAdapter`), Lever (`LeverAdapter`), Ashby (`AshbyAdapter`), and Jobright (`JobrightAdapter`).
-- **Data Flow:** Candidate Fetch $\rightarrow$ Parse $\rightarrow$ Normalize $\rightarrow$ Validate $\rightarrow$ Level-3 Deduplication Fingerprint $\rightarrow$ Atomic PostgreSQL RPC (`ingest_job_transaction`).
-- **Fingerprinting:** Canonical SHA-256 fingerprint generated from `company_id + normalized_title + normalized_locations` preventing cross-source job duplication.
-
-### 4.2 Multi-Source Ingestion & Failure Isolation
-- **Orchestration:** `ScraperRunner.processSources()` executes due sources using bounded concurrency (`pLimit(5)`).
-- **Isolation Guarantee:** Failure in Source A (e.g. 500 error, network timeout) is isolated, recording failure telemetry in `scrape_run_sources` and updating `company_sources.health_status`, without affecting in-flight discovery on Source B or Source C.
-
-### 4.3 Absolute Job Lifecycle Invariant
-- **Rule:** A failed, timed-out, cancelled, or partial crawl can **never** trigger lifecycle reconciliation or job expiration.
-- **Enforcement:** `JobLifecycleService.isEligibleForReconciliation(crawlResult)` mandates `crawlResult.status === 'completed' && crawlResult.isComplete === true`.
-- **Database RPC:** `reconcile_company_source_job_lifecycle` increments `missed_scrape_count` only on eligible complete runs, transitioning jobs to `stale` at threshold (3 consecutive misses) and `expired` at max staleness (30 days).
-
-### 4.4 Search, Cursor Pagination & Destination Intelligence
-- **Search Vector:** PostgreSQL weighted tsvector trigger indexing `display_title` (A), `canonical_title` (B), `skills` (B), and `description` (D).
-- **Keyset Pagination:** Deterministic `posted_at DESC, id DESC` cursor encoding base64 tokens with tamper validation.
-- **Destination Integrity:** Direct ATS apply URLs preserved with `original_apply_url` tracking, logging outbound click events via `/api/jobs/[id]/apply`.
-
-### 4.5 Compensation Intelligence & Currency Isolation
-- **Extraction:** Interval-driven regex extractor supporting hourly (2080h), daily (260d), weekly (52w), monthly (12m), and yearly (1y) standard conversion factors.
-- **Currency Isolation:** Raw compensation from differing currencies is strictly segregated. Benchmark RPC `get_salary_benchmarks` groups by exact `salary_currency` and ignores unstated currencies.
+### 3.7 P2-1: Deterministic Batch I Database Migration (`20260829000015_production_readiness_fixes.sql`)
+- **Finding:** Dynamic loop over `pg_constraint` was non-deterministic and could silently swallow errors.
+- **Remediation:** Replaced with explicit, deterministic `DROP CONSTRAINT IF EXISTS jobs_salary_interval_check` and `DROP CONSTRAINT IF EXISTS chk_salary_interval` before adding the constraint supporting `weekly`.
+- **Verification Result:** PASS (Deterministic SQL).
 
 ---
 
-## 5. Security & Threat Model Certification
+## 4. Batch A–H Invariant Verification
 
-| Security Layer | Threat / Attack Vector | Defense Mechanism | Test Status |
+| System | Invariant Rule | Verification Mechanism | Status |
 |---|---|---|---|
-| **Authentication** | Unauthenticated access to user/admin resources | `AuthGuard.requireAuthenticatedUser` validating Supabase JWT session | **PASS** (401 Unauthorized verified) |
-| **Authorization / RBAC** | Privilege escalation to administrative APIs | `AuthGuard.requireAdmin` verifying `profiles.role = 'admin'` in database | **PASS** (403 Forbidden verified) |
-| **Row Level Security (RLS)** | Cross-tenant data access on alerts and applications | Postgres RLS policies `auth.uid() = user_id` on `job_alerts`, `user_saved_jobs`, `user_applications` | **PASS** (Cross-user access denied) |
-| **Server-Side Request Forgery (SSRF)** | Webhook & scraper fetches targeting loopback/metadata | `SSRFGuard.isSafeUrl` blocking `localhost`, `127.0.0.1`, `169.254.169.254`, `0.0.0.0`, private IPv4/IPv6, and internal metadata | **PASS** (Blocked on creation, mutation & pre-dispatch) |
-| **Webhook Spoofing** | Forged webhook deliveries to client endpoints | HMAC SHA-256 payload signature included in `X-JobPulse-Signature` header | **PASS** (Cryptographically signed) |
-| **Concurrency / Replay** | Double dispatch of job alerts by parallel workers | Two-phase atomic lease claim `claim_undelivered_alert_jobs` separating `claimed` from `delivered` | **PASS** (SKIP LOCKED concurrency verified) |
+| **Crawl Integrity** | Failed, timed out, cancelled, or partial crawl can never trigger job reconciliation | `JobLifecycleService.isEligibleForReconciliation(crawlResult)` | **PASS** |
+| **Salary Integrity** | Unprovided salary currency remains strictly `NULL`/`UNKNOWN` (never inferred as USD) | Schema migration `20260829000015` & `SalaryExtractor` tests | **PASS** |
+| **Lifecycle** | Inactive jobs transition to stale after 3 consecutive misses and expire after 30 days | `reconcile_company_source_job_lifecycle` RPC | **PASS** |
+| **Security** | SSRF protection blocks private IP ranges and cloud metadata on webhook mutations & dispatches | `SSRFGuard.isSafeUrl` on create, update, and pre-dispatch | **PASS** |
+| **RBAC** | Unauthenticated requests get 401; non-admin users get 403 on admin routes | `AuthGuard.requireAuthenticatedUser` and `requireAdmin` | **PASS** |
+| **Idempotency** | Webhook alerts use two-phase lease claiming (`claimed` $\rightarrow$ `delivered`) | `claim_undelivered_alert_jobs` RPC with SKIP LOCKED | **PASS** |
 
 ---
 
-## 6. Infrastructure & Deployment Topology
+## 5. Remaining Limitations (P2/P3 Scope)
 
-```
-┌────────────────────────────────────────────────────────┐
-│               Frontend & API Layer                     │
-│                  Next.js on Vercel                     │
-│  - Public Job Search & Facets (Edge Caching)           │
-│  - User Alerts & Application Tracking                  │
-│  - Admin Observability & Source Onboarding UI          │
-│  - Liveness (/api/health) & Readiness (/api/ready)     │
-└───────────────────────────┬────────────────────────────┘
-                            │
-┌───────────────────────────▼────────────────────────────┐
-│              Authoritative Data Layer                  │
-│                Supabase / PostgreSQL                   │
-│  - 15 Relational Migrations & Row Level Security       │
-│  - Atomic Business Logic in PL/pgSQL RPCs              │
-│  - Distributed Scrape Locks (15-min lease TTL)         │
-│  - Full-Text Search tsvector Indexes                   │
-└───────────────────────────▲────────────────────────────┘
-                            │
-┌───────────────────────────┴────────────────────────────┐
-│              Dedicated Worker Service                  │
-│         Node.js ScraperRunner & Dispatcher             │
-│  - Multi-Source ATS Discovery (Greenhouse, Lever, etc) │
-│  - Normalization, Validation, Deduplication Pipeline   │
-│  - Scheduled Alert Dispatcher with Bounded Backoff     │
-│  - Pre-flight Env Validation & Graceful Drainage       │
-└────────────────────────────────────────────────────────┘
-```
-
----
-
-## 7. Migration Chain & Database Verification
-
-The database schema is defined across 15 linear, deterministic migrations:
-
-1. `20260829000001_initial_production_schema.sql` — Base tables, enums, RLS policies, search vector triggers.
-2. `20260829000002_atomic_ingestion_and_constraints.sql` — Canonical fingerprint, `ingest_job_transaction` RPC.
-3. `20260829000003_harden_security_and_contracts.sql` — Telemetry columns, security constraints.
-4. `20260829000004_distributed_locks_and_dispatch_queue.sql` — Distributed scrape locking RPCs.
-5. `20260829000005_worker_token_authorization.sql` — Internal worker authentication headers.
-6. `20260829000006_company_source_intelligence.sql` — Company slug uniqueness and scheduling intervals.
-7. `20260829000007_transactional_onboarding_and_identity.sql` — Atomic `onboard_company_source_transaction` RPC.
-8. `20260829000008_outbound_clicks_and_application_tracking.sql` — Outbound click logging and application tracking.
-9. `20260829000009_admin_metrics_and_job_lifecycle.sql` — Lifecycle reconciliation RPC and admin metrics RPC.
-10. `20260829000010_atomic_scrape_scheduling.sql` — Scrape run queueing with `SKIP LOCKED` claim.
-11. `20260829000011_job_alerts_and_notifications.sql` — Job alert configurations and delivery logs.
-12. `20260829000012_alert_delivery_idempotency.sql` — Delivery deduplication constraints.
-13. `20260829000013_alert_claim_lifecycle.sql` — `claim_undelivered_alert_jobs` two-phase lease RPC.
-14. `20260829000014_salary_compensation_intelligence.sql` — Annualization columns, indexes, and benchmark RPC.
-15. `20260829000015_production_readiness_fixes.sql` — Nullable salary currency default and weekly interval constraint.
-
----
-
-## 8. Open Issues & Future Non-Blocking Enhancements (P2/P3)
-
-| ID | Severity | Component | Description | Recommendation |
-|---|---|---|---|---|
-| **ISS-01** | P2 | Alerts | Email and In-App delivery channels are rejected via API until delivery provider (e.g. Resend, Sendgrid) is configured. | Implement email provider adapter in future release when SMTP credentials are provisioned. |
-| **ISS-02** | P2 | Feed API | Salary facets are page-scoped rather than global across entire dataset. | Expose a dedicated database-side aggregated facets endpoint (`/api/jobs/feed/facets`) in next minor release. |
-| **ISS-03** | P3 | Worker | Scraper polling uses recursive timeout in daemon mode. | Transition to a durable cron/queue scheduler (e.g., pg_cron, BullMQ) for multi-worker horizontal scaling. |
-
----
-
-## 9. Final Sign-off
-
-JobPulse 2.0 has met all functional, structural, economic, and security requirements for production service. The codebase is verified clean, fully tested, and ready for deployment to staging and production environments.
+1. **Email / In-App Delivery Channels:** Channel selection for `email` and `in_app` returns HTTP 400 until outbound email provider (e.g. Resend/SendGrid) is provisioned.
+2. **Page-Scoped Facets in Feed API:** Feed API facets reflect the current page of search results (`facet_scope: 'page'`) rather than global dataset aggregates.
+3. **Horizontal Worker Scheduling:** Background worker uses in-process daemon polling; horizontal scale-out across multiple worker instances requires queue scheduler (e.g. pg_cron/BullMQ).

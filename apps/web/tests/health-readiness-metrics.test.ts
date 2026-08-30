@@ -11,29 +11,19 @@ describe('System Health, Readiness & Observability Metrics (S23-S25)', () => {
     vi.clearAllMocks();
   });
 
-  describe('GET /api/health', () => {
-    it('returns status ok and process uptime when database is reachable', async () => {
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue({ data: [{ id: 'src_1' }], error: null }),
-          }),
-        }),
-      };
-      vi.spyOn(serverClient, 'createClient').mockResolvedValue(mockSupabase as any);
-
+  describe('GET /api/health (Liveness Probe)', () => {
+    it('returns status ok and process uptime as lightweight liveness probe', async () => {
       const res = await healthRoute();
       expect(res.status).toBe(200);
 
       const json = await res.json();
       expect(json.status).toBe('ok');
-      expect(json.database).toBe('connected');
       expect(typeof json.uptime).toBe('number');
       expect(json.timestamp).toBeDefined();
     });
   });
 
-  describe('GET /api/ready', () => {
+  describe('GET /api/ready (Readiness Probe with Dependency Check)', () => {
     it('returns 200 ready when database connection succeeds', async () => {
       const mockSupabase = {
         from: vi.fn().mockReturnValue({
@@ -53,7 +43,7 @@ describe('System Health, Readiness & Observability Metrics (S23-S25)', () => {
       expect(json.database).toBe('connected');
     });
 
-    it('returns 503 degraded when database connection encounters an error', async () => {
+    it('returns 503 degraded when database connection returns an error', async () => {
       const mockSupabase = {
         from: vi.fn().mockReturnValue({
           select: vi.fn().mockReturnValue({
@@ -69,7 +59,20 @@ describe('System Health, Readiness & Observability Metrics (S23-S25)', () => {
 
       const json = await res.json();
       expect(json.status).toBe('degraded');
+      expect(json.database).toBe('error');
       expect(json.error).toContain('DB connection timeout');
+    });
+
+    it('returns 503 unready when database query throws an unhandled exception', async () => {
+      vi.spyOn(serverClient, 'createClient').mockRejectedValue(new Error('Network socket connection refused'));
+
+      const res = await readyRoute();
+      expect(res.status).toBe(503);
+
+      const json = await res.json();
+      expect(json.status).toBe('unready');
+      expect(json.database).toBe('disconnected');
+      expect(json.error).toContain('Network socket connection refused');
     });
   });
 

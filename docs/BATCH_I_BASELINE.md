@@ -37,13 +37,13 @@ When `pnpm --recursive run test` executes, Vitest runs concurrently across all i
 | `@jobpulse/shared` | `packages/shared/tests` | 2 | **8** |
 | `@jobpulse/url-resolution` | `packages/url-resolution/tests` | 2 | **7** |
 | `@jobpulse/validation` | `packages/validation/tests` | 1 | **3** |
-| `@jobpulse/worker` | `apps/worker/tests` | 7 | **14** |
-| `@jobpulse/web` | `apps/web/tests` | 13 | **76** |
-| **Monorepo Total** | **Entire Repository** | **45** | **239** |
+| `@jobpulse/worker` | `apps/worker/tests` | 8 | **29** |
+| `@jobpulse/web` | `apps/web/tests` | 13 | **79** |
+| **Monorepo Total** | **Entire Repository** | **46** | **257** |
 
-- **Why "90" appeared:** `@jobpulse/domain` contains exactly **90 tests**. Also, `apps/web` (76) + `apps/worker` (14) coincidentally equals exactly **90 tests**.
-- **Why "140" appeared:** During earlier batches prior to web/alert/dashboard test suite additions, `@jobpulse/domain` (90) + `@jobpulse/ats` (41) + domain utilities (~9) totaled **140 tests**.
-- **The true monorepo total:** The full workspace test suite consists of **45 test files and 239 individual tests**, all currently passing.
+- **Why "90" appeared:** `@jobpulse/domain` contains exactly **90 tests**. Also, `apps/web` (76) + `apps/worker` (14) coincidentally equaled **90 tests** in earlier baselines.
+- **Why "140" appeared:** During earlier batches prior to web/alert/dashboard test additions, `@jobpulse/domain` (90) + `@jobpulse/ats` (41) + domain utilities (~9) totaled **140 tests**.
+- **The current monorepo total:** The full workspace test suite consists of **46 test files and 257 individual tests**, all 100% passing.
 
 ---
 
