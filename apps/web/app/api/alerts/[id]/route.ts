@@ -64,6 +64,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const effectiveChannel = data.channel !== undefined ? data.channel : existingAlert.channel;
 
+    // P1-4: Reject unimplemented channels until delivery infrastructure exists
+    if (effectiveChannel === 'email' || effectiveChannel === 'in_app') {
+      return ApiResponse.error(
+        `The "${effectiveChannel}" channel is not yet available. Please use "webhook" for alert delivery.`,
+        undefined,
+        400
+      );
+    }
+
     // 2. Enforce SSRF & consistency for webhook URLs
     if (effectiveChannel === 'webhook') {
       const targetWebhookUrl = data.webhookUrl !== undefined ? data.webhookUrl : existingAlert.webhook_url;

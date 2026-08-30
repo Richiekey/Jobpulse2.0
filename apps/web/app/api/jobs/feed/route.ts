@@ -245,6 +245,7 @@ export async function GET(request: NextRequest) {
         count: resultItems.length,
       },
       facets: {
+        facet_scope: 'page',
         salaries_by_currency: salariesByCurrency,
       },
     });

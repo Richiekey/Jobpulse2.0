@@ -12,12 +12,22 @@ describe('System Health, Readiness & Observability Metrics (S23-S25)', () => {
   });
 
   describe('GET /api/health', () => {
-    it('returns status ok and process uptime', async () => {
+    it('returns status ok and process uptime when database is reachable', async () => {
+      const mockSupabase = {
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue({ data: [{ id: 'src_1' }], error: null }),
+          }),
+        }),
+      };
+      vi.spyOn(serverClient, 'createClient').mockResolvedValue(mockSupabase as any);
+
       const res = await healthRoute();
       expect(res.status).toBe(200);
 
       const json = await res.json();
       expect(json.status).toBe('ok');
+      expect(json.database).toBe('connected');
       expect(typeof json.uptime).toBe('number');
       expect(json.timestamp).toBeDefined();
     });

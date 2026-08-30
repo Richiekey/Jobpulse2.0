@@ -178,7 +178,7 @@ export class AlertDispatcher {
     // 2. Fetch active jobs ingested within the frequency window
     const { data: recentJobs, error: jobError } = await this.supabase
       .from('jobs')
-      .select('id, title, company_id, location_raw, department, employment_type, workplace_type, description_text, canonical_url, posted_at, companies (name)')
+      .select('id, display_title, company_id, locations, employment_type, workplace_type, description, canonical_url, posted_at, companies (name)')
       .eq('status', 'active')
       .gte('first_seen_at', windowStart)
       .order('first_seen_at', { ascending: false })
@@ -196,14 +196,14 @@ export class AlertDispatcher {
 
     const candidateJobs: JobAlertMatchCandidate[] = recentJobs.map((j: any) => ({
       id: j.id,
-      title: j.title,
+      title: j.display_title || j.title || '',
       companyName: j.companies?.name || 'Company',
-      locationRaw: j.location_raw,
-      department: j.department,
+      locationRaw: Array.isArray(j.locations) ? j.locations.join(', ') : (j.locations || j.location_raw || ''),
+      department: j.department || null,
       employmentType: j.employment_type,
       remoteType: j.workplace_type,
-      descriptionText: j.description_text,
-      url: j.canonical_url,
+      descriptionText: j.description || j.description_text || '',
+      url: j.canonical_url || j.url,
     }));
 
     const mappedAlerts: JobAlert[] = alerts.map((a: any) => ({

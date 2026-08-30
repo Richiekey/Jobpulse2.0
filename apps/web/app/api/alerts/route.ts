@@ -78,6 +78,15 @@ export async function POST(request: NextRequest) {
 
     const payload = parseResult.data;
 
+    // P1-4: Reject unimplemented channels until delivery infrastructure exists
+    if (payload.channel === 'email' || payload.channel === 'in_app') {
+      return ApiResponse.error(
+        `The "${payload.channel}" channel is not yet available. Please use "webhook" for alert delivery.`,
+        undefined,
+        400
+      );
+    }
+
     // Strict SSRF check & channel consistency
     let sanitizedWebhookUrl: string | null = null;
 

@@ -88,6 +88,7 @@ describe('Search & Multi-Faceted Filtering Feed API (S17/S18)', () => {
     expect(json.data).toHaveLength(1);
     expect(json.data[0].display_title).toBe('Senior Distributed Systems Engineer');
     expect(json.meta.pagination.has_more).toBe(false);
+    expect(json.meta.facets.facet_scope).toBe('page');
 
     // Verify filter parameters applied to DB query
     expect(mockEq).toHaveBeenCalledWith('status', 'active');

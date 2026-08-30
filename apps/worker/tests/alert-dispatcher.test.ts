@@ -127,13 +127,12 @@ describe('AlertDispatcher — Claim vs Delivered Lifecycle & Scheduled Digests (
 
       const matchingJobData = {
         id: 'job-digest-99',
-        title: 'Senior Backend Engineer (Go)',
+        display_title: 'Senior Backend Engineer (Go)',
         company_id: 'comp-1',
-        location_raw: 'Remote',
-        department: 'Engineering',
+        locations: ['Remote'],
         employment_type: 'full_time',
         workplace_type: 'remote',
-        description_text: 'Building high throughput systems in Go and PostgreSQL',
+        description: 'Building high throughput systems in Go and PostgreSQL',
         canonical_url: 'https://comp.com/jobs/99',
         first_seen_at: new Date().toISOString(),
         companies: { name: 'Acme Corp' },
