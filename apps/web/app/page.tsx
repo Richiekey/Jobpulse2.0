@@ -16,6 +16,8 @@ import {
   Bell,
   Search,
   Plus,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 
 function JobCardSkeleton() {
@@ -27,6 +29,7 @@ function JobCardSkeleton() {
         marginBottom: '12px',
         opacity: 0.6,
       }}
+      aria-hidden="true"
     >
       <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
         <div
@@ -76,7 +79,11 @@ export default function HomePage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [savedJobs, setSavedJobs] = useState<any[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
+  const [pendingSaveIds, setPendingSaveIds] = useState<Set<string>>(new Set());
   const [applications, setApplications] = useState<any[]>([]);
+
+  // Toast feedback
+  const [toast, setToast] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,6 +104,13 @@ export default function HomePage() {
   // Modals state
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [trackingJob, setTrackingJob] = useState<any | null>(null);
+
+  const showToast = useCallback((type: 'error' | 'success', text: string) => {
+    setToast({ type, text });
+    setTimeout(() => {
+      setToast((current) => (current?.text === text ? null : current));
+    }, 4000);
+  }, []);
 
   // Fetch feed jobs
   const fetchFeedJobs = useCallback(
@@ -137,13 +151,17 @@ export default function HomePage() {
         }
       } catch (err: any) {
         console.error('Error fetching jobs feed:', err);
-        setFetchError(err?.message || 'Failed to load jobs feed. Please try again.');
+        if (resetCursor) {
+          setFetchError(err?.message || 'Failed to load jobs feed. Please try again.');
+        } else {
+          showToast('error', 'Failed to load next page of jobs.');
+        }
       } finally {
         setIsLoading(false);
         setIsLoadingMore(false);
       }
     },
-    [searchQuery, workplace, employment, salaryMin, selectedCurrency, hasSalaryOnly, selectedSkill, cursor]
+    [searchQuery, workplace, employment, salaryMin, selectedCurrency, hasSalaryOnly, selectedSkill, cursor, showToast]
   );
 
   // Initial load and filter change
@@ -185,21 +203,20 @@ export default function HomePage() {
     loadUserData();
   }, []);
 
-  // Handle Save / Unsave
+  // Handle Optimistic Save / Unsave with Rollback
   const handleToggleSave = async (jobId: string) => {
-    const isCurrentlySaved = savedJobIds.has(jobId);
-    const newSet = new Set(savedJobIds);
+    if (pendingSaveIds.has(jobId)) return; // Prevent concurrent duplicate clicks
 
+    const isCurrentlySaved = savedJobIds.has(jobId);
+    const previousSavedIds = new Set(savedJobIds);
+    const previousSavedJobs = [...savedJobs];
+
+    // Optimistic UI state update
+    const newSet = new Set(savedJobIds);
     if (isCurrentlySaved) {
       newSet.delete(jobId);
       setSavedJobIds(newSet);
       setSavedJobs((prev) => prev.filter((item) => (item.jobs?.id || item.job_id) !== jobId));
-
-      try {
-        await fetch(`/api/saved?jobId=${jobId}`, { method: 'DELETE' });
-      } catch (err) {
-        console.error('Error deleting saved job:', err);
-      }
     } else {
       newSet.add(jobId);
       setSavedJobIds(newSet);
@@ -207,20 +224,43 @@ export default function HomePage() {
       if (targetJob) {
         setSavedJobs((prev) => [{ id: `local-${Date.now()}`, job_id: jobId, jobs: targetJob }, ...prev]);
       }
+    }
 
-      try {
-        await fetch('/api/saved', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobId }),
-        });
-      } catch (err) {
-        console.error('Error saving job:', err);
+    // Set pending guard
+    setPendingSaveIds((prev) => new Set(prev).add(jobId));
+
+    try {
+      const res = await fetch(isCurrentlySaved ? `/api/saved?jobId=${jobId}` : '/api/saved', {
+        method: isCurrentlySaved ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: isCurrentlySaved ? undefined : JSON.stringify({ jobId }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Server returned ${res.status}`);
       }
+    } catch (err: any) {
+      console.error('Save mutation error:', err);
+      // Rollback optimistic state
+      setSavedJobIds(previousSavedIds);
+      setSavedJobs(previousSavedJobs);
+      showToast(
+        'error',
+        isCurrentlySaved
+          ? 'Failed to remove job from saved. Restored previous state.'
+          : 'Failed to save job to bookmarks. Restored previous state.'
+      );
+    } finally {
+      setPendingSaveIds((prev) => {
+        const updated = new Set(prev);
+        updated.delete(jobId);
+        return updated;
+      });
     }
   };
 
-  // Handle Record Application
+  // Handle Application Tracker Save with Feedback
   const handleSaveApplication = async (data: {
     jobId?: string;
     companyName: string;
@@ -234,12 +274,17 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (res.ok) {
-        const result = await res.json();
-        setApplications((prev) => [result.data, ...prev.filter((a) => a.id !== result.data.id)]);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to save application.');
       }
-    } catch (err) {
+      const result = await res.json();
+      setApplications((prev) => [result.data, ...prev.filter((a) => a.id !== result.data.id)]);
+      showToast('success', `Saved ${data.jobTitle} at ${data.companyName} to application tracker.`);
+    } catch (err: any) {
       console.error('Error saving application:', err);
+      showToast('error', err?.message || 'Failed to record application. Please try again.');
+      throw err;
     }
   };
 
@@ -261,6 +306,42 @@ export default function HomePage() {
         savedCount={savedJobs.length}
         applicationCount={applications.length}
       />
+
+      {/* Global Toast Notification */}
+      {toast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '12px 18px',
+            borderRadius: 'var(--radius-md)',
+            backgroundColor: toast.type === 'error' ? 'var(--danger-surface)' : 'var(--success-surface)',
+            border: `1px solid ${toast.type === 'error' ? 'var(--danger-border)' : 'var(--success-border)'}`,
+            color: toast.type === 'error' ? 'var(--danger-text)' : 'var(--success-text)',
+            boxShadow: 'var(--shadow-lg)',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            maxWidth: '420px',
+          }}
+        >
+          {toast.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+          <span style={{ flex: 1 }}>{toast.text}</span>
+          <button
+            onClick={() => setToast(null)}
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '2px' }}
+            aria-label="Dismiss message"
+          >
+            <X size={16} />
+          </button>
+        </aside>
+      )}
 
       <main style={{ flex: 1, maxWidth: '1200px', width: '100%', margin: '0 auto', padding: '24px 20px 48px' }}>
         {/* TAB 1: JOBS / DISCOVERY FEED */}
@@ -307,6 +388,7 @@ export default function HomePage() {
               </div>
 
               <button
+                type="button"
                 onClick={() => setIsAlertModalOpen(true)}
                 className="btn btn-secondary"
                 style={{ fontSize: '0.8125rem', padding: '7px 12px' }}
@@ -338,6 +420,7 @@ export default function HomePage() {
                   <span style={{ fontSize: '0.875rem' }}>{fetchError}</span>
                 </div>
                 <button
+                  type="button"
                   onClick={() => fetchFeedJobs(true)}
                   className="btn btn-secondary"
                   style={{ fontSize: '0.8125rem', padding: '5px 12px' }}
@@ -368,9 +451,9 @@ export default function HomePage() {
                 }}
               >
                 <Search size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
+                <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
                   No matching jobs found
-                </h3>
+                </h2>
                 <p
                   style={{
                     color: 'var(--text-secondary)',
@@ -381,7 +464,7 @@ export default function HomePage() {
                 >
                   Try adjusting your keywords, removing salary constraints, or selecting &quot;All Modes&quot; to discover available opportunities.
                 </p>
-                <button onClick={handleClearFilters} className="btn btn-primary">
+                <button type="button" onClick={handleClearFilters} className="btn btn-primary">
                   Reset All Filters
                 </button>
               </div>
@@ -403,6 +486,7 @@ export default function HomePage() {
                 {hasMore && (
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: '28px' }}>
                     <button
+                      type="button"
                       onClick={() => fetchFeedJobs(false)}
                       disabled={isLoadingMore}
                       className="btn btn-secondary"
@@ -445,9 +529,9 @@ export default function HomePage() {
                 }}
               >
                 <Bookmark size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
+                <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
                   No saved jobs yet
-                </h3>
+                </h2>
                 <p
                   style={{
                     color: 'var(--text-secondary)',
@@ -458,7 +542,7 @@ export default function HomePage() {
                 >
                   Click the bookmark icon on any job card in the main feed to save it to your personal shortlist.
                 </p>
-                <button onClick={() => setActiveTab('feed')} className="btn btn-primary">
+                <button type="button" onClick={() => setActiveTab('feed')} className="btn btn-primary">
                   Browse Jobs Feed
                 </button>
               </div>
@@ -505,6 +589,7 @@ export default function HomePage() {
               </div>
 
               <button
+                type="button"
                 onClick={() => setTrackingJob({ company_name: '', job_title: '', status: 'applied' })}
                 className="btn btn-primary"
               >
@@ -524,9 +609,9 @@ export default function HomePage() {
                 }}
               >
                 <CheckSquare size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
+                <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
                   No tracked applications yet
-                </h3>
+                </h2>
                 <p
                   style={{
                     color: 'var(--text-secondary)',
@@ -537,7 +622,7 @@ export default function HomePage() {
                 >
                   Track your job applications directly from job cards or add an external application manually.
                 </p>
-                <button onClick={() => setActiveTab('feed')} className="btn btn-primary">
+                <button type="button" onClick={() => setActiveTab('feed')} className="btn btn-primary">
                   Explore Openings
                 </button>
               </div>

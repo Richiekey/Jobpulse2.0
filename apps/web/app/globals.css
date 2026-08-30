@@ -89,6 +89,11 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
 }
 
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
 /* Card Container (Clean, flat, editorial surface) */
 .job-card-container {
   background-color: var(--bg-surface);
@@ -101,6 +106,15 @@ h1, h2, h3, h4, h5, h6 {
 .job-card-container:hover {
   background-color: var(--bg-surface-elevated);
   border-color: var(--border-strong);
+}
+
+.job-title-button {
+  transition: color var(--transition-fast);
+}
+
+.job-title-button:hover {
+  color: var(--brand-text) !important;
+  text-decoration: underline;
 }
 
 /* Controls & Buttons */
@@ -258,6 +272,19 @@ h1, h2, h3, h4, h5, h6 {
   max-height: 88vh;
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
+}
+
+/* Responsive Rules */
+@media (max-width: 768px) {
+  .desktop-nav {
+    display: none !important;
+  }
+  .mobile-nav-toggle {
+    display: block !important;
+  }
+  .hidden-mobile {
+    display: none !important;
+  }
 }
 
 /* Scrollbar */

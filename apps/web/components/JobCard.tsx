@@ -82,17 +82,7 @@ export const JobCard: React.FC<JobCardProps> = ({
       style={{
         padding: '18px 20px',
         marginBottom: '12px',
-        cursor: 'pointer',
         position: 'relative',
-      }}
-      onClick={() => onOpenDetails?.(job.id)}
-      tabIndex={0}
-      role="button"
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpenDetails?.(job.id);
-        }
       }}
     >
       <div
@@ -172,17 +162,30 @@ export const JobCard: React.FC<JobCardProps> = ({
               </span>
             </div>
 
-            {/* Row 2: Dominant Job Title */}
-            <h2
-              style={{
-                fontSize: '1.125rem',
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                lineHeight: 1.35,
-                marginBottom: '8px',
-              }}
-            >
-              {job.display_title}
+            {/* Row 2: Dominant Job Title as Primary Accessible Trigger */}
+            <h2 style={{ lineHeight: 1.35, marginBottom: '8px' }}>
+              <button
+                type="button"
+                onClick={() => onOpenDetails?.(job.id)}
+                className="job-title-button"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  font: 'inherit',
+                  fontSize: '1.125rem',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'inline-block',
+                  textDecoration: 'none',
+                  outline: 'none',
+                }}
+                aria-label={`View details for ${job.display_title} at ${companyName}`}
+              >
+                {job.display_title}
+              </button>
             </h2>
 
             {/* Row 3: Metadata Badges (Location, Mode, Salary, Equity) */}
@@ -254,14 +257,14 @@ export const JobCard: React.FC<JobCardProps> = ({
             gap: '8px',
             flexShrink: 0,
           }}
-          onClick={(e) => e.stopPropagation()}
         >
           {onToggleSave && (
             <button
+              type="button"
               onClick={() => onToggleSave(job.id)}
               className="btn btn-icon"
               title={isSaved ? 'Remove from Saved' : 'Save this job'}
-              aria-label={isSaved ? 'Remove from Saved' : 'Save this job'}
+              aria-label={isSaved ? `Remove ${job.display_title} from saved jobs` : `Save ${job.display_title}`}
               style={{
                 color: isSaved ? 'var(--brand-primary)' : 'var(--text-muted)',
                 borderColor: isSaved ? 'var(--brand-primary)' : 'var(--border-subtle)',
@@ -274,9 +277,11 @@ export const JobCard: React.FC<JobCardProps> = ({
 
           {onTrackApplication && (
             <button
+              type="button"
               onClick={() => onTrackApplication(job)}
               className="btn btn-secondary"
               title="Track application progress"
+              aria-label={`Track application for ${job.display_title}`}
               style={{ padding: '8px 12px', fontSize: '0.8125rem' }}
             >
               <CheckSquare size={15} />
@@ -289,6 +294,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary"
+            aria-label={`Apply for ${job.display_title} at ${companyName} via ATS`}
             style={{ padding: '8px 14px', fontSize: '0.8125rem' }}
           >
             <span>Apply</span>
