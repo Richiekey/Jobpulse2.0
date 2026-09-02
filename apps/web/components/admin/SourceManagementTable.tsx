@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  HelpCircle,
   Play,
   Check,
   Building,
@@ -20,7 +19,7 @@ export interface AdminCompanySource {
   source_identifier: string;
   is_active: boolean;
   schedule_interval_minutes: number;
-  health_status: 'healthy' | 'degraded' | 'failing' | 'unreachable';
+  health_status: 'healthy' | 'degraded' | 'failing' | 'disabled';
   consecutive_failures: number;
   last_checked_at: string | null;
   companies?: {
@@ -136,7 +135,7 @@ export const SourceManagementTable: React.FC<SourceManagementTableProps> = ({
             <XCircle size={12} /> Failing
           </span>
         );
-      default:
+      case 'disabled':
         return (
           <span
             style={{
@@ -151,7 +150,7 @@ export const SourceManagementTable: React.FC<SourceManagementTableProps> = ({
               fontWeight: 600,
             }}
           >
-            <HelpCircle size={12} /> Unreachable
+            <XCircle size={12} /> Disabled
           </span>
         );
     }
@@ -195,7 +194,7 @@ export const SourceManagementTable: React.FC<SourceManagementTableProps> = ({
             <option value="healthy">Healthy</option>
             <option value="degraded">Degraded</option>
             <option value="failing">Failing</option>
-            <option value="unreachable">Unreachable</option>
+            <option value="disabled">Disabled</option>
           </select>
         </div>
 

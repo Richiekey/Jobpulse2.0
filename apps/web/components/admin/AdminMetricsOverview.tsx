@@ -32,7 +32,7 @@ export interface AdminMetricsData {
       healthy: number;
       degraded: number;
       failing: number;
-      unreachable: number;
+      disabled: number;
     };
   };
   jobs: {
@@ -244,9 +244,9 @@ export const AdminMetricsOverview: React.FC<AdminMetricsOverviewProps> = ({
               <HelpCircle size={22} color="#9ca3af" />
               <div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#d1d5db' }}>
-                  {metrics.sources.health.unreachable}
+                  {metrics.sources.health.disabled}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unreachable</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Disabled</div>
               </div>
             </div>
           </div>

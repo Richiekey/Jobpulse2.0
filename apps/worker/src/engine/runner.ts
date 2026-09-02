@@ -572,6 +572,7 @@ export class ScraperRunner {
         .update({
           health_status: updateData.healthStatus,
           consecutive_failures: updateData.consecutiveFailures,
+          is_active: updateData.isActive,
           last_checked_at: updateData.lastCheckedAt,
           last_success_at: updateData.lastSuccessAt,
           last_job_count: updateData.lastJobCount,

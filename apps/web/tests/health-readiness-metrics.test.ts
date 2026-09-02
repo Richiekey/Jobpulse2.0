@@ -94,7 +94,7 @@ describe('System Health, Readiness & Observability Metrics (S23-S25)', () => {
         sources: {
           total: 30,
           active: 28,
-          health: { healthy: 26, degraded: 2, failing: 0, unreachable: 0 },
+          health: { healthy: 26, degraded: 2, failing: 0, disabled: 0 },
         },
         jobs: { active: 350, expired: 42 },
         ingestion24h: {

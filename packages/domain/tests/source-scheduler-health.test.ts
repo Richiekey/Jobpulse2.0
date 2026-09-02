@@ -199,3 +199,236 @@ describe('SourceHealthEngine & State Machine (S10 Production Logic)', () => {
     });
   });
 });
+
+// =============================================================================
+// HEALTH STATE CANONICALIZATION — REGRESSION TESTS
+// =============================================================================
+describe('Health State Canonicalization Contract', () => {
+  const BASE_TIME = new Date('2026-09-02T12:00:00Z');
+
+  function makeMockSource(overrides: Partial<CompanySourceConfig>): CompanySourceConfig {
+    return {
+      id: overrides.id || `cs_${Math.random().toString(36).substring(7)}`,
+      companyId: overrides.companyId || 'comp_1',
+      sourceId: overrides.sourceId || 'src_1',
+      sourceIdentifier: overrides.sourceIdentifier || 'test_source',
+      sourceUrl: overrides.sourceUrl || null,
+      adapterConfig: overrides.adapterConfig || {},
+      isActive: overrides.isActive ?? true,
+      healthStatus: overrides.healthStatus || 'healthy',
+      priority: overrides.priority ?? 100,
+      scheduleIntervalMinutes: overrides.scheduleIntervalMinutes ?? 360,
+      consecutiveFailures: overrides.consecutiveFailures ?? 0,
+      lastCheckedAt: overrides.lastCheckedAt ?? null,
+      lastSuccessAt: overrides.lastSuccessAt ?? null,
+      lastFailureAt: overrides.lastFailureAt ?? null,
+      lastError: overrides.lastError ?? null,
+      lastJobCount: overrides.lastJobCount ?? 0,
+      discoveryMethod: overrides.discoveryMethod || 'manual',
+      createdAt: overrides.createdAt || '2026-08-01T00:00:00Z',
+      updatedAt: overrides.updatedAt || '2026-08-01T00:00:00Z',
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Health transition thresholds (exhaustive boundary tests)
+  // ---------------------------------------------------------------------------
+  describe('calculateNextHealth transition boundaries', () => {
+    it('0 failures → healthy + active', () => {
+      expect(SourceHealthEngine.calculateNextHealth(0)).toEqual({
+        healthStatus: 'healthy',
+        isActive: true,
+      });
+    });
+
+    it('1 failure → degraded + active', () => {
+      expect(SourceHealthEngine.calculateNextHealth(1)).toEqual({
+        healthStatus: 'degraded',
+        isActive: true,
+      });
+    });
+
+    it('2 failures → degraded + active', () => {
+      expect(SourceHealthEngine.calculateNextHealth(2)).toEqual({
+        healthStatus: 'degraded',
+        isActive: true,
+      });
+    });
+
+    it('3 failures → failing + active', () => {
+      expect(SourceHealthEngine.calculateNextHealth(3)).toEqual({
+        healthStatus: 'failing',
+        isActive: true,
+      });
+    });
+
+    it('4 failures → failing + active', () => {
+      expect(SourceHealthEngine.calculateNextHealth(4)).toEqual({
+        healthStatus: 'failing',
+        isActive: true,
+      });
+    });
+
+    it('5 failures → disabled + inactive', () => {
+      expect(SourceHealthEngine.calculateNextHealth(5)).toEqual({
+        healthStatus: 'disabled',
+        isActive: false,
+      });
+    });
+
+    it('6+ failures → disabled + inactive', () => {
+      expect(SourceHealthEngine.calculateNextHealth(6)).toEqual({
+        healthStatus: 'disabled',
+        isActive: false,
+      });
+      expect(SourceHealthEngine.calculateNextHealth(100)).toEqual({
+        healthStatus: 'disabled',
+        isActive: false,
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Success update contract
+  // ---------------------------------------------------------------------------
+  describe('getSuccessUpdate contract', () => {
+    it('resets to healthy + active', () => {
+      const update = SourceHealthEngine.getSuccessUpdate(10, BASE_TIME);
+      expect(update.healthStatus).toBe('healthy');
+      expect(update.isActive).toBe(true);
+    });
+
+    it('resets consecutive failures to 0', () => {
+      const update = SourceHealthEngine.getSuccessUpdate(10, BASE_TIME);
+      expect(update.consecutiveFailures).toBe(0);
+    });
+
+    it('clears last_error', () => {
+      const update = SourceHealthEngine.getSuccessUpdate(10, BASE_TIME);
+      expect(update.lastError).toBeNull();
+    });
+
+    it('sets lastSuccessAt and lastCheckedAt', () => {
+      const update = SourceHealthEngine.getSuccessUpdate(10, BASE_TIME);
+      expect(update.lastSuccessAt).toBe(BASE_TIME.toISOString());
+      expect(update.lastCheckedAt).toBe(BASE_TIME.toISOString());
+    });
+
+    it('records discovered job count', () => {
+      const update = SourceHealthEngine.getSuccessUpdate(42, BASE_TIME);
+      expect(update.lastJobCount).toBe(42);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Failure update contract
+  // ---------------------------------------------------------------------------
+  describe('getFailureUpdate contract', () => {
+    it('increments consecutive failures', () => {
+      const update = SourceHealthEngine.getFailureUpdate(2, 'timeout', BASE_TIME);
+      expect(update.consecutiveFailures).toBe(3);
+    });
+
+    it('stores error message as failure reason (not health state)', () => {
+      const update = SourceHealthEngine.getFailureUpdate(0, 'Source unreachable: connection timeout', BASE_TIME);
+      expect(update.lastError).toBe('Source unreachable: connection timeout');
+      // unreachable is a failure reason, NOT a health state
+      expect(update.healthStatus).toBe('degraded');
+      expect(update.healthStatus).not.toBe('unreachable');
+    });
+
+    it('5th failure transitions to disabled + inactive', () => {
+      const update = SourceHealthEngine.getFailureUpdate(4, 'HTTP 503', BASE_TIME);
+      expect(update.consecutiveFailures).toBe(5);
+      expect(update.healthStatus).toBe('disabled');
+      expect(update.isActive).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scheduler exclusion
+  // ---------------------------------------------------------------------------
+  describe('scheduler excludes disabled and inactive sources', () => {
+    it('excludes sources with healthStatus = disabled', () => {
+      const source = makeMockSource({
+        healthStatus: 'disabled',
+        isActive: false,
+        lastCheckedAt: null,
+      });
+      const eligible = SourceScheduler.filterAndOrderEligibleSources([source], {
+        currentTime: BASE_TIME,
+      });
+      expect(eligible).toHaveLength(0);
+    });
+
+    it('excludes sources with isActive = false (even if health is healthy)', () => {
+      const source = makeMockSource({
+        healthStatus: 'healthy',
+        isActive: false,
+        lastCheckedAt: null,
+      });
+      const eligible = SourceScheduler.filterAndOrderEligibleSources([source], {
+        currentTime: BASE_TIME,
+      });
+      expect(eligible).toHaveLength(0);
+    });
+
+    it('includes due sources that are healthy + active', () => {
+      const source = makeMockSource({
+        healthStatus: 'healthy',
+        isActive: true,
+        lastCheckedAt: null,
+      });
+      const eligible = SourceScheduler.filterAndOrderEligibleSources([source], {
+        currentTime: BASE_TIME,
+      });
+      expect(eligible).toHaveLength(1);
+    });
+
+    it('includes due sources that are degraded + active', () => {
+      const source = makeMockSource({
+        healthStatus: 'degraded',
+        isActive: true,
+        lastCheckedAt: null,
+      });
+      const eligible = SourceScheduler.filterAndOrderEligibleSources([source], {
+        currentTime: BASE_TIME,
+      });
+      expect(eligible).toHaveLength(1);
+    });
+
+    it('includes due sources that are failing + active', () => {
+      const source = makeMockSource({
+        healthStatus: 'failing',
+        isActive: true,
+        lastCheckedAt: null,
+      });
+      const eligible = SourceScheduler.filterAndOrderEligibleSources([source], {
+        currentTime: BASE_TIME,
+      });
+      expect(eligible).toHaveLength(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Canonical type safety — unreachable is NOT a health state
+  // ---------------------------------------------------------------------------
+  describe('unreachable is NOT a health state', () => {
+    it('HealthStatus type only allows healthy, degraded, failing, disabled', () => {
+      const validStates: string[] = ['healthy', 'degraded', 'failing', 'disabled'];
+      // Verify all calculateNextHealth outputs are within canonical set
+      for (let i = 0; i <= 10; i++) {
+        const result = SourceHealthEngine.calculateNextHealth(i);
+        expect(validStates).toContain(result.healthStatus);
+        expect(result.healthStatus).not.toBe('unreachable');
+      }
+    });
+
+    it('getFailureUpdate never returns unreachable as healthStatus', () => {
+      for (let i = 0; i <= 10; i++) {
+        const update = SourceHealthEngine.getFailureUpdate(i, 'unreachable: DNS failure', BASE_TIME);
+        expect(update.healthStatus).not.toBe('unreachable');
+      }
+    });
+  });
+});

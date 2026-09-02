@@ -21,7 +21,7 @@ describe('Admin Dashboard UI Components (Batch F)', () => {
         healthy: 9,
         degraded: 2,
         failing: 1,
-        unreachable: 0,
+        disabled: 0,
       },
     },
     jobs: {
