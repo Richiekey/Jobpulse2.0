@@ -10,7 +10,7 @@ import type {
 import { Normalizer, DeduplicationEngine } from '@jobpulse/domain';
 import { URLResolver } from '@jobpulse/url-resolution';
 import { JobValidator, type JobValidationResult } from '@jobpulse/validation';
-import { httpClient } from '@jobpulse/shared';
+import { httpClient, logger } from '@jobpulse/shared';
 import type { ATSAdapter } from '../adapter.interface.js';
 
 export interface SmartRecruitersLocation {
@@ -212,32 +212,28 @@ export class SmartRecruitersAdapter implements ATSAdapter {
       }
     }
 
+    const isComplete = total === Infinity ? true : candidates.length >= total;
+    if (!isComplete && total > 0) {
+      logger.warn(`[SmartRecruiters] Incomplete crawl for ${companyIdentifier}: discovered ${candidates.length} of ${total} jobs across ${pageCount} pages (limit/cap reached)`);
+    } else {
+      logger.info(`[SmartRecruiters] Crawl complete for ${companyIdentifier}: discovered ${candidates.length} of ${total === Infinity ? candidates.length : total} jobs across ${pageCount} pages`);
+    }
+
     return candidates;
   }
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
     const url = `https://api.smartrecruiters.com/v1/companies/${candidate.companyIdentifier}/postings/${candidate.externalJobId}`;
-    let payload: Record<string, unknown> = {};
 
-    try {
-      const response = await httpClient.get<SmartRecruitersPostingDetail>(url, { timeoutMs: 12000 });
-      if (response.status === 200 && response.data) {
-        payload = response.data as unknown as Record<string, unknown>;
-      } else {
-        payload = {
-          id: candidate.externalJobId,
-          name: candidate.externalJobId,
-          sourceJobUrl: candidate.sourceJobUrl,
-        };
-      }
-    } catch {
-      payload = {
-        id: candidate.externalJobId,
-        name: candidate.externalJobId,
-        sourceJobUrl: candidate.sourceJobUrl,
-      };
+    const response = await httpClient.get<SmartRecruitersPostingDetail>(url, { timeoutMs: 12000 });
+    if (response.status !== 200 || !response.data || !response.data.id || !response.data.name) {
+      throw new Error(`SmartRecruiters job detail fetch failed for candidate ${candidate.externalJobId} at ${url} with HTTP ${response.status}`);
     }
 
+    const payload = {
+      ...(response.data as unknown as Record<string, unknown>),
+      sourceJobUrl: candidate.sourceJobUrl,
+    };
     const payloadHash = DeduplicationEngine.hashPayload(payload);
 
     return {

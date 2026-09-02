@@ -98,20 +98,21 @@ const TITLE_PATTERNS: TitlePattern[] = [
 
   // Cybersecurity / Cloud
   { pattern: /\b(devsecops)\b/i, slug: 'devsecops', confidence: 'high' },
-  { pattern: /\b(security\s+engineer|cybersecurity|infosec|soc\s+analyst|penetration|iam\s+engineer|appsec|security\s+analyst)\b/i, slug: 'security-engineering', confidence: 'high' },
+  { pattern: /\b(cloud\s+security\s+engineer|security\s+engineer|cybersecurity|infosec|soc\s+analyst|penetration|iam\s+engineer|appsec|security\s+analyst)\b/i, slug: 'security-engineering', confidence: 'high' },
   { pattern: /\b(cloud\s+engineer|cloud\s+architect)\b/i, slug: 'cloud-engineering', confidence: 'high' },
 
   // Product
-  { pattern: /\b(product\s+manager|product\s+owner|product\s+lead|product\s+director|technical\s+product\s+manager|product\s+operations)\b/i, slug: 'product', confidence: 'high' },
+  { pattern: /\b(ai\s+product\s+manager|product\s+manager|product\s+owner|product\s+lead|product\s+director|technical\s+product\s+manager|product\s+operations)\b/i, slug: 'product', confidence: 'high' },
 
   // Design
   { pattern: /\b(product\s+designer|ux\s+designer|ui\s+designer|ux\s+researcher|graphic\s+designer|design\s+lead|visual\s+designer|interaction\s+designer|brand\s+designer)\b/i, slug: 'design', confidence: 'high' },
 
-  // Business / Operations
-  { pattern: /\b(operations\s+manager|program\s+manager|project\s+manager|operations\s+analyst|chief\s+of\s+staff|strategy\s+analyst)\b/i, slug: 'business-operations', confidence: 'high' },
+  // Business / Operations & Technical Program Management
+  { pattern: /\b(technical\s+program\s+manager|tpm\b|program\s+manager|project\s+manager|operations\s+manager|operations\s+analyst|chief\s+of\s+staff|strategy\s+analyst)\b/i, slug: 'business-operations', confidence: 'high' },
   { pattern: /\b(business\s+analyst)\b/i, slug: 'business-operations', confidence: 'medium' },
 
-  // Sales / Marketing
+  // Sales / Marketing & Sales/Solutions Engineering
+  { pattern: /\b(sales\s+engineer|solutions\s+engineer|solution\s+architect)\b/i, slug: 'sales-marketing', confidence: 'high' },
   { pattern: /\b(account\s+executive|sales\s+development|business\s+development|sdr\b|bdr\b|growth\s+manager|growth\s+marketing)\b/i, slug: 'sales-marketing', confidence: 'high' },
   { pattern: /\b(marketing\s+manager|content\s+marketing|demand\s+gen|marketing\s+director|marketing\s+lead)\b/i, slug: 'sales-marketing', confidence: 'high' },
 

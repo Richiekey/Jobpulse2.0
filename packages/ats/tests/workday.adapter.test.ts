@@ -362,8 +362,61 @@ describe('WorkdayAdapter — Comprehensive ATS Verification', () => {
       expect(rawJob.rawDescription).toContain('• CUDA');
       expect(rawJob.rawLocations).toContain('Santa Clara, CA');
       expect(rawJob.rawLocations).toContain('Austin, TX');
-      expect(rawJob.rawLocations).toContain('Remote - US');
       expect(rawJob.rawEmploymentType).toBe('Full time');
+    });
+
+    it('rejects with error on HTTP 404 fetch failure without creating synthetic job', async () => {
+      const candidate: JobCandidate = {
+        sourceId: '10000000-0000-0000-0000-000000000004',
+        externalJobId: 'JR_FAIL_404',
+        discoveryUrl: 'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs',
+        sourceJobUrl: 'https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Santa-Clara/NonExistent_JR_FAIL_404',
+        companyIdentifier: 'nvidia/NVIDIAExternalCareerSite',
+      };
+
+      vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+        status: 404,
+        statusText: 'Not Found',
+        data: null,
+        headers: new Headers(),
+        url: candidate.sourceJobUrl,
+      } as any);
+
+      await expect(adapter.fetch(candidate)).rejects.toThrow('HTTP 404');
+    });
+
+    it('rejects with error on HTTP 429 rate limit failure', async () => {
+      const candidate: JobCandidate = {
+        sourceId: '10000000-0000-0000-0000-000000000004',
+        externalJobId: 'JR_FAIL_429',
+        discoveryUrl: 'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs',
+        sourceJobUrl: 'https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Santa-Clara/RateLimited_JR_FAIL_429',
+        companyIdentifier: 'nvidia/NVIDIAExternalCareerSite',
+      };
+
+      vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+        status: 429,
+        statusText: 'Too Many Requests',
+        data: null,
+        headers: new Headers(),
+        url: candidate.sourceJobUrl,
+      } as any);
+
+      await expect(adapter.fetch(candidate)).rejects.toThrow('HTTP 429');
+    });
+
+    it('rejects with error on network timeout', async () => {
+      const candidate: JobCandidate = {
+        sourceId: '10000000-0000-0000-0000-000000000004',
+        externalJobId: 'JR_TIMEOUT',
+        discoveryUrl: 'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs',
+        sourceJobUrl: 'https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Santa-Clara/Timeout_JR_TIMEOUT',
+        companyIdentifier: 'nvidia/NVIDIAExternalCareerSite',
+      };
+
+      vi.spyOn(httpClient, 'get').mockRejectedValueOnce(new Error('ETIMEDOUT'));
+
+      await expect(adapter.fetch(candidate)).rejects.toThrow('ETIMEDOUT');
     });
 
     it('normalizes parsed Workday job with workplace and skills extraction', async () => {

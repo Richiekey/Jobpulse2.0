@@ -238,6 +238,46 @@ describe('SmartRecruitersAdapter — Comprehensive ATS Verification', () => {
       const validation = adapter.validate(normalized);
       expect(validation.isValid).toBe(true);
     });
+
+    it('rejects with error on HTTP 404 fetch failure without creating synthetic job', async () => {
+      const candidate: JobCandidate = {
+        sourceId: '10000000-0000-0000-0000-000000000006',
+        externalJobId: 'sr_fail_404',
+        discoveryUrl: 'https://api.smartrecruiters.com/v1/companies/visa/postings',
+        sourceJobUrl: 'https://jobs.smartrecruiters.com/visa/sr_fail_404',
+        companyIdentifier: 'visa',
+      };
+
+      vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+        status: 404,
+        statusText: 'Not Found',
+        data: null,
+        headers: new Headers(),
+        url: candidate.sourceJobUrl,
+      } as any);
+
+      await expect(adapter.fetch(candidate)).rejects.toThrow('HTTP 404');
+    });
+
+    it('rejects with error on HTTP 429 rate limit failure', async () => {
+      const candidate: JobCandidate = {
+        sourceId: '10000000-0000-0000-0000-000000000006',
+        externalJobId: 'sr_fail_429',
+        discoveryUrl: 'https://api.smartrecruiters.com/v1/companies/visa/postings',
+        sourceJobUrl: 'https://jobs.smartrecruiters.com/visa/sr_fail_429',
+        companyIdentifier: 'visa',
+      };
+
+      vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+        status: 429,
+        statusText: 'Too Many Requests',
+        data: null,
+        headers: new Headers(),
+        url: candidate.sourceJobUrl,
+      } as any);
+
+      await expect(adapter.fetch(candidate)).rejects.toThrow('HTTP 429');
+    });
   });
 
   describe('5. Registry Integration', () => {

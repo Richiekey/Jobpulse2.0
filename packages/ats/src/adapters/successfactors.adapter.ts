@@ -166,25 +166,23 @@ export class SuccessFactorsAdapter implements ATSAdapter {
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
     const url = candidate.sourceJobUrl;
-    let payload: Record<string, unknown> = {};
+    const response = await httpClient.get<string>(url, { timeoutMs: 12000 });
 
-    try {
-      const response = await httpClient.get<string>(url, { timeoutMs: 12000 });
-      if (response.status === 200 && typeof response.data === 'string') {
-        const html = response.data;
-        const jsonLdMatch = html.match(/<script\s+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
-        if (jsonLdMatch && jsonLdMatch[1]) {
-          try {
-            payload = JSON.parse(jsonLdMatch[1].trim());
-          } catch {
-            payload = { html, id: candidate.externalJobId };
-          }
-        } else {
-          payload = { html, id: candidate.externalJobId };
-        }
+    if (response.status !== 200 || typeof response.data !== 'string' || !response.data.trim()) {
+      throw new Error(`SuccessFactors job detail fetch failed for candidate ${candidate.externalJobId} at ${url} with HTTP ${response.status}`);
+    }
+
+    const html = response.data;
+    let payload: Record<string, unknown> = {};
+    const jsonLdMatch = html.match(/<script\s+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (jsonLdMatch && jsonLdMatch[1]) {
+      try {
+        payload = JSON.parse(jsonLdMatch[1].trim());
+      } catch {
+        payload = { html, id: candidate.externalJobId };
       }
-    } catch {
-      payload = { id: candidate.externalJobId, sourceJobUrl: candidate.sourceJobUrl };
+    } else {
+      payload = { html, id: candidate.externalJobId };
     }
 
     const payloadHash = DeduplicationEngine.hashPayload(payload);

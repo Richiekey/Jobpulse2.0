@@ -172,4 +172,30 @@ describe('JobFunctionTaxonomy', () => {
       expect(subs.some((s) => s.slug === 'software-frontend')).toBe(true);
     });
   });
+
+  describe('classify — required ambiguity suite', () => {
+    const ambiguityCases: [string, string][] = [
+      ['Product Engineer', 'software-engineering'],
+      ['Security Engineer', 'security-engineering'],
+      ['Solutions Engineer', 'sales-marketing'],
+      ['Sales Engineer', 'sales-marketing'],
+      ['Data Engineer', 'data-engineering'],
+      ['ML Engineer', 'data-ml'],
+      ['Research Engineer', 'data-research'],
+      ['AI Product Manager', 'product'],
+      ['Technical Program Manager', 'business-operations'],
+      ['Business Systems Engineer', 'software-engineering'],
+      ['Cloud Security Engineer', 'security-engineering'],
+      ['DevSecOps Engineer', 'devsecops'],
+    ];
+
+    for (const [title, expectedSlug] of ambiguityCases) {
+      it(`deterministically classifies ambiguous title "${title}" as "${expectedSlug}"`, () => {
+        const result = JobFunctionTaxonomy.classify(title);
+        expect(result.slug).toBe(expectedSlug);
+        expect(result.confidence).toBeDefined();
+        expect(result.source).toBe('title_match');
+      });
+    }
+  });
 });

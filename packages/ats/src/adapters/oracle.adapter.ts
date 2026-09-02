@@ -175,19 +175,13 @@ export class OracleAdapter implements ATSAdapter {
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
     const url = candidate.sourceJobUrl;
-    let payload: Record<string, unknown> = {};
+    const response = await httpClient.get<Record<string, unknown>>(url, { timeoutMs: 12000 });
 
-    try {
-      const response = await httpClient.get<Record<string, unknown>>(url, { timeoutMs: 12000 });
-      if (response.status === 200 && response.data) {
-        payload = response.data;
-      } else {
-        payload = { id: candidate.externalJobId, sourceJobUrl: candidate.sourceJobUrl };
-      }
-    } catch {
-      payload = { id: candidate.externalJobId, sourceJobUrl: candidate.sourceJobUrl };
+    if (response.status !== 200 || !response.data) {
+      throw new Error(`Oracle job requisition fetch failed for candidate ${candidate.externalJobId} at ${url} with HTTP ${response.status}`);
     }
 
+    const payload = response.data;
     const payloadHash = DeduplicationEngine.hashPayload(payload);
 
     return {

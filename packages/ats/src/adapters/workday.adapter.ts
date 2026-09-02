@@ -10,7 +10,7 @@ import type {
 import { Normalizer, DeduplicationEngine } from '@jobpulse/domain';
 import { URLResolver } from '@jobpulse/url-resolution';
 import { JobValidator, type JobValidationResult } from '@jobpulse/validation';
-import { httpClient } from '@jobpulse/shared';
+import { httpClient, logger } from '@jobpulse/shared';
 import type { ATSAdapter } from '../adapter.interface.js';
 
 export interface WorkdayJobPostingListItem {
@@ -345,6 +345,13 @@ export class WorkdayAdapter implements ATSAdapter {
       }
     }
 
+    const isComplete = total === Infinity ? true : candidates.length >= total;
+    if (!isComplete && total > 0) {
+      logger.warn(`[Workday] Incomplete crawl for ${tenant}/${site}: discovered ${candidates.length} of ${total} jobs across ${pageCount} pages (safety cap reached)`);
+    } else {
+      logger.info(`[Workday] Crawl complete for ${tenant}/${site}: discovered ${candidates.length} of ${total === Infinity ? candidates.length : total} jobs across ${pageCount} pages`);
+    }
+
     return candidates;
   }
 
@@ -376,35 +383,22 @@ export class WorkdayAdapter implements ATSAdapter {
     }
 
     const detailUrl = `https://${host}/wday/cxs/${tenant}/${site}${externalPath}`;
-    let payload: Record<string, unknown> = {};
 
-    try {
-      const response = await httpClient.get<WorkdayJobDetailResponse>(detailUrl, {
-        timeoutMs: 12000,
-        headers: {
-          Accept: 'application/json',
-        },
-      });
+    const response = await httpClient.get<WorkdayJobDetailResponse>(detailUrl, {
+      timeoutMs: 12000,
+      headers: {
+        Accept: 'application/json',
+      },
+    });
 
-      if (response.status === 200 && response.data && response.data.jobPostingInfo) {
-        payload = response.data.jobPostingInfo as unknown as Record<string, unknown>;
-      } else {
-        // Fallback payload using candidate info
-        payload = {
-          title: candidate.externalJobId,
-          externalPath,
-          sourceJobUrl: candidate.sourceJobUrl,
-        };
-      }
-    } catch {
-      // Fallback to basic payload on individual fetch failure
-      payload = {
-        title: candidate.externalJobId,
-        externalPath,
-        sourceJobUrl: candidate.sourceJobUrl,
-      };
+    if (response.status !== 200 || !response.data || !response.data.jobPostingInfo) {
+      throw new Error(`Workday job detail fetch failed for candidate ${candidate.externalJobId} at ${detailUrl} with HTTP ${response.status}`);
     }
 
+    const payload = {
+      ...(response.data.jobPostingInfo as unknown as Record<string, unknown>),
+      sourceJobUrl: candidate.sourceJobUrl,
+    };
     const payloadHash = DeduplicationEngine.hashPayload(payload);
 
     return {

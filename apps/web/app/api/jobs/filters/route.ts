@@ -11,8 +11,8 @@ export async function GET(_request: NextRequest) {
     // 1. Fetch Taxonomy Hierarchy from job_functions table
     const { data: taxRows, error: taxError } = await supabase
       .from('job_functions')
-      .select('slug, name, parent_slug, display_order')
-      .order('display_order', { ascending: true });
+      .select('slug, name, parent_slug, sort_order')
+      .order('sort_order', { ascending: true });
 
     if (taxError) {
       return ApiResponse.error('Failed to load taxonomy.', taxError, 500);

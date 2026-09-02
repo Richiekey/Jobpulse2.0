@@ -179,4 +179,114 @@ describe('LocationParser', () => {
       expect(result.country).toBe('Germany');
     });
   });
+
+  describe('normalizeCountry & expandCountryFilters', () => {
+    const countryEquivalents: [string, string, string][] = [
+      ['United States', 'United States', 'US'],
+      ['united states', 'United States', 'US'],
+      ['UNITED STATES', 'United States', 'US'],
+      ['US', 'United States', 'US'],
+      ['usa', 'United States', 'US'],
+      ['Canada', 'Canada', 'CA'],
+      ['CA', 'Canada', 'CA'],
+      ['can', 'Canada', 'CA'],
+      ['Nigeria', 'Nigeria', 'NG'],
+      ['NG', 'Nigeria', 'NG'],
+      ['United Kingdom', 'United Kingdom', 'GB'],
+      ['GB', 'United Kingdom', 'GB'],
+      ['uk', 'United Kingdom', 'GB'],
+      ['Germany', 'Germany', 'DE'],
+      ['DE', 'Germany', 'DE'],
+    ];
+
+    for (const [input, expectedCanonical, expectedIso2] of countryEquivalents) {
+      it(`normalizes "${input}" to canonical "${expectedCanonical}" (${expectedIso2})`, () => {
+        const norm = LocationParser.normalizeCountry(input);
+        expect(norm).not.toBeNull();
+        expect(norm?.canonicalName).toBe(expectedCanonical);
+        expect(norm?.iso2).toBe(expectedIso2);
+      });
+    }
+
+    it('expands country filter tokens to match database representations', () => {
+      const expandedUS = LocationParser.expandCountryFilters(['US']);
+      expect(expandedUS).toContain('United States');
+      expect(expandedUS).toContain('US');
+
+      const expandedMulti = LocationParser.expandCountryFilters(['ca', 'Nigeria', 'GB']);
+      expect(expandedMulti).toContain('Canada');
+      expect(expandedMulti).toContain('CA');
+      expect(expandedMulti).toContain('Nigeria');
+      expect(expandedMulti).toContain('NG');
+      expect(expandedMulti).toContain('United Kingdom');
+      expect(expandedMulti).toContain('GB');
+    });
+  });
+
+  describe('complex location patterns (Section 7 verification)', () => {
+    it('parses "London, England"', () => {
+      const res = LocationParser.parse('London, England');
+      expect(res.city).toBe('London');
+      expect(res.country).toBe('United Kingdom');
+    });
+
+    it('parses "Greater London"', () => {
+      const res = LocationParser.parse('Greater London');
+      expect(res.country).toBe('United Kingdom');
+    });
+
+    it('parses "Remote - United States"', () => {
+      const res = LocationParser.parse('Remote - United States');
+      expect(res.country).toBe('United States');
+      expect(res.isRemote).toBe(true);
+    });
+
+    it('parses "US - Remote"', () => {
+      const res = LocationParser.parse('US - Remote');
+      expect(res.country).toBe('United States');
+      expect(res.isRemote).toBe(true);
+    });
+
+    it('parses "United States - Remote"', () => {
+      const res = LocationParser.parse('United States - Remote');
+      expect(res.country).toBe('United States');
+      expect(res.isRemote).toBe(true);
+    });
+
+    it('parses "Remote, Canada"', () => {
+      const res = LocationParser.parse('Remote, Canada');
+      expect(res.country).toBe('Canada');
+      expect(res.isRemote).toBe(true);
+    });
+
+    it('parses "Toronto / Remote"', () => {
+      const res = LocationParser.parse('Toronto / Remote');
+      expect(res.city).toBe('Toronto');
+      expect(res.isRemote).toBe(true);
+    });
+
+    it('parses "Hybrid - London"', () => {
+      const res = LocationParser.parse('Hybrid - London');
+      expect(res.city).toBe('London');
+      expect(res.country).toBe('United Kingdom');
+    });
+
+    it('parses "EMEA", "Europe", "Americas"', () => {
+      expect(LocationParser.parse('EMEA').region).toBe('EMEA');
+      expect(LocationParser.parse('Europe').region).toBe('EUROPE');
+      expect(LocationParser.parse('Americas').region).toBe('AMERICAS');
+    });
+
+    it('parses "New York Metropolitan Area"', () => {
+      const res = LocationParser.parse('New York Metropolitan Area');
+      expect(res.country).toBe('United States');
+      expect(res.region).toBe('New York Metropolitan Area');
+    });
+
+    it('parses "San Francisco Bay Area"', () => {
+      const res = LocationParser.parse('San Francisco Bay Area');
+      expect(res.country).toBe('United States');
+      expect(res.region).toBe('San Francisco Bay Area');
+    });
+  });
 });

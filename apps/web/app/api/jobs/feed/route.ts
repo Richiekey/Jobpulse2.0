@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
 import { decodeCursor, encodeCursor } from '@/lib/cursor';
+import { LocationParser } from '@jobpulse/domain';
 import { z } from 'zod';
 
 const FeedQuerySchema = z
@@ -205,16 +206,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 6. Country Filter (Multi-Select)
+    // 6. Country Filter (Multi-Select with Deterministic Bidirectional Normalization)
     if (countryParam && countryParam !== 'all') {
-      const countriesList = countryParam
+      const rawCountryInputs = countryParam
         .split(',')
-        .map((c) => c.trim().toUpperCase())
+        .map((c) => c.trim())
         .filter(Boolean);
-      if (countriesList.length === 1) {
-        dbQuery = dbQuery.eq('location_country', countriesList[0]!);
-      } else if (countriesList.length > 1) {
-        dbQuery = dbQuery.in('location_country', countriesList);
+      const expandedCountries = LocationParser.expandCountryFilters(rawCountryInputs);
+      if (expandedCountries.length === 1) {
+        dbQuery = dbQuery.eq('location_country', expandedCountries[0]!);
+      } else if (expandedCountries.length > 1) {
+        dbQuery = dbQuery.in('location_country', expandedCountries);
       }
     }
 

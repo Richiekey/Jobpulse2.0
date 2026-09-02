@@ -36,30 +36,79 @@ export default function HomePage() {
   const [applications, setApplications] = useState<any[]>([]);
   const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
 
+  // Helper to parse URL params into filter state
+  const parseFiltersFromUrl = (): {
+    parsedFilters: ActiveFilters;
+    parsedSort: 'posted_at_desc' | 'posted_at_asc' | 'salary_desc';
+    parsedJobId: string | null;
+  } => {
+    if (typeof window === 'undefined') {
+      return {
+        parsedFilters: {
+          search: '',
+          selectedFunctions: new Set(),
+          selectedPlatforms: new Set(),
+          selectedWorkplaces: new Set(),
+          selectedEmployments: new Set(),
+          selectedCountries: new Set(),
+          salaryMin: '',
+          selectedCurrency: '',
+          hasSalaryOnly: false,
+          datePreset: 'all',
+          isRemoteOnly: false,
+        },
+        parsedSort: 'posted_at_desc',
+        parsedJobId: null,
+      };
+    }
+
+    const sp = new URLSearchParams(window.location.search);
+    const search = sp.get('q') || sp.get('search') || '';
+    const fn = sp.get('function') || sp.get('job_function') || '';
+    const ats = sp.get('ats') || sp.get('ats_platform') || '';
+    const wp = sp.get('workplace') || '';
+    const emp = sp.get('employment') || '';
+    const ctry = sp.get('country') || sp.get('location_country') || '';
+    const salMin = sp.get('salary_min') || '';
+    const hasSal = sp.get('has_salary') === 'true';
+    const datePre = sp.get('date_preset') || 'all';
+    const isRem = sp.get('is_remote') === 'true' || sp.get('workplace') === 'remote';
+    const sortVal = sp.get('sort');
+    const parsedSort = (sortVal === 'posted_at_asc' || sortVal === 'salary_desc') ? sortVal : 'posted_at_desc';
+    const parsedJobId = sp.get('job') || null;
+
+    return {
+      parsedFilters: {
+        search,
+        selectedFunctions: new Set(fn.split(',').map((s) => s.trim()).filter(Boolean)),
+        selectedPlatforms: new Set(ats.split(',').map((s) => s.trim()).filter(Boolean)),
+        selectedWorkplaces: new Set(wp.split(',').map((s) => s.trim()).filter(Boolean)),
+        selectedEmployments: new Set(emp.split(',').map((s) => s.trim()).filter(Boolean)),
+        selectedCountries: new Set(ctry.split(',').map((s) => s.trim()).filter(Boolean)),
+        salaryMin: salMin,
+        selectedCurrency: '',
+        hasSalaryOnly: hasSal,
+        datePreset: datePre,
+        isRemoteOnly: isRem,
+      },
+      parsedSort,
+      parsedJobId,
+    };
+  };
+
   // Toast feedback
   const [toast, setToast] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // Filter options & Active filters
+  // Filter options & Active filters initialized from URL
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
-  const [filters, setFilters] = useState<ActiveFilters>({
-    search: '',
-    selectedFunctions: new Set<string>(),
-    selectedPlatforms: new Set<string>(),
-    selectedWorkplaces: new Set<string>(),
-    selectedEmployments: new Set<string>(),
-    selectedCountries: new Set<string>(),
-    salaryMin: '',
-    selectedCurrency: '',
-    hasSalaryOnly: false,
-    datePreset: 'all',
-    isRemoteOnly: false,
-  });
-
-  const [sortOrder, setSortOrder] = useState<'posted_at_desc' | 'posted_at_asc' | 'salary_desc'>('posted_at_desc');
+  const [filters, setFilters] = useState<ActiveFilters>(() => parseFiltersFromUrl().parsedFilters);
+  const [sortOrder, setSortOrder] = useState<'posted_at_desc' | 'posted_at_asc' | 'salary_desc'>(
+    () => parseFiltersFromUrl().parsedSort
+  );
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(
+    () => parseFiltersFromUrl().parsedJobId
+  );
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
-
-  // Selected job for right-hand inspector
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const selectedJob = useMemo(() => {
     if (!selectedJobId) return jobs[0] || null;
     return jobs.find((j) => j.id === selectedJobId) || jobs[0] || null;
@@ -177,13 +226,46 @@ export default function HomePage() {
     [filters, sortOrder, cursor, selectedJobId, showToast]
   );
 
-  // Trigger feed reload on filter/sort change
+  // Sync state to URL and trigger feed reload on filter/sort change
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams();
+      if (filters.search.trim()) params.set('q', filters.search.trim());
+      if (filters.selectedFunctions.size > 0) params.set('function', Array.from(filters.selectedFunctions).join(','));
+      if (filters.selectedPlatforms.size > 0) params.set('ats', Array.from(filters.selectedPlatforms).join(','));
+      if (filters.selectedWorkplaces.size > 0) params.set('workplace', Array.from(filters.selectedWorkplaces).join(','));
+      if (filters.selectedEmployments.size > 0) params.set('employment', Array.from(filters.selectedEmployments).join(','));
+      if (filters.selectedCountries.size > 0) params.set('country', Array.from(filters.selectedCountries).join(','));
+      if (filters.salaryMin) params.set('salary_min', filters.salaryMin);
+      if (filters.hasSalaryOnly) params.set('has_salary', 'true');
+      if (filters.datePreset && filters.datePreset !== 'all') params.set('date_preset', filters.datePreset);
+      if (filters.isRemoteOnly) params.set('is_remote', 'true');
+      if (sortOrder !== 'posted_at_desc') params.set('sort', sortOrder);
+      if (selectedJobId) params.set('job', selectedJobId);
+
+      const qs = params.toString();
+      const nextUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+      window.history.replaceState(null, '', nextUrl);
+    }
+
     const timer = setTimeout(() => {
       fetchFeedJobs(true);
     }, 200);
     return () => clearTimeout(timer);
-  }, [filters, sortOrder]);
+  }, [filters, sortOrder, selectedJobId]);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const { parsedFilters, parsedSort, parsedJobId } = parseFiltersFromUrl();
+      setFilters(parsedFilters);
+      setSortOrder(parsedSort);
+      if (parsedJobId) setSelectedJobId(parsedJobId);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Load Saved Jobs and Applications
   useEffect(() => {
