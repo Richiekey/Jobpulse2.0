@@ -2,11 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET as getFeedRoute } from '../app/api/jobs/feed/route';
 import { GET as getBenchmarksRoute } from '../app/api/salaries/benchmarks/route';
+import { AuthGuard } from '../lib/auth-guard';
 import * as serverDb from '../lib/supabase/server';
 
 describe('Salary & Compensation Intelligence (Batch H Remediation)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock authenticated user for all tests
+    vi.spyOn(AuthGuard, 'requireAuthenticatedUser').mockResolvedValue({
+      user: { id: 'test-user-id' } as any,
+      supabase: {} as any,
+    });
   });
 
   describe('Salary Range Cross-Field Validation (P1)', () => {

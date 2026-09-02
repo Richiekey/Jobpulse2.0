@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
+import { AuthGuard } from '@/lib/auth-guard';
 import { decodeCursor, encodeCursor } from '@/lib/cursor';
 import { LocationParser } from '@jobpulse/domain';
 import { z } from 'zod';
@@ -48,6 +49,9 @@ const FeedQuerySchema = z
 
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) return authResult.errorResponse;
+
     const { searchParams } = new URL(request.url);
 
     const parseResult = FeedQuerySchema.safeParse(Object.fromEntries(searchParams.entries()));

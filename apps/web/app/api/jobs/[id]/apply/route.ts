@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
+import { AuthGuard } from '@/lib/auth-guard';
 import { assertSafeUrl } from '@jobpulse/shared';
 import { ApplicationLifecycleService, ApplicationStatus } from '@jobpulse/domain';
 
@@ -46,6 +47,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) return authResult.errorResponse;
+
     const { id: jobId } = await params;
 
     if (!jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {
@@ -122,6 +126,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) return authResult.errorResponse;
+
     const { id: jobId } = await params;
 
     if (!jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {

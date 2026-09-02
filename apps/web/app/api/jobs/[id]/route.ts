@@ -1,12 +1,16 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
+import { AuthGuard } from '@/lib/auth-guard';
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) return authResult.errorResponse;
+
     const { id } = await params;
 
     if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {

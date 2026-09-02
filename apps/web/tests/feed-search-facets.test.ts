@@ -2,11 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET as feedRoute } from '../app/api/jobs/feed/route';
 import * as serverClient from '../lib/supabase/server';
+import { AuthGuard } from '../lib/auth-guard';
 import { encodeCursor } from '../lib/cursor';
 
 describe('Search & Multi-Faceted Filtering Feed API (S17/S18)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock authenticated user for all feed tests
+    vi.spyOn(AuthGuard, 'requireAuthenticatedUser').mockResolvedValue({
+      user: { id: 'test-user-id' } as any,
+      supabase: {} as any,
+    });
   });
 
   it('rejects invalid query parameters with 400 Bad Request', async () => {

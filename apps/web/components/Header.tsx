@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Briefcase, Bookmark, CheckSquare, Bell, Shield, Layers, Menu, X } from 'lucide-react';
+import { Briefcase, Bookmark, CheckSquare, Bell, Shield, Layers, Menu, X, LogOut, User } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
 
 interface HeaderProps {
   activeTab: 'feed' | 'saved' | 'applications' | 'alerts';
@@ -17,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   applicationCount,
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { user, isAdmin, signOut } = useAuth();
 
   const handleSelectTab = (tab: 'feed' | 'saved' | 'applications' | 'alerts') => {
     onTabChange(tab);
@@ -199,19 +201,61 @@ export const Header: React.FC<HeaderProps> = ({
             }}
           />
 
-          <a
-            href="/admin"
-            className="btn btn-ghost"
-            style={{
-              fontSize: '0.8125rem',
-              color: 'var(--text-muted)',
-              padding: '8px 12px',
-            }}
-            title="Admin Control Plane"
-          >
-            <Shield size={15} />
-            <span>Admin</span>
-          </a>
+          {isAdmin && (
+            <a
+              href="/admin"
+              className="btn btn-ghost"
+              style={{
+                fontSize: '0.8125rem',
+                color: 'var(--text-muted)',
+                padding: '8px 12px',
+              }}
+              title="Admin Control Plane"
+            >
+              <Shield size={15} />
+              <span>Admin</span>
+            </a>
+          )}
+
+          {user && (
+            <>
+              <div
+                style={{
+                  width: '1px',
+                  height: '20px',
+                  backgroundColor: 'var(--border-subtle)',
+                  margin: '0 4px',
+                }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--text-muted)',
+                    maxWidth: '140px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {user.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className="btn btn-ghost"
+                  style={{
+                    fontSize: '0.8125rem',
+                    color: 'var(--text-muted)',
+                    padding: '6px 10px',
+                  }}
+                  title="Sign out"
+                >
+                  <LogOut size={15} />
+                </button>
+              </div>
+            </>
+          )}
         </nav>
 
         {/* Mobile Hamburger Toggle Button */}
@@ -316,14 +360,31 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '4px 0' }} />
 
-          <a
-            href="/admin"
-            className="btn btn-ghost"
-            style={{ justifyContent: 'flex-start', width: '100%', padding: '10px 14px', color: 'var(--text-muted)' }}
-          >
-            <Shield size={18} />
-            <span>Admin Control Plane</span>
-          </a>
+          {isAdmin && (
+            <a
+              href="/admin"
+              className="btn btn-ghost"
+              style={{ justifyContent: 'flex-start', width: '100%', padding: '10px 14px', color: 'var(--text-muted)' }}
+            >
+              <Shield size={18} />
+              <span>Admin Control Plane</span>
+            </a>
+          )}
+
+          {user && (
+            <>
+              <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '4px 0' }} />
+              <button
+                type="button"
+                onClick={signOut}
+                className="btn btn-ghost"
+                style={{ justifyContent: 'flex-start', width: '100%', padding: '10px 14px', color: 'var(--text-muted)' }}
+              >
+                <LogOut size={18} />
+                <span>Sign Out ({user.email})</span>
+              </button>
+            </>
+          )}
         </nav>
       )}
     </header>

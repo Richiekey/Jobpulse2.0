@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
+import { AuthGuard } from '@/lib/auth-guard';
 import { z } from 'zod';
 
 const SalaryBenchmarkQuerySchema = z.object({
@@ -17,6 +18,9 @@ const SalaryBenchmarkQuerySchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) return authResult.errorResponse;
+
     const { searchParams } = new URL(request.url);
 
     const parseResult = SalaryBenchmarkQuerySchema.safeParse(Object.fromEntries(searchParams.entries()));

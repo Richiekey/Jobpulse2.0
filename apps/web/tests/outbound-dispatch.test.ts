@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET as applyGetRoute, POST as applyPostRoute } from '../app/api/jobs/[id]/apply/route';
+import { AuthGuard } from '../lib/auth-guard';
 import * as serverClient from '../lib/supabase/server';
 
 describe('Outbound Application Dispatch & Destination Intelligence (P0, P1, S19)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock authenticated user for all tests
+    vi.spyOn(AuthGuard, 'requireAuthenticatedUser').mockResolvedValue({
+      user: { id: 'test-user-id' } as any,
+      supabase: {} as any,
+    });
   });
 
   // 1. Validation & SSRF Security

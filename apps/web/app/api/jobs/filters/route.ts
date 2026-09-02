@@ -1,11 +1,15 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
+import { AuthGuard } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest) {
   try {
+    const authResult = await AuthGuard.requireAuthenticatedUser();
+    if ('errorResponse' in authResult) return authResult.errorResponse;
+
     const supabase = await createClient();
 
     // 1. Fetch Taxonomy Hierarchy from job_functions table
