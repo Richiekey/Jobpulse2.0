@@ -88,11 +88,12 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- 3. Insert Initial Verified Tech Companies
-INSERT INTO public.companies (id, name, normalized_name, website, careers_url, logo_url, industry, status)
+INSERT INTO public.companies (id, name, normalized_name, slug, website, careers_url, logo_url, industry, status)
 VALUES
   (
     '20000000-0000-0000-0000-000000000001',
     'Stripe',
+    'stripe',
     'stripe',
     'https://stripe.com',
     'https://stripe.com/jobs',
@@ -104,6 +105,7 @@ VALUES
     '20000000-0000-0000-0000-000000000002',
     'Airbnb',
     'airbnb',
+    'airbnb',
     'https://airbnb.com',
     'https://careers.airbnb.com',
     'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=128&h=128&fit=crop',
@@ -113,6 +115,7 @@ VALUES
   (
     '20000000-0000-0000-0000-000000000003',
     'Coinbase',
+    'coinbase',
     'coinbase',
     'https://coinbase.com',
     'https://coinbase.com/careers',
@@ -124,6 +127,7 @@ VALUES
     '20000000-0000-0000-0000-000000000004',
     'Figma',
     'figma',
+    'figma',
     'https://figma.com',
     'https://figma.com/careers',
     'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=128&h=128&fit=crop',
@@ -133,6 +137,7 @@ VALUES
   (
     '20000000-0000-0000-0000-000000000005',
     'Vercel',
+    'vercel',
     'vercel',
     'https://vercel.com',
     'https://vercel.com/careers',
