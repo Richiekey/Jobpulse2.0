@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeSafeRedirectPath } from '../app/auth/callback/route';
+import { sanitizeSafeRedirectPath } from '../lib/auth/safe-redirect';
 
 /**
  * Open-Redirect Prevention Regression Tests
