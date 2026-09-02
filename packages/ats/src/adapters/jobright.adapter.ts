@@ -344,11 +344,11 @@ export class JobrightAdapter implements ATSAdapter {
 
   public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
     const meta = raw.sourceMetadata || {};
-    if (typeof meta['ats_url'] === 'string' && meta['ats_url'].trim()) {
-      return meta['ats_url'].trim();
-    }
     if (typeof meta['original_apply_url'] === 'string' && meta['original_apply_url'].trim()) {
       return meta['original_apply_url'].trim();
+    }
+    if (typeof meta['ats_url'] === 'string' && meta['ats_url'].trim()) {
+      return meta['ats_url'].trim();
     }
     return raw.sourceJobUrl || candidate.sourceJobUrl || '';
   }

@@ -75,18 +75,18 @@ pnpm install --frozen-lockfile
 | **Framework Preset** | Next.js (auto-detected) |
 | **Node.js Version** | 20.x |
 | **Install Command** | `pnpm install --frozen-lockfile` |
-| **Build Command** | `cd ../.. && pnpm --filter @jobpulse/web... run build` |
+| **Build Command** | `pnpm --filter @jobpulse/web... run build` |
 | **Output Directory** | (default — `.next` auto-detected by Next.js preset) |
 
 ### vercel.json
 
 The repository includes a `vercel.json` at the repo root that codifies the build and install
-commands. Vercel reads this file from the repository root regardless of the Root Directory
-setting.
+commands:
 
 ```json
 {
-  "buildCommand": "cd ../.. && pnpm --filter @jobpulse/web... run build",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm --filter @jobpulse/web... run build",
   "installCommand": "pnpm install --frozen-lockfile"
 }
 ```
