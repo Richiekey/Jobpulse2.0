@@ -153,7 +153,8 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
       status: 200,
       data: { token: 'jwt_session_token_xyz123' },
       headers: new Headers(),
-      durationMs: 100,
+      statusText: 'OK',
+      url: 'https://jobright.ai/api/auth/login',
     });
 
     const token1 = await adapter.acquireSession({
@@ -183,7 +184,8 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
       status: 401,
       data: { error: 'Invalid credentials' },
       headers: new Headers(),
-      durationMs: 50,
+      statusText: 'Unauthorized',
+      url: 'https://jobright.ai/api/auth/login',
     });
 
     const token = await adapter.acquireSession({
@@ -199,7 +201,8 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
       status: 200,
       data: { token: 'auth_token_777' },
       headers: new Headers(),
-      durationMs: 50,
+      statusText: 'OK',
+      url: 'https://jobright.ai/api/auth/login',
     });
 
     const getSpy = vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
@@ -214,7 +217,8 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
         ],
       },
       headers: new Headers(),
-      durationMs: 120,
+      statusText: 'OK',
+      url: 'https://jobright.ai/api/jobs/company/tech-corp',
     });
 
     const config: CompanySourceConfig = {
@@ -261,7 +265,8 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
       status: 404,
       data: null,
       headers: new Headers(),
-      durationMs: 50,
+      statusText: 'Not Found',
+      url: 'https://jobright.ai/api/jobs/non_existent_999',
     });
 
     await expect(
