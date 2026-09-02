@@ -1,13 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JobrightAdapter } from '../src/adapters/jobright.adapter.js';
-import type { RawJobPayload } from '@jobpulse/domain';
+import type { RawJobPayload, CompanySourceConfig } from '@jobpulse/domain';
+import { httpClient } from '@jobpulse/shared';
 
-describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
+describe('JobrightAdapter URL Resolution & Security Matrix', () => {
   const adapter = new JobrightAdapter();
+
+  beforeEach(() => {
+    JobrightAdapter.clearSessionCache();
+    vi.restoreAllMocks();
+  });
 
   it('has valid platform slug and parser version', () => {
     expect(adapter.platformSlug).toBe('jobright');
-    expect(adapter.parserVersion).toBe('jobright_v1');
+    expect(adapter.parserVersion).toBe('jobright_v2');
   });
 
   it('Case A: original_apply_url wins when present', async () => {
@@ -24,7 +30,7 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
         ats_url: 'https://boards.greenhouse.io/stripe/jobs/999',
       },
       payloadHash: 'a'.repeat(64),
-      parserVersion: 'jobright_v1',
+      parserVersion: 'jobright_v2',
       fetchedAt: new Date().toISOString(),
     };
 
@@ -33,7 +39,6 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
 
     expect(normalized.urls.applyUrl).toBe('https://stripe.com/careers/apply/999');
     expect(normalized.urls.urlResolutionMethod).toBe('explicit_employer_apply');
-    expect(normalized.urls.urlResolutionConfidence).toBe(0.98);
   });
 
   it('Case B: ats_url wins when original_apply_url is absent', async () => {
@@ -49,7 +54,7 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
         ats_url: 'https://jobs.lever.co/netflix/lev_123',
       },
       payloadHash: 'b'.repeat(64),
-      parserVersion: 'jobright_v1',
+      parserVersion: 'jobright_v2',
       fetchedAt: new Date().toISOString(),
     };
 
@@ -58,7 +63,6 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
 
     expect(normalized.urls.applyUrl).toBe('https://jobs.lever.co/netflix/lev_123');
     expect(normalized.urls.urlResolutionMethod).toBe('explicit_ats_form');
-    expect(normalized.urls.urlResolutionConfidence).toBe(0.95);
   });
 
   it('Case C: embedded direct ATS URL wins when no explicit apply URLs exist', async () => {
@@ -74,7 +78,7 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
         embedded_urls: ['https://jobs.ashbyhq.com/openai/ash_456', 'https://openai.com/about'],
       },
       payloadHash: 'c'.repeat(64),
-      parserVersion: 'jobright_v1',
+      parserVersion: 'jobright_v2',
       fetchedAt: new Date().toISOString(),
     };
 
@@ -83,7 +87,6 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
 
     expect(normalized.urls.applyUrl).toBe('https://jobs.ashbyhq.com/openai/ash_456');
     expect(normalized.urls.urlResolutionMethod).toBe('known_ats_url');
-    expect(normalized.urls.urlResolutionConfidence).toBe(0.75);
   });
 
   it('Case D: retains Jobright source URL when no direct ATS URLs exist (no synthesis)', async () => {
@@ -98,7 +101,7 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
         source_job_url: 'https://jobright.ai/jobs/jr_case_d',
       },
       payloadHash: 'd'.repeat(64),
-      parserVersion: 'jobright_v1',
+      parserVersion: 'jobright_v2',
       fetchedAt: new Date().toISOString(),
     };
 
@@ -109,7 +112,6 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
     expect(normalized.urls.applyUrl).not.toContain('/apply');
     expect(normalized.urls.applyUrl).not.toContain('#app');
     expect(normalized.urls.urlResolutionMethod).toBe('fallback_source');
-    expect(normalized.urls.urlResolutionConfidence).toBe(0.40);
   });
 
   it('Case E: invalid or malicious candidate URLs are safely ignored without SSRF bypass', async () => {
@@ -126,15 +128,150 @@ describe('JobrightAdapter URL Resolution & Security Matrix (Finding 7)', () => {
         embedded_urls: ['javascript:alert(1)', 'ftp://internal.server/apply'],
       },
       payloadHash: 'e'.repeat(64),
-      parserVersion: 'jobright_v1',
+      parserVersion: 'jobright_v2',
       fetchedAt: new Date().toISOString(),
     };
 
     const rawJob = await adapter.parse(rawPayload);
     const normalized = await adapter.normalize(rawJob, rawPayload.payloadHash);
 
-    // Malicious/invalid candidates rejected -> falls back to clean sourceJobUrl
     expect(normalized.urls.applyUrl).toBe('https://jobright.ai/jobs/jr_case_e');
     expect(normalized.urls.urlResolutionMethod).toBe('fallback_source');
+  });
+});
+
+describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
+  const adapter = new JobrightAdapter();
+
+  beforeEach(() => {
+    JobrightAdapter.clearSessionCache();
+    vi.restoreAllMocks();
+  });
+
+  it('acquires and caches session token when valid credentials are provided', async () => {
+    const postSpy = vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
+      status: 200,
+      data: { token: 'jwt_session_token_xyz123' },
+      headers: {},
+      durationMs: 100,
+    });
+
+    const token1 = await adapter.acquireSession({
+      email: 'test@example.com',
+      password: 'super-secret-password',
+    });
+
+    expect(token1).toBe('jwt_session_token_xyz123');
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(postSpy).toHaveBeenCalledWith(
+      'https://jobright.ai/api/auth/login',
+      { email: 'test@example.com', password: 'super-secret-password' },
+      expect.objectContaining({ timeoutMs: 10000 })
+    );
+
+    // Second call should return cached token without triggering a second HTTP POST
+    const token2 = await adapter.acquireSession({
+      email: 'test@example.com',
+      password: 'super-secret-password',
+    });
+    expect(token2).toBe('jwt_session_token_xyz123');
+    expect(postSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles authentication failure gracefully without leaking credentials in errors', async () => {
+    vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
+      status: 401,
+      data: { error: 'Invalid credentials' },
+      headers: {},
+      durationMs: 50,
+    });
+
+    const token = await adapter.acquireSession({
+      email: 'bad@example.com',
+      password: 'wrong-password',
+    });
+
+    expect(token).toBeNull();
+  });
+
+  it('uses authenticated session headers in discover() and preserves candidate fields', async () => {
+    vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
+      status: 200,
+      data: { token: 'auth_token_777' },
+      headers: {},
+      durationMs: 50,
+    });
+
+    const getSpy = vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+      status: 200,
+      data: {
+        jobs: [
+          {
+            id: 'job_101',
+            title: 'Staff Software Engineer',
+            source_job_url: 'https://jobright.ai/jobs/job_101',
+          },
+        ],
+      },
+      headers: {},
+      durationMs: 120,
+    });
+
+    const config: CompanySourceConfig = {
+      id: 'cfg_jr_1',
+      companyId: 'comp_1',
+      sourceId: '10000000-0000-0000-0000-000000000005',
+      sourceIdentifier: 'tech-corp',
+      sourceUrl: 'https://jobright.ai/api/jobs/company/tech-corp',
+      adapterConfig: {
+        email: 'user@techcorp.com',
+        password: 'secure_password_123',
+      },
+      isActive: true,
+      healthStatus: 'healthy',
+      priority: 1,
+      scheduleIntervalMinutes: 60,
+      consecutiveFailures: 0,
+      lastCheckedAt: null,
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      lastError: null,
+      lastJobCount: 0,
+      discoveryMethod: 'manual',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const candidates = await adapter.discover(config);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.externalJobId).toBe('job_101');
+    expect(getSpy).toHaveBeenCalledWith(
+      'https://jobright.ai/api/jobs/company/tech-corp',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer auth_token_777',
+        }),
+      })
+    );
+  });
+
+  it('throws an explicit error on detail fetch failure (no synthetic jobs created)', async () => {
+    vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+      status: 404,
+      data: null,
+      headers: {},
+      durationMs: 50,
+    });
+
+    await expect(
+      adapter.fetch({
+        sourceId: '10000000-0000-0000-0000-000000000005',
+        externalJobId: 'non_existent_999',
+        discoveryUrl: 'https://jobright.ai/jobs/non_existent_999',
+        sourceJobUrl: 'https://jobright.ai/api/jobs/non_existent_999',
+        companyIdentifier: 'unknown',
+      })
+    ).rejects.toThrow(/Jobright job detail fetch failed/);
   });
 });

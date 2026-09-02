@@ -215,10 +215,14 @@ export class SmartRecruitersAdapter implements ATSAdapter {
     const isComplete = total === Infinity ? true : candidates.length >= total;
     if (!isComplete && total > 0) {
       logger.warn(`[SmartRecruiters] Incomplete crawl for ${companyIdentifier}: discovered ${candidates.length} of ${total} jobs across ${pageCount} pages (limit/cap reached)`);
-    } else {
-      logger.info(`[SmartRecruiters] Crawl complete for ${companyIdentifier}: discovered ${candidates.length} of ${total === Infinity ? candidates.length : total} jobs across ${pageCount} pages`);
     }
 
+    Object.defineProperty(candidates, 'isComplete', {
+      value: isComplete,
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
     return candidates;
   }
 

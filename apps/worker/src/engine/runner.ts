@@ -151,18 +151,26 @@ export class ScraperRunner {
 
       const durationMs = Date.now() - startSourceTime;
 
-      // HARD DATA-INTEGRITY INVARIANT (P0):
+      // HARD DATA-INTEGRITY INVARIANT (P0/P1):
       // A failed, timed-out, cancelled, or incomplete crawl can NEVER cause lifecycle reconciliation or job expiration.
+      const isDiscoveryComplete = (candidates as any).isComplete !== false;
+      const isIngestionComplete = failed === 0;
+      const isCrawlComplete = isDiscoveryComplete && isIngestionComplete;
+      const crawlStatus = isCrawlComplete ? 'completed' : 'partial';
+
       const crawlResult: CrawlExecutionResult = {
-        status: 'completed',
-        isComplete: true,
-        crawledJobIds: candidates.map((c) => c.externalJobId).filter(Boolean),
+        status: crawlStatus,
+        isComplete: isCrawlComplete,
+        crawledJobIds: candidateResults
+          .filter((r) => r.status === 'inserted' || r.status === 'updated')
+          .map((r) => r.candidateId)
+          .filter(Boolean),
       };
 
       if (!JobLifecycleService.isEligibleForReconciliation(crawlResult)) {
-        logger.warn(`Skipping lifecycle reconciliation for ${companySource.sourceIdentifier}: Crawl not eligible.`, {
-          crawlResult,
-        });
+        logger.warn(
+          `Skipping lifecycle reconciliation for ${companySource.sourceIdentifier}: Crawl incomplete (isComplete=${isCrawlComplete}, failed=${failed}, discoveryComplete=${isDiscoveryComplete}). Active records will NOT be expired based on partial coverage.`
+        );
       } else {
         try {
           const { data: reconciliationResult, error: reconcileError } = await supabase.rpc(

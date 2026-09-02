@@ -348,10 +348,14 @@ export class WorkdayAdapter implements ATSAdapter {
     const isComplete = total === Infinity ? true : candidates.length >= total;
     if (!isComplete && total > 0) {
       logger.warn(`[Workday] Incomplete crawl for ${tenant}/${site}: discovered ${candidates.length} of ${total} jobs across ${pageCount} pages (safety cap reached)`);
-    } else {
-      logger.info(`[Workday] Crawl complete for ${tenant}/${site}: discovered ${candidates.length} of ${total === Infinity ? candidates.length : total} jobs across ${pageCount} pages`);
     }
 
+    Object.defineProperty(candidates, 'isComplete', {
+      value: isComplete,
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
     return candidates;
   }
 

@@ -39,6 +39,8 @@ export interface JobAlertMatchCandidate {
   url: string;
 }
 
+import { LocationParser } from './location-parser.js';
+
 export interface AlertMatchResult {
   alert: JobAlert;
   matchedJobs: JobAlertMatchCandidate[];
@@ -69,11 +71,21 @@ export class JobAlertMatchingService {
       }
     }
 
-    // 2. Location Matching
+    // 2. Location & Canonical Country Matching
     if (alert.location && alert.location.trim().length > 0) {
       const alertLoc = alert.location.toLowerCase().trim();
       const jobLoc = (job.locationRaw || '').toLowerCase();
-      if (!jobLoc.includes(alertLoc)) {
+      
+      const normalizedAlertCountry = LocationParser.normalizeCountry(alertLoc)?.canonicalName.toLowerCase();
+      const parsedJobLoc = job.locationRaw ? LocationParser.parse(job.locationRaw) : null;
+      const normalizedJobCountry = parsedJobLoc?.country?.toLowerCase() || null;
+
+      const matchesRaw = jobLoc.includes(alertLoc);
+      const matchesCountry = Boolean(
+        normalizedAlertCountry && normalizedJobCountry && normalizedAlertCountry === normalizedJobCountry
+      );
+
+      if (!matchesRaw && !matchesCountry) {
         return false;
       }
     }

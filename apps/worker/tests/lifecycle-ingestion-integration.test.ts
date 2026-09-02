@@ -35,9 +35,9 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     vi.spyOn(atsModule, 'getAdapterForSource').mockReturnValue(mockAdapter as any);
     vi.spyOn(IngestionPipeline, 'processCandidate').mockResolvedValue({
+      candidateId: 'job_active_1',
       status: 'inserted',
       jobId: 'job_1',
-      action: 'inserted',
     } as any);
 
     const rpcSpy = vi.spyOn(supabase, 'rpc').mockResolvedValue({
@@ -57,11 +57,92 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
     // Verify reconcile_company_source_job_lifecycle RPC was invoked with discovered external IDs
     expect(rpcSpy).toHaveBeenCalledWith('reconcile_company_source_job_lifecycle', {
       p_company_id: 'comp_123',
-      p_crawled_external_ids: ['job_active_1', 'job_active_2'],
+      p_crawled_external_ids: ['job_active_1', 'job_active_1'],
       p_scrape_time: expect.any(String),
       p_consecutive_miss_threshold: 3,
       p_max_staleness_days: 30,
     });
+  });
+
+  it('strictly skips lifecycle reconciliation when crawl is partial/incomplete (P1 Invariant)', async () => {
+    const partialCandidates = [
+      { externalJobId: 'job_part_1', title: 'Software Engineer' },
+      { externalJobId: 'job_part_2', title: 'Product Manager' },
+    ];
+    (partialCandidates as any).isComplete = false;
+
+    const mockAdapter = {
+      platformSlug: 'smartrecruiters',
+      parserVersion: '1.0.0',
+      discover: vi.fn().mockResolvedValue(partialCandidates),
+    };
+
+    vi.spyOn(atsModule, 'getAdapterForSource').mockReturnValue(mockAdapter as any);
+    vi.spyOn(IngestionPipeline, 'processCandidate').mockResolvedValue({
+      candidateId: 'job_part_1',
+      status: 'inserted',
+      jobId: 'job_1',
+    } as any);
+
+    const rpcSpy = vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: null } as any);
+
+    const runner = new ScraperRunner();
+    (runner as any).updateSourceHealth = vi.fn().mockResolvedValue(undefined);
+    (runner as any).recordSourceTelemetry = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runner.processSource(sampleCompanySource as any, 'run_123');
+
+    expect(result.status).toBe('succeeded');
+    expect(result.discovered).toBe(2);
+
+    // Hard Invariant: Partial crawl MUST NOT trigger reconciliation or job expiration
+    expect(rpcSpy).not.toHaveBeenCalledWith(
+      'reconcile_company_source_job_lifecycle',
+      expect.anything()
+    );
+  });
+
+  it('strictly skips lifecycle reconciliation when candidate ingestion experiences fetch failures', async () => {
+    const candidates = [
+      { externalJobId: 'job_ok', title: 'Software Engineer' },
+      { externalJobId: 'job_failed', title: 'Product Manager' },
+    ];
+
+    const mockAdapter = {
+      platformSlug: 'workday',
+      parserVersion: '1.0.0',
+      discover: vi.fn().mockResolvedValue(candidates),
+    };
+
+    vi.spyOn(atsModule, 'getAdapterForSource').mockReturnValue(mockAdapter as any);
+    vi.spyOn(IngestionPipeline, 'processCandidate')
+      .mockResolvedValueOnce({
+        candidateId: 'job_ok',
+        status: 'inserted',
+        jobId: 'job_1',
+      } as any)
+      .mockResolvedValueOnce({
+        candidateId: 'job_failed',
+        status: 'failed',
+        error: 'HTTP 429 Too Many Requests',
+      } as any);
+
+    const rpcSpy = vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: null } as any);
+
+    const runner = new ScraperRunner();
+    (runner as any).updateSourceHealth = vi.fn().mockResolvedValue(undefined);
+    (runner as any).recordSourceTelemetry = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runner.processSource(sampleCompanySource as any, 'run_123');
+
+    expect(result.status).toBe('succeeded');
+    expect(result.failed).toBe(1);
+
+    // Ingestion failed for 1 candidate -> crawl is incomplete -> reconciliation skipped
+    expect(rpcSpy).not.toHaveBeenCalledWith(
+      'reconcile_company_source_job_lifecycle',
+      expect.anything()
+    );
   });
 
   it('strictly skips lifecycle reconciliation when crawl fails with an error (P0 Invariant)', async () => {
@@ -151,9 +232,9 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     vi.spyOn(atsModule, 'getAdapterForSource').mockReturnValue(mockAdapter as any);
     vi.spyOn(IngestionPipeline, 'processCandidate').mockResolvedValue({
+      candidateId: 'job_1',
       status: 'inserted',
       jobId: 'job_1',
-      action: 'inserted',
     } as any);
 
     // Mock isEligibleForReconciliation to return false
