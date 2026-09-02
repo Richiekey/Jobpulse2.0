@@ -12,4 +12,6 @@ export * from './application-lifecycle.js';
 export * from './job-lifecycle.js';
 export * from './alert-matching.js';
 export * from './salary-extractor.js';
+export * from './job-function-taxonomy.js';
+export * from './location-parser.js';
 export * from './seed/catalog-seed.js';

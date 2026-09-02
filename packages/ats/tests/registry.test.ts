@@ -36,12 +36,12 @@ describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
     expect(ATSAdapterRegistry.getAdapter('  JOBRIGHT  ')).toBeInstanceOf(JobrightAdapter);
   });
 
-  it('distinguishes known-but-unimplemented ATS platforms (e.g. Workday) from unknown platforms', () => {
-    // Workday is in the catalog but not implemented
-    expect(ATSAdapterRegistry.isKnownPlatform('workday')).toBe(true);
-    expect(ATSAdapterRegistry.hasAdapter('workday')).toBe(false);
+  it('distinguishes known-but-unimplemented ATS platforms (e.g. Workable, BambooHR) from unknown platforms', () => {
+    // Workable is in the catalog but not yet implemented
+    expect(ATSAdapterRegistry.isKnownPlatform('workable')).toBe(true);
+    expect(ATSAdapterRegistry.hasAdapter('workable')).toBe(false);
     expect(() => {
-      ATSAdapterRegistry.getAdapter('workday');
+      ATSAdapterRegistry.getAdapter('workable');
     }).toThrowError(UnimplementedATSError);
 
     // Completely unknown ATS
@@ -52,7 +52,7 @@ describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
     }).toThrowError(UnknownATSError);
 
     // Both inherit from UnsupportedATSError to prevent silent fallback
-    expect(() => ATSAdapterRegistry.getAdapter('workday')).toThrowError(UnsupportedATSError);
+    expect(() => ATSAdapterRegistry.getAdapter('workable')).toThrowError(UnsupportedATSError);
     expect(() => ATSAdapterRegistry.getAdapter('non_existent_ats_999')).toThrowError(UnsupportedATSError);
   });
 
@@ -66,12 +66,42 @@ describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
     const workdayDef = ATSAdapterRegistry.getDefinition('workday');
     expect(workdayDef).not.toBeNull();
     expect(workdayDef?.name).toBe('Workday');
-    expect(workdayDef?.isImplemented).toBe(false);
+    expect(workdayDef?.isImplemented).toBe(true);
+
+    const srDef = ATSAdapterRegistry.getDefinition('smartrecruiters');
+    expect(srDef).not.toBeNull();
+    expect(srDef?.name).toBe('SmartRecruiters');
+    expect(srDef?.isImplemented).toBe(true);
+
+    const icimsDef = ATSAdapterRegistry.getDefinition('icims');
+    expect(icimsDef).not.toBeNull();
+    expect(icimsDef?.name).toBe('iCIMS');
+    expect(icimsDef?.isImplemented).toBe(true);
+
+    const sfDef = ATSAdapterRegistry.getDefinition('successfactors');
+    expect(sfDef).not.toBeNull();
+    expect(sfDef?.name).toBe('SAP SuccessFactors');
+    expect(sfDef?.isImplemented).toBe(true);
+
+    const oracleDef = ATSAdapterRegistry.getDefinition('oracle');
+    expect(oracleDef).not.toBeNull();
+    expect(oracleDef?.name).toBe('Oracle Cloud HCM');
+    expect(oracleDef?.isImplemented).toBe(true);
+
+    const workableDef = ATSAdapterRegistry.getDefinition('workable');
+    expect(workableDef).not.toBeNull();
+    expect(workableDef?.name).toBe('Workable');
+    expect(workableDef?.isImplemented).toBe(false);
 
     const allDefs = ATSAdapterRegistry.getAllDefinitions();
-    expect(allDefs.length).toBeGreaterThanOrEqual(4);
+    expect(allDefs.length).toBeGreaterThanOrEqual(8);
     expect(allDefs.some((d) => d.slug === 'greenhouse')).toBe(true);
     expect(allDefs.some((d) => d.slug === 'workday')).toBe(true);
+    expect(allDefs.some((d) => d.slug === 'smartrecruiters')).toBe(true);
+    expect(allDefs.some((d) => d.slug === 'icims')).toBe(true);
+    expect(allDefs.some((d) => d.slug === 'successfactors')).toBe(true);
+    expect(allDefs.some((d) => d.slug === 'oracle')).toBe(true);
+    expect(allDefs.some((d) => d.slug === 'workable')).toBe(true);
   });
 
   it('detects Greenhouse URLs and board tokens', () => {

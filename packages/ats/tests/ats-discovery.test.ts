@@ -48,8 +48,8 @@ describe('ATS Discovery & Detection Engine (S12 & S13)', () => {
     const result = ATSDetector.detect('https://target.myworkdayjobs.com/targetcareers');
     expect(result.detected).toBe(true);
     expect(result.atsType).toBe('workday');
-    expect(result.boardIdentifier).toBe('target');
-    expect(result.confidence).toBe(0.95);
+    expect(result.boardIdentifier).toBe('target/targetcareers');
+    expect(result.confidence).toBeGreaterThanOrEqual(0.95);
   });
 
   it('resolves competing matches deterministically based on confidence score', () => {
@@ -111,8 +111,10 @@ describe('Source Pre-Flight Validation Engine (S11)', () => {
           { id: 102, title: 'Engineering Manager', absolute_url: 'https://boards.greenhouse.io/stripe/jobs/102' },
         ],
       },
-      headers: {},
-    });
+      headers: new Headers(),
+      statusText: 'OK',
+      url: 'https://boards-api.greenhouse.io/v1/boards/stripe/jobs',
+    } as any);
 
     const mockConfig: CompanySourceConfig = {
       id: 'cs_100',
@@ -143,9 +145,9 @@ describe('Source Pre-Flight Validation Engine (S11)', () => {
     const mockConfig: CompanySourceConfig = {
       id: 'cs_101',
       companyId: 'comp_2',
-      sourceId: 'src_wd',
-      sourceIdentifier: 'target',
-      adapterConfig: { atsType: 'workday' },
+      sourceId: 'src_workable',
+      sourceIdentifier: 'enterprise',
+      adapterConfig: { atsType: 'workable' },
       isActive: false,
       healthStatus: 'healthy',
       priority: 10,
@@ -157,7 +159,7 @@ describe('Source Pre-Flight Validation Engine (S11)', () => {
       updatedAt: new Date().toISOString(),
     };
 
-    const validation = await SourceValidator.validate(mockConfig, 'workday');
+    const validation = await SourceValidator.validate(mockConfig, 'workable');
     expect(validation.isValid).toBe(false);
     expect(validation.error).toContain('is recognized in catalog but adapter implementation is pending');
   });

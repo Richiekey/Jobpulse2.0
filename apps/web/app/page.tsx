@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Header } from '@/components/Header';
-import { SearchFilters } from '@/components/SearchFilters';
-import { JobCard } from '@/components/JobCard';
+import { FiltersSidebar, type FilterOptions, type ActiveFilters } from '@/components/FiltersSidebar';
+import { JobFeedCard } from '@/components/JobFeedCard';
+import { JobInspectorPane } from '@/components/JobInspectorPane';
 import { JobDetailsModal } from '@/components/JobDetailsModal';
 import { ApplicationTrackerModal } from '@/components/ApplicationTrackerModal';
 import { JobAlertModal } from '@/components/alerts/JobAlertModal';
@@ -18,60 +19,12 @@ import {
   Plus,
   CheckCircle2,
   X,
+  SlidersHorizontal,
+  ArrowUpDown,
+  Briefcase,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
-
-function JobCardSkeleton() {
-  return (
-    <div
-      className="job-card-container"
-      style={{
-        padding: '18px 20px',
-        marginBottom: '12px',
-        opacity: 0.6,
-      }}
-      aria-hidden="true"
-    >
-      <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-        <div
-          style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: 'var(--radius-md)',
-            backgroundColor: 'var(--bg-surface-elevated)',
-          }}
-        />
-        <div style={{ flex: 1 }}>
-          <div
-            style={{
-              width: '120px',
-              height: '14px',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              borderRadius: '4px',
-              marginBottom: '8px',
-            }}
-          />
-          <div
-            style={{
-              width: '60%',
-              height: '20px',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              borderRadius: '4px',
-              marginBottom: '10px',
-            }}
-          />
-          <div
-            style={{
-              width: '40%',
-              height: '14px',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              borderRadius: '4px',
-            }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
@@ -81,18 +34,41 @@ export default function HomePage() {
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [pendingSaveIds, setPendingSaveIds] = useState<Set<string>>(new Set());
   const [applications, setApplications] = useState<any[]>([]);
+  const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
 
   // Toast feedback
   const [toast, setToast] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // Filter state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [workplace, setWorkplace] = useState('all');
-  const [employment, setEmployment] = useState('all');
-  const [salaryMin, setSalaryMin] = useState('');
-  const [selectedCurrency, setSelectedCurrency] = useState('');
-  const [hasSalaryOnly, setHasSalaryOnly] = useState(false);
-  const [selectedSkill, setSelectedSkill] = useState('');
+  // Filter options & Active filters
+  const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
+  const [filters, setFilters] = useState<ActiveFilters>({
+    search: '',
+    selectedFunctions: new Set<string>(),
+    selectedPlatforms: new Set<string>(),
+    selectedWorkplaces: new Set<string>(),
+    selectedEmployments: new Set<string>(),
+    selectedCountries: new Set<string>(),
+    salaryMin: '',
+    selectedCurrency: '',
+    hasSalaryOnly: false,
+    datePreset: 'all',
+    isRemoteOnly: false,
+  });
+
+  const [sortOrder, setSortOrder] = useState<'posted_at_desc' | 'posted_at_asc' | 'salary_desc'>('posted_at_desc');
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+
+  // Selected job for right-hand inspector
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const selectedJob = useMemo(() => {
+    if (!selectedJobId) return jobs[0] || null;
+    return jobs.find((j) => j.id === selectedJobId) || jobs[0] || null;
+  }, [selectedJobId, jobs]);
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedJob) return -1;
+    return jobs.findIndex((j) => j.id === selectedJob.id);
+  }, [selectedJob, jobs]);
 
   // Pagination state
   const [cursor, setCursor] = useState<string | null>(null);
@@ -102,7 +78,7 @@ export default function HomePage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Modals state
-  const [selectedJob, setSelectedJob] = useState<any | null>(null);
+  const [modalJob, setModalJob] = useState<any | null>(null);
   const [trackingJob, setTrackingJob] = useState<any | null>(null);
 
   const showToast = useCallback((type: 'error' | 'success', text: string) => {
@@ -110,6 +86,24 @@ export default function HomePage() {
     setTimeout(() => {
       setToast((current) => (current?.text === text ? null : current));
     }, 4000);
+  }, []);
+
+  // Fetch filter metadata on mount
+  useEffect(() => {
+    const fetchFilterMeta = async () => {
+      try {
+        const res = await fetch('/api/jobs/filters');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data) {
+            setFilterOptions(json.data);
+          }
+        }
+      } catch (err) {
+        console.debug('Filter metadata fetch notice:', err);
+      }
+    };
+    fetchFilterMeta();
   }, []);
 
   // Fetch feed jobs
@@ -124,14 +118,30 @@ export default function HomePage() {
 
       try {
         const params = new URLSearchParams();
-        params.set('limit', '15');
-        if (searchQuery.trim()) params.set('q', searchQuery.trim());
-        if (workplace !== 'all') params.set('workplace', workplace);
-        if (employment !== 'all') params.set('employment', employment);
-        if (salaryMin) params.set('salary_min', salaryMin);
-        if (selectedCurrency) params.set('currency', selectedCurrency);
-        if (hasSalaryOnly) params.set('has_salary', 'true');
-        if (selectedSkill) params.set('skill', selectedSkill);
+        params.set('limit', '25');
+
+        if (filters.search.trim()) params.set('q', filters.search.trim());
+        if (filters.selectedFunctions.size > 0) {
+          params.set('function', Array.from(filters.selectedFunctions).join(','));
+        }
+        if (filters.selectedPlatforms.size > 0) {
+          params.set('ats', Array.from(filters.selectedPlatforms).join(','));
+        }
+        if (filters.selectedWorkplaces.size > 0) {
+          params.set('workplace', Array.from(filters.selectedWorkplaces).join(','));
+        }
+        if (filters.selectedEmployments.size > 0) {
+          params.set('employment', Array.from(filters.selectedEmployments).join(','));
+        }
+        if (filters.selectedCountries.size > 0) {
+          params.set('country', Array.from(filters.selectedCountries).join(','));
+        }
+        if (filters.salaryMin) params.set('salary_min', filters.salaryMin);
+        if (filters.hasSalaryOnly) params.set('has_salary', 'true');
+        if (filters.datePreset && filters.datePreset !== 'all') params.set('date_preset', filters.datePreset);
+        if (filters.isRemoteOnly) params.set('is_remote', 'true');
+        params.set('sort', sortOrder);
+
         if (!resetCursor && cursor) params.set('cursor', cursor);
 
         const res = await fetch(`/api/jobs/feed?${params.toString()}`);
@@ -143,6 +153,9 @@ export default function HomePage() {
         if (data.data) {
           if (resetCursor) {
             setJobs(data.data);
+            if (data.data.length > 0 && !selectedJobId) {
+              setSelectedJobId(data.data[0].id);
+            }
           } else {
             setJobs((prev) => [...prev, ...data.data]);
           }
@@ -161,16 +174,16 @@ export default function HomePage() {
         setIsLoadingMore(false);
       }
     },
-    [searchQuery, workplace, employment, salaryMin, selectedCurrency, hasSalaryOnly, selectedSkill, cursor, showToast]
+    [filters, sortOrder, cursor, selectedJobId, showToast]
   );
 
-  // Initial load and filter change
+  // Trigger feed reload on filter/sort change
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchFeedJobs(true);
     }, 200);
     return () => clearTimeout(timer);
-  }, [searchQuery, workplace, employment, salaryMin, selectedCurrency, hasSalaryOnly, selectedSkill]);
+  }, [filters, sortOrder]);
 
   // Load Saved Jobs and Applications
   useEffect(() => {
@@ -193,6 +206,7 @@ export default function HomePage() {
           const appsData = await appsRes.json();
           if (Array.isArray(appsData.data)) {
             setApplications(appsData.data);
+            setAppliedJobIds(new Set(appsData.data.map((a: any) => a.job_id)));
           }
         }
       } catch (err) {
@@ -203,15 +217,38 @@ export default function HomePage() {
     loadUserData();
   }, []);
 
-  // Handle Optimistic Save / Unsave with Rollback
+  // Keyboard navigation across job feed
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['input', 'textarea', 'select'].includes((e.target as HTMLElement)?.tagName?.toLowerCase())) {
+        return; // Don't intercept when typing in form controls
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (selectedIndex >= 0 && selectedIndex < jobs.length - 1) {
+          setSelectedJobId(jobs[selectedIndex + 1].id);
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (selectedIndex > 0) {
+          setSelectedJobId(jobs[selectedIndex - 1].id);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIndex, jobs]);
+
+  // Handle Optimistic Save / Unsave
   const handleToggleSave = async (jobId: string) => {
-    if (pendingSaveIds.has(jobId)) return; // Prevent concurrent duplicate clicks
+    if (pendingSaveIds.has(jobId)) return;
 
     const isCurrentlySaved = savedJobIds.has(jobId);
     const previousSavedIds = new Set(savedJobIds);
     const previousSavedJobs = [...savedJobs];
 
-    // Optimistic UI state update
     const newSet = new Set(savedJobIds);
     if (isCurrentlySaved) {
       newSet.delete(jobId);
@@ -226,7 +263,6 @@ export default function HomePage() {
       }
     }
 
-    // Set pending guard
     setPendingSaveIds((prev) => new Set(prev).add(jobId));
 
     try {
@@ -242,322 +278,322 @@ export default function HomePage() {
       }
     } catch (err: any) {
       console.error('Save mutation error:', err);
-      // Rollback optimistic state
       setSavedJobIds(previousSavedIds);
       setSavedJobs(previousSavedJobs);
-      showToast(
-        'error',
-        isCurrentlySaved
-          ? 'Failed to remove job from saved. Restored previous state.'
-          : 'Failed to save job to bookmarks. Restored previous state.'
-      );
+      showToast('error', isCurrentlySaved ? 'Failed to remove saved job.' : 'Failed to save job. Try signing in.');
     } finally {
       setPendingSaveIds((prev) => {
-        const updated = new Set(prev);
-        updated.delete(jobId);
-        return updated;
+        const copy = new Set(prev);
+        copy.delete(jobId);
+        return copy;
       });
     }
   };
 
-  // Handle Application Tracker Save with Feedback
-  const handleSaveApplication = async (data: {
-    jobId?: string;
-    companyName: string;
-    jobTitle: string;
-    status: string;
-    notes?: string;
-  }) => {
-    try {
-      const res = await fetch('/api/applications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Failed to save application.');
-      }
-      const result = await res.json();
-      setApplications((prev) => [result.data, ...prev.filter((a) => a.id !== result.data.id)]);
-      showToast('success', `Saved ${data.jobTitle} at ${data.companyName} to application tracker.`);
-    } catch (err: any) {
-      console.error('Error saving application:', err);
-      showToast('error', err?.message || 'Failed to record application. Please try again.');
-      throw err;
+  const handleTrackApplication = (job: any) => {
+    setTrackingJob(job);
+  };
+
+  const handleApplicationSuccess = (createdApp: any) => {
+    setApplications((prev) => [createdApp, ...prev]);
+    setAppliedJobIds((prev) => new Set(prev).add(createdApp.job_id));
+    setTrackingJob(null);
+    showToast('success', 'Application recorded in your tracker!');
+  };
+
+  const handleResetFilters = () => {
+    setFilters({
+      search: '',
+      selectedFunctions: new Set<string>(),
+      selectedPlatforms: new Set<string>(),
+      selectedWorkplaces: new Set<string>(),
+      selectedEmployments: new Set<string>(),
+      selectedCountries: new Set<string>(),
+      salaryMin: '',
+      selectedCurrency: '',
+      hasSalaryOnly: false,
+      datePreset: 'all',
+      isRemoteOnly: false,
+    });
+  };
+
+  const handleNextJob = () => {
+    if (selectedIndex >= 0 && selectedIndex < jobs.length - 1) {
+      setSelectedJobId(jobs[selectedIndex + 1].id);
     }
   };
 
-  const handleClearFilters = () => {
-    setSearchQuery('');
-    setWorkplace('all');
-    setEmployment('all');
-    setSalaryMin('');
-    setSelectedCurrency('');
-    setHasSalaryOnly(false);
-    setSelectedSkill('');
+  const handlePrevJob = () => {
+    if (selectedIndex > 0) {
+      setSelectedJobId(jobs[selectedIndex - 1].id);
+    }
   };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-app)' }}>
-      <Header
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        savedCount={savedJobs.length}
-        applicationCount={applications.length}
-      />
-
-      {/* Global Toast Notification */}
+      {/* Toast Notification */}
       {toast && (
-        <aside
-          role="status"
-          aria-live="polite"
+        <div
           style={{
             position: 'fixed',
             bottom: '24px',
             right: '24px',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
+            zIndex: 9999,
             padding: '12px 18px',
             borderRadius: 'var(--radius-md)',
             backgroundColor: toast.type === 'error' ? 'var(--danger-surface)' : 'var(--success-surface)',
             border: `1px solid ${toast.type === 'error' ? 'var(--danger-border)' : 'var(--success-border)'}`,
             color: toast.type === 'error' ? 'var(--danger-text)' : 'var(--success-text)',
+            fontSize: '13px',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
             boxShadow: 'var(--shadow-lg)',
-            fontSize: '0.875rem',
-            fontWeight: 500,
-            maxWidth: '420px',
           }}
         >
-          {toast.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-          <span style={{ flex: 1 }}>{toast.text}</span>
+          {toast.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+          <span>{toast.text}</span>
           <button
             onClick={() => setToast(null)}
-            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '2px' }}
-            aria-label="Dismiss message"
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', marginLeft: '8px' }}
           >
-            <X size={16} />
+            <X size={14} />
           </button>
-        </aside>
+        </div>
       )}
 
-      <main style={{ flex: 1, maxWidth: '1200px', width: '100%', margin: '0 auto', padding: '24px 20px 48px' }}>
-        {/* TAB 1: JOBS / DISCOVERY FEED */}
+      {/* Main Header */}
+      <Header
+        activeTab={activeTab}
+        onTabChange={(tab) => setActiveTab(tab as any)}
+        savedCount={savedJobs.length}
+        applicationCount={applications.length}
+      />
+
+      {/* Primary 3-Pane Container */}
+      <div style={{ flex: 1, display: 'flex', maxWidth: '1800px', margin: '0 auto', width: '100%' }}>
         {activeTab === 'feed' && (
-          <div>
-            {/* Search & Filter Component */}
-            <SearchFilters
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              workplace={workplace}
-              onWorkplaceChange={setWorkplace}
-              employment={employment}
-              onEmploymentChange={setEmployment}
-              salaryMin={salaryMin}
-              onSalaryMinChange={setSalaryMin}
-              currency={selectedCurrency}
-              onCurrencyChange={setSelectedCurrency}
-              hasSalaryOnly={hasSalaryOnly}
-              onHasSalaryOnlyChange={setHasSalaryOnly}
-              selectedSkill={selectedSkill}
-              onSkillChange={setSelectedSkill}
-              onClearFilters={handleClearFilters}
-              totalResults={jobs.length}
+          <>
+            {/* Left Pane: Filters & Taxonomy */}
+            <FiltersSidebar
+              options={filterOptions}
+              filters={filters}
+              onFilterChange={setFilters}
+              onReset={handleResetFilters}
+              totalActiveCount={filterOptions?.total_active_jobs || 1095}
+              filteredCount={jobs.length}
+              isOpenMobile={isMobileFiltersOpen}
+              onCloseMobile={() => setIsMobileFiltersOpen(false)}
             />
 
-            {/* Results Header */}
-            <div
+            {/* Center Pane: Rapid Job Stream */}
+            <main
               style={{
+                flex: '1',
+                minWidth: '380px',
+                maxWidth: '650px',
+                height: 'calc(100vh - 120px)',
+                overflowY: 'auto',
+                padding: '16px 20px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '16px',
-                flexWrap: 'wrap',
+                flexDirection: 'column',
                 gap: '12px',
               }}
             >
-              <div>
-                <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {searchQuery ? `Results for "${searchQuery}"` : 'Verified Job Openings'}
-                </h1>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {jobs.length > 0 ? `Showing ${jobs.length} postings from direct ATS endpoints` : 'Live opportunity feed'}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsAlertModalOpen(true)}
-                className="btn btn-secondary"
-                style={{ fontSize: '0.8125rem', padding: '7px 12px' }}
-                title="Create automated alert for this search"
-              >
-                <Bell size={14} />
-                <span>Create Alert</span>
-              </button>
-            </div>
-
-            {/* Fetch Error Banner */}
-            {fetchError && (
+              {/* Stream Sub-Header: Controls & Status */}
               <div
                 style={{
-                  padding: '16px 20px',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--danger-surface)',
-                  border: '1px solid var(--danger-border)',
-                  color: 'var(--danger-text)',
-                  marginBottom: '16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  gap: '12px',
+                  paddingBottom: '12px',
+                  borderBottom: '1px solid var(--border-subtle)',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AlertCircle size={18} />
-                  <span style={{ fontSize: '0.875rem' }}>{fetchError}</span>
+                <div>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {isLoading ? 'Scanning Feed...' : `${jobs.length} Verified Postings`}
+                  </span>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Direct ATS Feeds • Deduplicated • Updated Hourly
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => fetchFeedJobs(true)}
-                  className="btn btn-secondary"
-                  style={{ fontSize: '0.8125rem', padding: '5px 12px' }}
-                >
-                  Retry
-                </button>
-              </div>
-            )}
 
-            {/* Loading State */}
-            {isLoading ? (
-              <div>
-                <JobCardSkeleton />
-                <JobCardSkeleton />
-                <JobCardSkeleton />
-                <JobCardSkeleton />
-                <JobCardSkeleton />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value as any)}
+                    style={{
+                      padding: '5px 10px',
+                      backgroundColor: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-secondary)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="posted_at_desc">Newest First</option>
+                    <option value="posted_at_asc">Oldest First</option>
+                    <option value="salary_desc">Highest Salary</option>
+                  </select>
+                </div>
               </div>
-            ) : jobs.length === 0 ? (
-              /* Empty State */
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '56px 24px',
-                  textAlign: 'center',
-                }}
-              >
-                <Search size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
-                  No matching jobs found
-                </h2>
-                <p
+
+              {/* Feed Content */}
+              {isLoading && jobs.length === 0 ? (
+                <div style={{ padding: '60px 0', textAlign: 'center' }}>
+                  <Loader2 size={32} className="animate-spin" color="var(--brand-text)" style={{ margin: '0 auto 12px' }} />
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading verified opportunities...</p>
+                </div>
+              ) : fetchError ? (
+                <div
                   style={{
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.875rem',
-                    maxWidth: '420px',
-                    margin: '0 auto 18px',
+                    padding: '24px',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--danger-surface)',
+                    border: '1px solid var(--danger-border)',
+                    textAlign: 'center',
                   }}
                 >
-                  Try adjusting your keywords, removing salary constraints, or selecting &quot;All Modes&quot; to discover available opportunities.
-                </p>
-                <button type="button" onClick={handleClearFilters} className="btn btn-primary">
-                  Reset All Filters
-                </button>
-              </div>
-            ) : (
-              /* Postings List */
-              <div>
-                {jobs.map((job) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    isSaved={savedJobIds.has(job.id)}
-                    onToggleSave={handleToggleSave}
-                    onOpenDetails={() => setSelectedJob(job)}
-                    onTrackApplication={() => setTrackingJob(job)}
-                  />
-                ))}
+                  <AlertCircle size={24} color="var(--danger-text)" style={{ margin: '0 auto 8px' }} />
+                  <p style={{ fontSize: '13px', color: 'var(--danger-text)', fontWeight: 600 }}>{fetchError}</p>
+                  <button
+                    onClick={() => fetchFeedJobs(true)}
+                    style={{
+                      marginTop: '12px',
+                      padding: '6px 14px',
+                      fontSize: '12px',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : jobs.length === 0 ? (
+                <div
+                  style={{
+                    padding: '60px 20px',
+                    textAlign: 'center',
+                    backgroundColor: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <Search size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+                  <h4 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>No matching jobs found</h4>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '300px', margin: '0 auto 16px' }}>
+                    Try expanding your filters or clearing search criteria to see more direct ATS postings.
+                  </p>
+                  <button
+                    onClick={handleResetFilters}
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      backgroundColor: 'var(--brand-primary)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Reset All Filters
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {jobs.map((job) => (
+                      <JobFeedCard
+                        key={job.id}
+                        job={job}
+                        isSelected={selectedJob?.id === job.id}
+                        onSelect={() => setSelectedJobId(job.id)}
+                        isSaved={savedJobIds.has(job.id)}
+                        onToggleSave={(e, id) => handleToggleSave(id)}
+                        isApplied={appliedJobIds.has(job.id)}
+                        onTrackApplication={(e, j) => handleTrackApplication(j)}
+                      />
+                    ))}
+                  </div>
 
-                {/* Pagination Load More */}
-                {hasMore && (
-                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '28px' }}>
+                  {hasMore && (
                     <button
-                      type="button"
                       onClick={() => fetchFeedJobs(false)}
                       disabled={isLoadingMore}
-                      className="btn btn-secondary"
-                      style={{ padding: '10px 28px', fontSize: '0.875rem' }}
+                      style={{
+                        margin: '12px 0 24px',
+                        padding: '10px',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'var(--bg-surface-elevated)',
+                        border: '1px solid var(--border-default)',
+                        color: 'var(--text-primary)',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                      }}
                     >
-                      {isLoadingMore ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" />
-                          <span>Loading next page...</span>
-                        </>
-                      ) : (
-                        <span>Load More Postings</span>
-                      )}
+                      {isLoadingMore ? <Loader2 size={16} className="animate-spin" /> : null}
+                      <span>{isLoadingMore ? 'Loading More...' : 'Load More Jobs'}</span>
                     </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                  )}
+                </>
+              )}
+            </main>
+
+            {/* Right Pane: Deep Job Inspector */}
+            <JobInspectorPane
+              job={selectedJob}
+              isSaved={selectedJob ? savedJobIds.has(selectedJob.id) : false}
+              onToggleSave={handleToggleSave}
+              isApplied={selectedJob ? appliedJobIds.has(selectedJob.id) : false}
+              onTrackApplication={handleTrackApplication}
+              onNextJob={handleNextJob}
+              onPrevJob={handlePrevJob}
+              hasNext={selectedIndex >= 0 && selectedIndex < jobs.length - 1}
+              hasPrev={selectedIndex > 0}
+            />
+          </>
         )}
 
-        {/* TAB 2: SAVED JOBS */}
+        {/* Saved Jobs Tab */}
         {activeTab === 'saved' && (
-          <div>
-            <div style={{ marginBottom: '20px' }}>
-              <h1 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>Saved Jobs</h1>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '2px' }}>
-                Your personal bookmarked positions for quick review and direct application.
-              </p>
-            </div>
+          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>Saved Jobs ({savedJobs.length})</h2>
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
+              Your bookmarked opportunities across all integrated ATS platforms.
+            </p>
 
             {savedJobs.length === 0 ? (
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '56px 24px',
-                  textAlign: 'center',
-                }}
-              >
+              <div style={{ padding: '60px', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)' }}>
                 <Bookmark size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
-                  No saved jobs yet
-                </h2>
-                <p
-                  style={{
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.875rem',
-                    maxWidth: '400px',
-                    margin: '0 auto 18px',
-                  }}
-                >
-                  Click the bookmark icon on any job card in the main feed to save it to your personal shortlist.
-                </p>
-                <button type="button" onClick={() => setActiveTab('feed')} className="btn btn-primary">
-                  Browse Jobs Feed
-                </button>
+                <h4 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>No saved jobs yet</h4>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Click the bookmark icon on any job in the feed to save it here.</p>
               </div>
             ) : (
-              <div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {savedJobs.map((item) => {
                   const job = item.jobs || item;
                   return (
-                    <JobCard
+                    <JobFeedCard
                       key={job.id}
                       job={job}
+                      isSelected={false}
+                      onSelect={() => setModalJob(job)}
                       isSaved={true}
-                      onToggleSave={handleToggleSave}
-                      onOpenDetails={() => setSelectedJob(job)}
-                      onTrackApplication={() => setTrackingJob(job)}
+                      onToggleSave={(e, id) => handleToggleSave(id)}
+                      isApplied={appliedJobIds.has(job.id)}
+                      onTrackApplication={(e, j) => handleTrackApplication(j)}
                     />
                   );
                 })}
@@ -566,136 +602,58 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* TAB 3: APPLICATION TRACKER */}
+        {/* Application Tracker Tab */}
         {activeTab === 'applications' && (
-          <div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '20px',
-                flexWrap: 'wrap',
-                gap: '12px',
-              }}
-            >
-              <div>
-                <h1 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Application Tracker
-                </h1>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '2px' }}>
-                  Manage interviews, stages, and personal notes across your direct applications.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setTrackingJob({ company_name: '', job_title: '', status: 'applied' })}
-                className="btn btn-primary"
-              >
-                <Plus size={16} />
-                <span>Add Application</span>
-              </button>
-            </div>
+          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>Application Tracker ({applications.length})</h2>
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
+              Track the status of your direct ATS applications and pipeline stages.
+            </p>
 
             {applications.length === 0 ? (
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '56px 24px',
-                  textAlign: 'center',
-                }}
-              >
+              <div style={{ padding: '60px', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)' }}>
                 <CheckSquare size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '6px' }}>
-                  No tracked applications yet
-                </h2>
-                <p
-                  style={{
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.875rem',
-                    maxWidth: '400px',
-                    margin: '0 auto 18px',
-                  }}
-                >
-                  Track your job applications directly from job cards or add an external application manually.
-                </p>
-                <button type="button" onClick={() => setActiveTab('feed')} className="btn btn-primary">
-                  Explore Openings
-                </button>
+                <h4 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>No applications tracked yet</h4>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Click &quot;Mark Applied&quot; on any job to add it to your tracker.</p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {applications.map((app) => (
                   <div
                     key={app.id}
-                    className="job-card-container"
                     style={{
                       padding: '16px 20px',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '14px',
                     }}
                   >
                     <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                        {app.company_name}
-                      </span>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {app.job_title}
-                      </h3>
-                      {app.notes && (
-                        <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
-                          Note: {app.notes}
-                        </p>
-                      )}
+                      <h4 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
+                        {app.jobs?.display_title || app.jobs?.canonical_title || 'Applied Position'}
+                      </h4>
+                      <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', gap: '12px' }}>
+                        <span>{app.jobs?.companies?.name || 'Verified Employer'}</span>
+                        <span>•</span>
+                        <span>Applied on {new Date(app.created_at || Date.now()).toLocaleDateString()}</span>
+                      </div>
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span
-                        className="badge"
-                        style={{
-                          backgroundColor:
-                            app.status === 'offer'
-                              ? 'var(--success-surface)'
-                              : app.status === 'interview'
-                              ? 'var(--brand-surface)'
-                              : app.status === 'rejected'
-                              ? 'var(--danger-surface)'
-                              : 'var(--warning-surface)',
-                          color:
-                            app.status === 'offer'
-                              ? 'var(--success-text)'
-                              : app.status === 'interview'
-                              ? 'var(--brand-text)'
-                              : app.status === 'rejected'
-                              ? 'var(--danger-text)'
-                              : 'var(--warning-text)',
-                          border: `1px solid ${
-                            app.status === 'offer'
-                              ? 'var(--success-border)'
-                              : app.status === 'interview'
-                              ? 'var(--brand-border)'
-                              : app.status === 'rejected'
-                              ? 'var(--danger-border)'
-                              : 'var(--warning-border)'
-                          }`,
-                          padding: '4px 10px',
-                          textTransform: 'capitalize',
-                          fontSize: '0.75rem',
-                        }}
-                      >
-                        {app.status}
-                      </span>
-
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {new Date(app.applied_at).toLocaleDateString()}
-                      </span>
-                    </div>
+                    <span
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--success-surface)',
+                        color: 'var(--success-text)',
+                        border: '1px solid var(--success-border)',
+                      }}
+                    >
+                      {app.status || 'Applied'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -703,45 +661,84 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* TAB 4: JOB ALERTS */}
+        {/* Alerts Tab */}
         {activeTab === 'alerts' && (
-          <div>
+          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '4px' }}>Job Alerts</h2>
+                <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Get notified instantly when new roles match your criteria.</p>
+              </div>
+              <button
+                onClick={() => setIsAlertModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 16px',
+                  backgroundColor: 'var(--brand-primary)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={16} />
+                Create Alert
+              </button>
+            </div>
             <JobAlertManager />
           </div>
         )}
-      </main>
+      </div>
 
-      {/* MODALS */}
-      {selectedJob && (
-        <JobDetailsModal
-          job={selectedJob}
-          onClose={() => setSelectedJob(null)}
-          isSaved={savedJobIds.has(selectedJob.id)}
-          onToggleSave={handleToggleSave}
-          onTrackApplication={() => {
-            setTrackingJob(selectedJob);
-            setSelectedJob(null);
-          }}
-        />
-      )}
-
+      {/* Application Tracker Modal */}
       {trackingJob && (
         <ApplicationTrackerModal
           job={trackingJob}
           onClose={() => setTrackingJob(null)}
-          onSubmit={handleSaveApplication}
+          onSubmit={async (data) => {
+            const res = await fetch('/api/applications', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data),
+            });
+            if (!res.ok) {
+              const json = await res.json().catch(() => ({}));
+              throw new Error(json.error || 'Failed to record application');
+            }
+            const json = await res.json();
+            if (json.data) {
+              handleApplicationSuccess(json.data);
+            }
+          }}
         />
       )}
 
-      <JobAlertModal
-        isOpen={isAlertModalOpen}
-        onClose={() => setIsAlertModalOpen(false)}
-        initialCriteria={{
-          query: searchQuery,
-          remoteType: workplace === 'all' ? undefined : workplace,
-          employmentType: employment === 'all' ? undefined : employment,
-        }}
-      />
+      {/* Modal Job Details (Fallback for Saved Jobs view) */}
+      {modalJob && (
+        <JobDetailsModal
+          job={modalJob}
+          onClose={() => setModalJob(null)}
+          isSaved={savedJobIds.has(modalJob.id)}
+          onToggleSave={handleToggleSave}
+          onTrackApplication={handleTrackApplication}
+        />
+      )}
+
+      {/* Alert Modal */}
+      {isAlertModalOpen && (
+        <JobAlertModal
+          isOpen={isAlertModalOpen}
+          onClose={() => setIsAlertModalOpen(false)}
+          onAlertCreated={() => {
+            setIsAlertModalOpen(false);
+            showToast('success', 'Job alert created successfully!');
+          }}
+        />
+      )}
     </div>
   );
 }

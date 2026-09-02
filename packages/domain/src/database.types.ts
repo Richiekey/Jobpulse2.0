@@ -197,6 +197,38 @@ export interface Database {
           updated_at?: string;
         };
       };
+      job_functions: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          parent_slug: string | null;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          parent_slug?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          slug?: string;
+          parent_slug?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       jobs: {
         Row: {
           id: string;
@@ -212,6 +244,10 @@ export interface Database {
           salary_max: number | null;
           salary_currency: string | null;
           salary_interval: string | null;
+          annualized_min: number | null;
+          annualized_max: number | null;
+          has_salary: boolean;
+          equity_mentioned: boolean;
           skills: string[];
           posted_at: string;
           first_seen_at: string;
@@ -229,6 +265,13 @@ export interface Database {
           search_vector?: unknown;
           created_at: string;
           updated_at: string;
+          ats_platform_slug: string | null;
+          job_function_slug: string | null;
+          job_function_confidence: string | null;
+          location_country: string | null;
+          location_region: string | null;
+          location_city: string | null;
+          is_remote: boolean;
         };
         Insert: {
           id?: string;
@@ -244,6 +287,10 @@ export interface Database {
           salary_max?: number | null;
           salary_currency?: string | null;
           salary_interval?: string | null;
+          annualized_min?: number | null;
+          annualized_max?: number | null;
+          has_salary?: boolean;
+          equity_mentioned?: boolean;
           skills?: string[];
           posted_at: string;
           first_seen_at?: string;
@@ -260,6 +307,13 @@ export interface Database {
           source_metadata?: Json;
           created_at?: string;
           updated_at?: string;
+          ats_platform_slug?: string | null;
+          job_function_slug?: string | null;
+          job_function_confidence?: string | null;
+          location_country?: string | null;
+          location_region?: string | null;
+          location_city?: string | null;
+          is_remote?: boolean;
         };
         Update: {
           id?: string;
@@ -275,6 +329,10 @@ export interface Database {
           salary_max?: number | null;
           salary_currency?: string | null;
           salary_interval?: string | null;
+          annualized_min?: number | null;
+          annualized_max?: number | null;
+          has_salary?: boolean;
+          equity_mentioned?: boolean;
           skills?: string[];
           posted_at?: string;
           first_seen_at?: string;
@@ -291,6 +349,13 @@ export interface Database {
           source_metadata?: Json;
           created_at?: string;
           updated_at?: string;
+          ats_platform_slug?: string | null;
+          job_function_slug?: string | null;
+          job_function_confidence?: string | null;
+          location_country?: string | null;
+          location_region?: string | null;
+          location_city?: string | null;
+          is_remote?: boolean;
         };
       };
       job_sources: {
@@ -646,30 +711,41 @@ export interface Database {
           p_canonical_title: string;
           p_display_title: string;
           p_description: string;
-          p_description_html: string | null;
-          p_employment_type: 'full_time' | 'part_time' | 'contract' | 'internship' | 'temporary' | 'other';
-          p_workplace_type: 'remote' | 'hybrid' | 'on_site' | 'unspecified';
-          p_locations: string[];
-          p_salary_min: number | null;
-          p_salary_max: number | null;
-          p_salary_currency: string;
-          p_salary_interval: string | null;
-          p_skills: string[];
-          p_posted_at: string;
-          p_canonical_url: string;
-          p_apply_url: string;
-          p_original_apply_url: string | null;
-          p_url_resolution_method: string;
-          p_url_resolution_confidence: number;
-          p_canonical_fingerprint: string | null;
-          p_source_id: string;
-          p_external_job_id: string;
-          p_source_job_url: string;
-          p_discovery_url: string;
-          p_raw_payload_hash: string;
-          p_raw_payload: Json;
-          p_parser_version: string;
+          p_description_html?: string | null;
+          p_employment_type?: 'full_time' | 'part_time' | 'contract' | 'internship' | 'temporary' | 'other';
+          p_workplace_type?: 'remote' | 'hybrid' | 'on_site' | 'unspecified';
+          p_locations?: string[];
+          p_salary_min?: number | null;
+          p_salary_max?: number | null;
+          p_salary_currency?: string | null;
+          p_salary_interval?: string | null;
+          p_annualized_min?: number | null;
+          p_annualized_max?: number | null;
+          p_has_salary?: boolean;
+          p_equity_mentioned?: boolean;
+          p_skills?: string[];
+          p_posted_at?: string;
+          p_canonical_url?: string;
+          p_apply_url?: string;
+          p_original_apply_url?: string | null;
+          p_url_resolution_method?: string;
+          p_url_resolution_confidence?: number;
+          p_canonical_fingerprint?: string | null;
+          p_source_id?: string | null;
+          p_external_job_id?: string;
+          p_source_job_url?: string;
+          p_discovery_url?: string;
+          p_raw_payload_hash?: string;
+          p_raw_payload?: Json;
+          p_parser_version?: string;
           p_source_metadata?: Json;
+          p_ats_platform_slug?: string | null;
+          p_job_function_slug?: string | null;
+          p_job_function_confidence?: string | null;
+          p_location_country?: string | null;
+          p_location_region?: string | null;
+          p_location_city?: string | null;
+          p_is_remote?: boolean;
         };
         Returns: {
           status: 'inserted' | 'updated';

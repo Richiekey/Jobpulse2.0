@@ -6,11 +6,21 @@ import { z } from 'zod';
 
 const FeedQuerySchema = z
   .object({
-    limit: z.coerce.number().int().min(1).max(50).default(20),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
     cursor: z.string().max(300).optional(),
     q: z.string().max(200).optional(),
-    workplace: z.enum(['all', 'remote', 'hybrid', 'on_site']).optional(),
-    employment: z.enum(['all', 'full_time', 'part_time', 'contract', 'internship', 'temporary', 'other']).optional(),
+    search: z.string().max(200).optional(),
+    function: z.string().max(300).optional(),
+    job_function: z.string().max(300).optional(),
+    ats: z.string().max(300).optional(),
+    ats_platform: z.string().max(300).optional(),
+    workplace: z.string().max(200).optional(),
+    employment: z.string().max(200).optional(),
+    country: z.string().max(200).optional(),
+    location_country: z.string().max(200).optional(),
+    city: z.string().max(100).optional(),
+    location_city: z.string().max(100).optional(),
+    is_remote: z.coerce.boolean().optional(),
     company_id: z.string().uuid().optional(),
     salary_min: z.coerce.number().min(0, 'salary_min must be greater than or equal to 0').optional(),
     salary_max: z.coerce.number().min(0, 'salary_max must be greater than or equal to 0').optional(),
@@ -18,7 +28,9 @@ const FeedQuerySchema = z
     has_salary: z.coerce.boolean().optional(),
     skill: z.string().max(100).optional(),
     location: z.string().max(100).optional(),
-    posted_after: z.string().datetime().optional(),
+    date_preset: z.enum(['24h', '3d', '7d', '14d', '30d', 'all']).optional(),
+    posted_after: z.string().optional(),
+    sort: z.enum(['posted_at_desc', 'posted_at_asc', 'salary_desc', 'salary_asc']).default('posted_at_desc'),
   })
   .refine(
     (data) => {
@@ -49,9 +61,19 @@ export async function GET(request: NextRequest) {
     const {
       limit,
       cursor,
-      q: query,
+      q,
+      search,
+      function: fnParam,
+      job_function: jobFnParam,
+      ats: atsParam,
+      ats_platform: atsPlatformParam,
       workplace,
       employment,
+      country,
+      location_country,
+      city,
+      location_city,
+      is_remote,
       company_id,
       salary_min,
       salary_max,
@@ -59,8 +81,16 @@ export async function GET(request: NextRequest) {
       has_salary,
       skill,
       location,
-      posted_after,
+      date_preset,
+      posted_after: explicitPostedAfter,
+      sort,
     } = parseResult.data;
+
+    const searchTerm = (q || search || '').trim();
+    const functionSlugParam = fnParam || jobFnParam;
+    const atsSlugParam = atsParam || atsPlatformParam;
+    const countryParam = country || location_country;
+    const cityParam = city || location_city;
 
     let decodedCursor: { postedAt: string; id: string } | null = null;
     if (cursor) {
@@ -98,6 +128,13 @@ export async function GET(request: NextRequest) {
         canonical_url,
         apply_url,
         url_resolution_confidence,
+        ats_platform_slug,
+        job_function_slug,
+        job_function_confidence,
+        location_country,
+        location_region,
+        location_city,
+        is_remote,
         companies (
           id,
           name,
@@ -111,27 +148,92 @@ export async function GET(request: NextRequest) {
       `)
       .eq('status', 'active');
 
-    // 1. Workplace Type Filter
+    // 1. Job Function Filter (Multi-Select)
+    if (functionSlugParam && functionSlugParam !== 'all') {
+      const functionsList = functionSlugParam
+        .split(',')
+        .map((f) => f.trim().toLowerCase())
+        .filter(Boolean);
+      if (functionsList.length === 1) {
+        dbQuery = dbQuery.eq('job_function_slug', functionsList[0]!);
+      } else if (functionsList.length > 1) {
+        dbQuery = dbQuery.in('job_function_slug', functionsList);
+      }
+    }
+
+    // 2. ATS Platform Filter (Multi-Select)
+    if (atsSlugParam && atsSlugParam !== 'all') {
+      const atsList = atsSlugParam
+        .split(',')
+        .map((a) => a.trim().toLowerCase())
+        .filter(Boolean);
+      if (atsList.length === 1) {
+        dbQuery = dbQuery.eq('ats_platform_slug', atsList[0]!);
+      } else if (atsList.length > 1) {
+        dbQuery = dbQuery.in('ats_platform_slug', atsList);
+      }
+    }
+
+    // 3. Workplace Type Filter (Multi-Select)
     if (workplace && workplace !== 'all') {
-      dbQuery = dbQuery.eq('workplace_type', workplace as any);
+      const workplaceList = workplace
+        .split(',')
+        .map((w) => w.trim().toLowerCase())
+        .filter(Boolean);
+      if (workplaceList.length === 1) {
+        dbQuery = dbQuery.eq('workplace_type', workplaceList[0] as any);
+      } else if (workplaceList.length > 1) {
+        dbQuery = dbQuery.in('workplace_type', workplaceList as any[]);
+      }
     }
 
-    // 2. Employment Type Filter
+    // 4. Remote Flag Filter
+    if (is_remote === true) {
+      dbQuery = dbQuery.eq('is_remote', true);
+    }
+
+    // 5. Employment Type Filter (Multi-Select)
     if (employment && employment !== 'all') {
-      dbQuery = dbQuery.eq('employment_type', employment as any);
+      const empList = employment
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean);
+      if (empList.length === 1) {
+        dbQuery = dbQuery.eq('employment_type', empList[0] as any);
+      } else if (empList.length > 1) {
+        dbQuery = dbQuery.in('employment_type', empList as any[]);
+      }
     }
 
-    // 3. Company Filter
+    // 6. Country Filter (Multi-Select)
+    if (countryParam && countryParam !== 'all') {
+      const countriesList = countryParam
+        .split(',')
+        .map((c) => c.trim().toUpperCase())
+        .filter(Boolean);
+      if (countriesList.length === 1) {
+        dbQuery = dbQuery.eq('location_country', countriesList[0]!);
+      } else if (countriesList.length > 1) {
+        dbQuery = dbQuery.in('location_country', countriesList);
+      }
+    }
+
+    // 7. City Filter
+    if (cityParam && cityParam.trim()) {
+      dbQuery = dbQuery.ilike('location_city', `%${cityParam.trim()}%`);
+    }
+
+    // 8. Company Filter
     if (company_id) {
       dbQuery = dbQuery.eq('company_id', company_id);
     }
 
-    // 4. Currency Isolation Filter (P1 Remediation)
+    // 9. Currency Filter
     if (currency && currency !== 'ALL') {
       dbQuery = dbQuery.eq('salary_currency', currency);
     }
 
-    // 5. Compensation Filters (Batch H & P1 Overlap Semantics)
+    // 10. Compensation Filters
     if (has_salary || salary_min !== undefined || salary_max !== undefined) {
       dbQuery = dbQuery.eq('has_salary', true);
     }
@@ -142,7 +244,7 @@ export async function GET(request: NextRequest) {
       dbQuery = dbQuery.lte('salary_min', salary_max);
     }
 
-    // 6. Skills Filter
+    // 11. Skills Filter
     if (skill) {
       const skillsList = skill.split(',').map((s) => s.trim()).filter(Boolean);
       if (skillsList.length > 0) {
@@ -150,34 +252,57 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 7. Location Filter
+    // 12. Location Legacy String Filter
     if (location && location.trim()) {
       dbQuery = dbQuery.contains('locations', [location.trim()]);
     }
 
-    // 8. Date Filter (posted_after)
-    if (posted_after) {
-      dbQuery = dbQuery.gte('posted_at', posted_after);
+    // 13. Date Preset / Posted After Filter
+    let effectivePostedAfter = explicitPostedAfter;
+    if (date_preset && date_preset !== 'all') {
+      const hoursMap: Record<string, number> = {
+        '24h': 24,
+        '3d': 72,
+        '7d': 168,
+        '14d': 336,
+        '30d': 720,
+      };
+      const hours = hoursMap[date_preset];
+      if (hours) {
+        effectivePostedAfter = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+      }
     }
 
-    // 9. Weighted Full-Text Search Query
-    if (query && query.trim()) {
-      dbQuery = dbQuery.textSearch('search_vector', query.trim(), {
+    if (effectivePostedAfter) {
+      dbQuery = dbQuery.gte('posted_at', effectivePostedAfter);
+    }
+
+    // 14. Full-Text Search Query
+    if (searchTerm) {
+      dbQuery = dbQuery.textSearch('search_vector', searchTerm, {
         type: 'websearch',
         config: 'english',
       });
     }
 
-    // 10. Keyset / Cursor Pagination with tamper validation
+    // 15. Keyset / Cursor Pagination
     if (decodedCursor) {
       dbQuery = dbQuery.or(`posted_at.lt.${decodedCursor.postedAt},and(posted_at.eq.${decodedCursor.postedAt},id.lt.${decodedCursor.id})`);
     }
 
-    // 11. Stable compound sorting
-    dbQuery = dbQuery
-      .order('posted_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(limit + 1);
+    // 16. Sort Order
+    if (sort === 'posted_at_asc') {
+      dbQuery = dbQuery.order('posted_at', { ascending: true }).order('id', { ascending: true });
+    } else if (sort === 'salary_desc') {
+      dbQuery = dbQuery.order('salary_max', { ascending: false, nullsFirst: false }).order('posted_at', { ascending: false });
+    } else if (sort === 'salary_asc') {
+      dbQuery = dbQuery.order('salary_min', { ascending: true, nullsFirst: false }).order('posted_at', { ascending: false });
+    } else {
+      // Default: posted_at_desc
+      dbQuery = dbQuery.order('posted_at', { ascending: false }).order('id', { ascending: false });
+    }
+
+    dbQuery = dbQuery.limit(limit + 1);
 
     const { data: rows, error: queryError } = await dbQuery;
 
@@ -189,7 +314,7 @@ export async function GET(request: NextRequest) {
     const hasMore = items.length > limit;
     const resultItems = hasMore ? items.slice(0, limit) : items;
 
-    // Calculate Currency-Isolated Salary Distribution Facets (P0 Remediation)
+    // Calculate Currency-Isolated Salary Distribution Facets
     const salariesByCurrency: Record<
       string,
       {

@@ -3,7 +3,12 @@ import type {
   JobCandidate,
   NormalizedJob,
 } from '@jobpulse/domain';
-import { DeduplicationEngine, SalaryExtractor } from '@jobpulse/domain';
+import {
+  DeduplicationEngine,
+  SalaryExtractor,
+  JobFunctionTaxonomy,
+  LocationParser,
+} from '@jobpulse/domain';
 import type { ATSAdapter } from '@jobpulse/ats';
 import { logger } from '@jobpulse/shared';
 import { supabase } from '../db.js';
@@ -81,7 +86,22 @@ export class IngestionPipeline {
         normalizedJob.locations
       );
 
-      // 7. Atomic Transactional Persistence via PostgreSQL RPC
+      // 7. Classify Job Function (Taxonomy)
+      const functionClassification = JobFunctionTaxonomy.classify(
+        normalizedJob.canonicalTitle,
+        {
+          department: typeof normalizedJob.sourceMetadata?.department === 'string' ? normalizedJob.sourceMetadata.department : null,
+          category: typeof normalizedJob.sourceMetadata?.category === 'string' ? normalizedJob.sourceMetadata.category : null,
+          skills: normalizedJob.skills,
+          description: normalizedJob.description,
+        }
+      );
+
+      // 8. Structured Location Decomposition
+      const parsedLocation = LocationParser.parseMultiple(normalizedJob.locations);
+      const isRemote = normalizedJob.workplaceType === 'remote' || parsedLocation.isRemote;
+
+      // 9. Atomic Transactional Persistence via PostgreSQL RPC
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         'ingest_job_transaction',
         {
@@ -117,6 +137,13 @@ export class IngestionPipeline {
           p_raw_payload: rawPayload.payload as any,
           p_parser_version: rawPayload.parserVersion,
           p_source_metadata: (normalizedJob.sourceMetadata || {}) as any,
+          p_ats_platform_slug: adapter.platformSlug,
+          p_job_function_slug: functionClassification.slug,
+          p_job_function_confidence: functionClassification.source,
+          p_location_country: parsedLocation.country,
+          p_location_region: parsedLocation.region,
+          p_location_city: parsedLocation.city,
+          p_is_remote: isRemote,
         }
       );
 

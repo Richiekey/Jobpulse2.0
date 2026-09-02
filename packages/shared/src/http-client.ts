@@ -204,6 +204,110 @@ export class HttpClient {
       }
     );
   }
+
+  public async post<T = unknown>(
+    initialUrl: string,
+    body: unknown,
+    options: HttpClientOptions = {}
+  ): Promise<HttpResponse<T>> {
+    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
+    const maxSizeBytes = options.maxSizeBytes ?? this.defaultMaxSizeBytes;
+
+    return withRetry(
+      async () => {
+        // SSRF Defense
+        assertSafeUrl(initialUrl);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        const requestHeaders = new Headers({
+          'User-Agent': this.getRandomUserAgent(),
+          Accept: 'application/json, text/html, */*',
+          'Content-Type': 'application/json',
+          ...options.headers,
+        });
+
+        try {
+          const response = await fetch(initialUrl, {
+            method: 'POST',
+            headers: requestHeaders,
+            body: typeof body === 'string' ? body : JSON.stringify(body),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.status === 429) {
+            const retryAfterHeader = response.headers.get('Retry-After');
+            const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5;
+            throw new Error(`RATE_LIMITED: 429 encountered, retry after ${retryAfterSec}s`);
+          }
+
+          if (response.status >= 500) {
+            throw new Error(`SERVER_ERROR: Status ${response.status} from ${initialUrl}`);
+          }
+
+          if (!response.ok && response.status !== 404) {
+            throw new Error(`HTTP_ERROR: Status ${response.status} from ${initialUrl}`);
+          }
+
+          const contentLength = response.headers.get('content-length');
+          if (contentLength && parseInt(contentLength, 10) > maxSizeBytes) {
+            throw new Error(
+              `PAYLOAD_TOO_LARGE: Content-Length ${contentLength} exceeds ${maxSizeBytes} bytes`
+            );
+          }
+
+          const contentType = response.headers.get('content-type') || '';
+          let data: unknown;
+
+          if (contentType.includes('application/json')) {
+            data = await response.json();
+          } else {
+            const text = await response.text();
+            if (text.length > maxSizeBytes) {
+              throw new Error(`PAYLOAD_TOO_LARGE: Body size exceeds ${maxSizeBytes} bytes`);
+            }
+            try {
+              data = JSON.parse(text);
+            } catch {
+              data = text;
+            }
+          }
+
+          return {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+            data: data as T,
+            url: initialUrl,
+          };
+        } catch (error) {
+          clearTimeout(timeoutId);
+          throw error;
+        }
+      },
+      {
+        maxRetries: options.maxRetries ?? 2,
+        shouldRetry: (err) => {
+          if (err instanceof Error) {
+            if (err.message.includes('SSRF_REJECTED')) return false;
+            if (err.message.includes('Status 404')) return false;
+            if (err.message.includes('PAYLOAD_TOO_LARGE')) return false;
+          }
+          return true;
+        },
+        onRetry: (err, attempt, delayMs) => {
+          logger.warn(`Retrying HTTP POST to ${initialUrl}`, {
+            attempt,
+            delayMs,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        },
+      }
+    );
+  }
 }
 
 export const httpClient = new HttpClient();
