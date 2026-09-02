@@ -152,7 +152,7 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
     const postSpy = vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
       status: 200,
       data: { token: 'jwt_session_token_xyz123' },
-      headers: {},
+      headers: new Headers(),
       durationMs: 100,
     });
 
@@ -182,7 +182,7 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
     vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
       status: 401,
       data: { error: 'Invalid credentials' },
-      headers: {},
+      headers: new Headers(),
       durationMs: 50,
     });
 
@@ -198,7 +198,7 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
     vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
       status: 200,
       data: { token: 'auth_token_777' },
-      headers: {},
+      headers: new Headers(),
       durationMs: 50,
     });
 
@@ -213,7 +213,7 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
           },
         ],
       },
-      headers: {},
+      headers: new Headers(),
       durationMs: 120,
     });
 
@@ -260,7 +260,7 @@ describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
     vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
       status: 404,
       data: null,
-      headers: {},
+      headers: new Headers(),
       durationMs: 50,
     });
 
