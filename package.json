@@ -21,6 +21,13 @@
     "web:start": "pnpm --filter @jobpulse/web start",
     "db:types": "pnpm --filter @jobpulse/domain generate:types"
   },
+  "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver"
+    ]
+  },
   "devDependencies": {
     "@types/node": "^22.13.5",
     "prettier": "^3.5.2",
