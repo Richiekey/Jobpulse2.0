@@ -281,14 +281,16 @@ export class JobrightAdapter implements ATSAdapter {
   public async normalize(rawJob: RawJob, payloadHash: string): Promise<NormalizedJob> {
     const candidates: UrlCandidate[] = [];
 
+    // 1. Explicit employer application URL (highest confidence)
     if (rawJob.sourceMetadata?.['original_apply_url']) {
       candidates.push({
         url: rawJob.sourceMetadata['original_apply_url'] as string,
         sourceType: 'explicit_employer_apply',
-        suggestedConfidence: 0.99,
+        suggestedConfidence: 0.98,
       });
     }
 
+    // 2. Explicit direct ATS form / URL
     if (rawJob.sourceMetadata?.['ats_url']) {
       candidates.push({
         url: rawJob.sourceMetadata['ats_url'] as string,
@@ -297,31 +299,36 @@ export class JobrightAdapter implements ATSAdapter {
       });
     }
 
+    // 3. Embedded URLs found in Markdown row
     if (Array.isArray(rawJob.sourceMetadata?.['embedded_urls'])) {
       for (const u of rawJob.sourceMetadata['embedded_urls']) {
-        if (typeof u === 'string') {
+        if (typeof u === 'string' && u) {
+          const isAts = URLResolver.isDirectAtsUrl(u);
           candidates.push({
             url: u,
-            sourceType: 'known_ats_url',
-            suggestedConfidence: 0.90,
+            sourceType: isAts ? 'known_ats_url' : 'other_valid_url',
+            suggestedConfidence: isAts ? 0.75 : 0.60,
           });
         }
       }
     }
 
+    // 4. Raw apply URL from parser if not already included
     if (rawJob.rawApplyUrl && !rawJob.sourceMetadata?.['original_apply_url'] && !rawJob.sourceMetadata?.['ats_url']) {
+      const isAts = URLResolver.isDirectAtsUrl(rawJob.rawApplyUrl);
       candidates.push({
         url: rawJob.rawApplyUrl,
-        sourceType: 'explicit_ats_form',
-        suggestedConfidence: 0.95,
+        sourceType: isAts ? 'explicit_ats_form' : 'other_valid_url',
+        suggestedConfidence: isAts ? 0.95 : 0.60,
       });
     }
 
+    // 5. Jobright Fallback (Strictly low confidence 0.40 - fallback only)
     if (rawJob.sourceJobUrl) {
       candidates.push({
         url: rawJob.sourceJobUrl,
         sourceType: 'fallback_source',
-        suggestedConfidence: 0.85,
+        suggestedConfidence: 0.40,
       });
     }
 
@@ -492,6 +499,65 @@ export class JobrightAdapter implements ATSAdapter {
       const rawDateCell = headerIndices.date !== -1 && cells[headerIndices.date] ? cells[headerIndices.date]! : '';
       const postedAt = this.parseDate(rawDateCell, crawlDate);
 
+      // Extract all external URLs and decode Markdown links across all cells
+      const rowMarkdownLinks: Array<{ text: string; url: string }> = [];
+      const markdownRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+      for (const cell of cells) {
+        let match: RegExpExecArray | null;
+        while ((match = markdownRegex.exec(cell)) !== null) {
+          rowMarkdownLinks.push({ text: match[1]!.trim(), url: match[2]!.trim() });
+        }
+      }
+
+      // Extract bare HTTPS URLs from the row
+      const bareUrls: string[] = [];
+      const bareUrlRegex = /https?:\/\/[^\s)\]>"',]+/g;
+      for (const cell of cells) {
+        let match: RegExpExecArray | null;
+        while ((match = bareUrlRegex.exec(cell)) !== null) {
+          const clean = match[0].replace(/[.,;:!?]+$/, '');
+          if (!clean.includes('jobright.ai/jobs/info') && clean !== companyWebsite) {
+            bareUrls.push(clean);
+          }
+        }
+      }
+
+      let explicitApplyUrl: string | undefined;
+      let directAtsUrl: string | undefined;
+      const otherEmbeddedUrls: string[] = [];
+
+      // Evaluate markdown links for explicit apply links and ATS destinations
+      for (const ml of rowMarkdownLinks) {
+        if (ml.url.includes('jobright.ai/jobs/info') || ml.url === companyWebsite) {
+          continue;
+        }
+
+        const isAts = URLResolver.isDirectAtsUrl(ml.url);
+        const textLower = ml.text.toLowerCase();
+        const isApplyText = textLower.includes('apply') || textLower.includes('application') || textLower.includes('apply now');
+
+        if (isApplyText && isAts && !explicitApplyUrl) {
+          explicitApplyUrl = ml.url;
+        } else if (isAts && !directAtsUrl) {
+          directAtsUrl = ml.url;
+        } else {
+          otherEmbeddedUrls.push(ml.url);
+        }
+      }
+
+      // Evaluate bare URLs
+      for (const bu of bareUrls) {
+        if (bu === explicitApplyUrl || bu === directAtsUrl || otherEmbeddedUrls.includes(bu)) {
+          continue;
+        }
+        const isAts = URLResolver.isDirectAtsUrl(bu);
+        if (isAts && !directAtsUrl && !explicitApplyUrl) {
+          directAtsUrl = bu;
+        } else {
+          otherEmbeddedUrls.push(bu);
+        }
+      }
+
       candidates.push({
         id: externalJobId,
         externalJobId,
@@ -506,6 +572,9 @@ export class JobrightAdapter implements ATSAdapter {
         source_job_url: sourceJobUrl,
         discoveryUrl,
         repository: repoName,
+        original_apply_url: explicitApplyUrl,
+        ats_url: directAtsUrl,
+        embedded_urls: otherEmbeddedUrls.length > 0 ? otherEmbeddedUrls : undefined,
       });
 
       rowsParsed++;

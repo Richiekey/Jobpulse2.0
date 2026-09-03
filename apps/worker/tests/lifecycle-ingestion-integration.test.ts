@@ -54,9 +54,10 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
     expect(result.status).toBe('succeeded');
     expect(result.discovered).toBe(2);
 
-    // Verify reconcile_company_source_job_lifecycle RPC was invoked with discovered external IDs
-    expect(rpcSpy).toHaveBeenCalledWith('reconcile_company_source_job_lifecycle', {
-      p_company_id: 'comp_123',
+    // Verify reconcile_source_job_lifecycle RPC was invoked with discovered external IDs
+    expect(rpcSpy).toHaveBeenCalledWith('reconcile_source_job_lifecycle', {
+      p_source_id: 'src_123',
+      p_company_source_id: 'cs_123',
       p_crawled_external_ids: ['job_active_1', 'job_active_1'],
       p_scrape_time: expect.any(String),
       p_consecutive_miss_threshold: 3,

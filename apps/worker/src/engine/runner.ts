@@ -10,6 +10,12 @@ import { logger } from '@jobpulse/shared';
 import { supabase } from '../db.js';
 import { IngestionPipeline } from './pipeline.js';
 
+export type ScrapeExecutionMode =
+  | 'scheduled'
+  | 'manual_global'
+  | 'manual_company'
+  | 'manual_source';
+
 export interface ScraperRunnerOptions {
   runId?: string;
   companyIdentifier?: string;
@@ -19,6 +25,7 @@ export interface ScraperRunnerOptions {
   workerId?: string;
   limitSources?: number;
   currentTime?: Date | string;
+  executionMode?: ScrapeExecutionMode;
 }
 
 export interface SourceRunResult {
@@ -174,9 +181,10 @@ export class ScraperRunner {
       } else {
         try {
           const { data: reconciliationResult, error: reconcileError } = await supabase.rpc(
-            'reconcile_company_source_job_lifecycle',
+            'reconcile_source_job_lifecycle',
             {
-              p_company_id: companySource.companyId,
+              p_source_id: companySource.sourceId,
+              p_company_source_id: companySource.id,
               p_crawled_external_ids: crawlResult.crawledJobIds,
               p_scrape_time: new Date().toISOString(),
               p_consecutive_miss_threshold: JobLifecycleService.CONSECUTIVE_MISS_THRESHOLD,
@@ -294,20 +302,27 @@ export class ScraperRunner {
     let runId = options.runId;
 
     try {
+      // Determine authoritative execution mode
+      let executionMode: ScrapeExecutionMode;
+
       // 2. Initialize or adopt durable scrape_runs record
       if (!runId) {
-        const concurrencyScope = options.sourceId
-          ? `source:${options.sourceId}`
-          : options.companyIdentifier && options.companyIdentifier !== 'all'
-            ? `company:${options.companyIdentifier}`
-            : 'global';
+        executionMode = options.executionMode || (
+          options.sourceId
+            ? 'manual_source'
+            : options.companyIdentifier && options.companyIdentifier !== 'all'
+              ? 'manual_company'
+              : options.companyIdentifier === 'all'
+                ? 'manual_global'
+                : 'scheduled'
+        );
 
         const { data: scrapeRun, error: runInitError } = await supabase
           .from('scrape_runs')
           .insert({
             started_at: new Date().toISOString(),
             status: 'running',
-            concurrency_scope: concurrencyScope,
+            concurrency_scope: 'global',
             companies_attempted: 0,
             companies_succeeded: 0,
             companies_failed: 0,
@@ -319,7 +334,10 @@ export class ScraperRunner {
             metadata: {
               worker_id: workerId,
               concurrency: options.concurrency ?? this.defaultConcurrency,
-              concurrency_scope: concurrencyScope,
+              concurrency_scope: 'global',
+              execution_mode: executionMode,
+              company_identifier: options.companyIdentifier || 'all',
+              source_id: options.sourceId,
             },
           })
           .select('id')
@@ -337,10 +355,16 @@ export class ScraperRunner {
           .eq('id', runId)
           .single();
 
+        const existingMeta = (existingRun?.metadata as Record<string, unknown>) || {};
+        executionMode = options.executionMode ||
+          (existingMeta['execution_mode'] as ScrapeExecutionMode) ||
+          (options.sourceId ? 'manual_source' : options.companyIdentifier ? 'manual_company' : 'manual_global');
+
         const mergedMetadata = {
-          ...((existingRun?.metadata as Record<string, unknown>) || {}),
+          ...existingMeta,
           worker_id: workerId,
           concurrency: options.concurrency ?? this.defaultConcurrency,
+          execution_mode: executionMode,
         };
 
         await supabase
@@ -431,15 +455,20 @@ export class ScraperRunner {
         adapterName: csRaw.sources?.adapter_name || '',
       }));
 
+      // Invariant:
+      // manual_global, manual_company, manual_source -> forceDue = true
+      // scheduled -> forceDue = false
+      const forceDue = executionMode !== 'scheduled';
+
       // Apply authoritative schedule eligibility, priority ordering, and limitSources
       const eligibleSources = SourceScheduler.filterAndOrderEligibleSources(allLoadedSources, {
         currentTime: options.currentTime,
         limitSources: options.limitSources,
-        forceDue: Boolean(options.companyIdentifier || options.sourceId),
+        forceDue,
       });
 
       logger.info(
-        `Loaded ${rawSources.length} active sources; filtered to ${eligibleSources.length} due/eligible company sources for scraping.`
+        `Loaded ${rawSources.length} active sources; filtered to ${eligibleSources.length} due/eligible company sources for scraping (mode=${executionMode}, forceDue=${forceDue}).`
       );
 
       if (eligibleSources.length === 0) {
@@ -452,7 +481,13 @@ export class ScraperRunner {
             companies_attempted: 0,
             companies_succeeded: 0,
             companies_failed: 0,
-            metadata: { worker_id: workerId, no_sources_due: true },
+            metadata: {
+              worker_id: workerId,
+              execution_mode: executionMode,
+              outcome: 'zero_sources_due',
+              sources_targeted: rawSources.length,
+              sources_due: 0,
+            },
           })
           .eq('id', runId);
 
@@ -504,10 +539,19 @@ export class ScraperRunner {
         .eq('id', runId)
         .single();
 
+      const outcome = summary.attempted === 0
+        ? 'zero_sources_due'
+        : summary.discovered === 0
+          ? 'zero_jobs_discovered'
+          : 'jobs_ingested';
+
       const completionMetadata = {
         ...((currentRunRecord?.metadata as Record<string, unknown>) || {}),
         worker_id: workerId,
+        execution_mode: executionMode,
+        outcome,
         partial_failure: summary.failed > 0,
+        sources_targeted: rawSources.length,
         sources_attempted: summary.attempted,
         sources_succeeded: summary.succeeded,
         sources_failed: summary.failed,
@@ -588,11 +632,16 @@ export class ScraperRunner {
     const rawCompanyId = meta['company_identifier'];
     const companyIdentifier = typeof rawCompanyId === 'string' && rawCompanyId !== 'all' ? rawCompanyId : undefined;
     const sourceId = typeof meta['source_id'] === 'string' ? meta['source_id'] : undefined;
+    const rawMode = meta['execution_mode'] as ScrapeExecutionMode | undefined;
+    const executionMode: ScrapeExecutionMode = rawMode || (
+      sourceId ? 'manual_source' : companyIdentifier ? 'manual_company' : 'manual_global'
+    );
 
     return this.run({
       runId: claimedRun.id,
       companyIdentifier,
       sourceId,
+      executionMode,
     });
   }
 

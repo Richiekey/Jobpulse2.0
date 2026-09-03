@@ -296,4 +296,69 @@ describe('JobrightAdapter Restoration & GitHub Discovery Suite', () => {
       expect(run1[i]?.sourceJobUrl).toBe(run2[i]?.sourceJobUrl);
     }
   });
+
+  it('Test 17 — Hardened URL Extraction: captures embedded URLs and direct ATS apply links in sourceMetadata', () => {
+    const markdownWithAts = `
+| Company | Job Title | Location | Work Model | Date Posted |
+| ----- | --------- |  --------- | ---- | ------- |
+| **[Acme](https://acme.com)** | **[Engineer](https://jobright.ai/jobs/info/acme_123)** [Direct Apply](https://boards.greenhouse.io/acme/jobs/999) [Greenhouse Board](https://boards.greenhouse.io/acme) | New York, NY | Remote | Sep 03 |
+`;
+    const result = adapter.parseMarkdownTable(markdownWithAts, 'test-repo');
+    expect(result.candidates).toHaveLength(1);
+    const row = result.candidates[0];
+    expect(row).toBeDefined();
+    // Direct Apply text routes to original_apply_url
+    expect(row?.original_apply_url).toBe('https://boards.greenhouse.io/acme/jobs/999');
+    // Non-apply ATS link routes to ats_url
+    expect(row?.ats_url).toBe('https://boards.greenhouse.io/acme');
+  });
+
+  it('Test 18 — URL Confidence Ranking: direct ATS URL wins over Jobright fallback link', async () => {
+    const markdownWithAts = `
+| Company | Job Title | Location | Work Model | Date Posted |
+| ----- | --------- |  --------- | ---- | ------- |
+| **[Acme](https://acme.com)** | **[Engineer](https://jobright.ai/jobs/info/acme_123)** [Direct Apply](https://boards.greenhouse.io/acme/jobs/999) | New York, NY | Remote | Sep 03 |
+`;
+    vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(),
+      data: markdownWithAts,
+      url: 'https://raw.githubusercontent.com/jobright-ai/test/master/README.md',
+    });
+
+    const [candidate] = await adapter.discover(mockConfig);
+    const rawPayload = await adapter.fetch(candidate!);
+    const rawJob = await adapter.parse(rawPayload);
+    const normalized = await adapter.normalize(rawJob, rawPayload.payloadHash);
+
+    // Invariant: Direct ATS apply URL must win over Jobright info fallback
+    expect(normalized.urls.applyUrl).toBe('https://boards.greenhouse.io/acme/jobs/999');
+    expect(normalized.urls.urlResolutionConfidence).toBeGreaterThanOrEqual(0.75);
+    expect(normalized.urls.sourceJobUrl).toBe('https://jobright.ai/jobs/info/acme_123');
+  });
+
+  it('Test 19 — URL Pure Fallback: when no direct ATS link exists, Jobright URL is 0.40 confidence fallback', async () => {
+    const markdownNoAts = `
+| Company | Job Title | Location | Work Model | Date Posted |
+| ----- | --------- |  --------- | ---- | ------- |
+| **[SimpleCo](https://simple.com)** | **[Analyst](https://jobright.ai/jobs/info/simple_456)** | Chicago, IL | Onsite | Sep 03 |
+`;
+    vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(),
+      data: markdownNoAts,
+      url: 'https://raw.githubusercontent.com/jobright-ai/test/master/README.md',
+    });
+
+    const [candidate] = await adapter.discover(mockConfig);
+    const rawPayload = await adapter.fetch(candidate!);
+    const rawJob = await adapter.parse(rawPayload);
+    const normalized = await adapter.normalize(rawJob, rawPayload.payloadHash);
+
+    // Fallback confidence must strictly be 0.40
+    expect(normalized.urls.applyUrl).toBe('https://jobright.ai/jobs/info/simple_456');
+    expect(normalized.urls.urlResolutionConfidence).toBe(0.4);
+  });
 });

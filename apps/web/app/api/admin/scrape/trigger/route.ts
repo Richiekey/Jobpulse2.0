@@ -6,14 +6,15 @@ import { z } from 'zod';
 const ScrapeTriggerSchema = z.object({
   companyIdentifier: z.string().trim().max(100).optional(),
   sourceId: z.string().uuid().optional(),
+  executionMode: z.enum(['scheduled', 'manual_global', 'manual_company', 'manual_source']).optional(),
 });
 
 /**
  * POST /api/admin/scrape/trigger
  * 
  * Atomically schedules a scrape run for a target company source or global crawl.
- * HARD INVARIANT (P0): Uses PostgreSQL `schedule_admin_scrape_run` RPC with `pg_advisory_xact_lock`
- * to guarantee true atomic concurrency serialization and eliminate all TOCTOU race conditions.
+ * HARD INVARIANT (P0): Uses PostgreSQL `schedule_admin_scrape_run` RPC with explicit
+ * execution mode and global concurrency serialization.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -39,12 +40,24 @@ export async function POST(request: NextRequest) {
 
     const { companyIdentifier, sourceId } = parseResult.data;
 
+    let executionMode = parseResult.data.executionMode;
+    if (!executionMode) {
+      if (sourceId) {
+        executionMode = 'manual_source';
+      } else if (companyIdentifier && companyIdentifier !== 'all') {
+        executionMode = 'manual_company';
+      } else {
+        executionMode = 'manual_global';
+      }
+    }
+
     // 3. Atomically schedule scrape run via PostgreSQL RPC with transactional advisory locking
     const { data: result, error: rpcError } = await supabase.rpc('schedule_admin_scrape_run', {
       p_admin_id: profile.id,
       p_company_identifier: companyIdentifier || 'all',
       p_source_id: sourceId || null,
       p_ttl_seconds: 900,
+      p_execution_mode: executionMode,
     });
 
     if (rpcError || !result) {
@@ -77,6 +90,7 @@ export async function POST(request: NextRequest) {
         message: 'Scrape run successfully scheduled and queued for execution.',
         runId: result.run_id,
         status: result.status,
+        executionMode: result.execution_mode || executionMode,
         companyIdentifier: result.company_identifier,
         sourceId: result.source_id,
         scheduledAt: result.scheduled_at,

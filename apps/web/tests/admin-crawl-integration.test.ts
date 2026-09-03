@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST as triggerScrapeRoute } from '../app/api/admin/scrape/trigger/route';
+import { GET as getRunsRoute } from '../app/api/admin/scrape/runs/route';
 import { AuthGuard } from '../lib/auth-guard';
 
 describe('Admin Crawl Trigger & Atomic Concurrency Guard (Batch F P0/P1)', () => {
@@ -85,6 +86,7 @@ describe('Admin Crawl Trigger & Atomic Concurrency Guard (Batch F P0/P1)', () =>
         p_company_identifier: 'all',
         p_source_id: null,
         p_ttl_seconds: 900,
+        p_execution_mode: 'manual_global',
       });
       expect(json.data.runId).toBe('run_atomic_123');
       expect(json.data.status).toBe('pending');
@@ -227,6 +229,90 @@ describe('Admin Crawl Trigger & Atomic Concurrency Guard (Batch F P0/P1)', () =>
       expect(res.status).toBe(400);
       const json = await res.json();
       expect(json.error).toContain('Invalid request payload');
+    });
+  });
+
+  describe('Admin Scrape Runs Telemetry API (P2)', () => {
+    it('returns recent scrape runs with human-readable outcome classification', async () => {
+      const mockRuns = [
+        {
+          id: 'run_completed_1',
+          status: 'completed',
+          started_at: '2026-09-03T16:00:00Z',
+          completed_at: '2026-09-03T16:05:00Z',
+          companies_attempted: 1,
+          companies_succeeded: 1,
+          companies_failed: 0,
+          jobs_discovered: 150,
+          jobs_inserted: 120,
+          jobs_updated: 30,
+          jobs_rejected: 0,
+          jobs_failed: 0,
+          metadata: {
+            execution_mode: 'manual_global',
+            sources_targeted: 1,
+          },
+        },
+        {
+          id: 'run_zero_due',
+          status: 'completed',
+          started_at: '2026-09-03T15:00:00Z',
+          completed_at: '2026-09-03T15:00:01Z',
+          companies_attempted: 0,
+          companies_succeeded: 0,
+          companies_failed: 0,
+          jobs_discovered: 0,
+          jobs_inserted: 0,
+          jobs_updated: 0,
+          jobs_rejected: 0,
+          jobs_failed: 0,
+          metadata: {
+            execution_mode: 'scheduled',
+            outcome: 'zero_sources_due',
+            sources_targeted: 59,
+          },
+        },
+      ];
+
+      const mockSupabase = {
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({
+                data: mockRuns,
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      };
+
+      vi.spyOn(AuthGuard, 'requireAdmin').mockResolvedValue({
+        user: { id: validAdmin.id },
+        profile: validAdmin as any,
+        supabase: mockSupabase as any,
+      } as any);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/scrape/runs');
+      const res = await getRunsRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.data.runs).toHaveLength(2);
+      expect(json.data.runs[0].id).toBe('run_completed_1');
+      expect(json.data.runs[0].outcomeText).toBe('Completed — 150 jobs ingested');
+      expect(json.data.runs[1].id).toBe('run_zero_due');
+      expect(json.data.runs[1].outcomeText).toBe('Completed — 0 sources due');
+    });
+
+    it('rejects unauthenticated access to runs endpoint with 401', async () => {
+      vi.spyOn(AuthGuard, 'requireAdmin').mockResolvedValue({
+        errorResponse: new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }) as any,
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/admin/scrape/runs');
+      const res = await getRunsRoute(req);
+      expect(res.status).toBe(401);
     });
   });
 });

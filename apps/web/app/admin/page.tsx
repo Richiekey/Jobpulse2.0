@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
+  Activity,
   Briefcase,
   LayoutDashboard,
   Building2,
@@ -20,6 +21,8 @@ import {
 import { AdminMetricsOverview, AdminMetricsData } from '@/components/admin/AdminMetricsOverview';
 import { SourceManagementTable, AdminCompanySource } from '@/components/admin/SourceManagementTable';
 import { SourceOnboardingWizard } from '@/components/admin/SourceOnboardingWizard';
+import { RecentScrapeRunsTable } from '@/components/admin/RecentScrapeRunsTable';
+import type { AdminScrapeRunItem } from '@/app/api/admin/scrape/runs/route';
 import { createClient } from '@/lib/supabase/client';
 
 // ---------------------------------------------------------------------------
@@ -351,7 +354,7 @@ function AdminForbiddenScreen({ email }: { email: string }) {
 // Main Dashboard (only rendered when auth state is 'authorized')
 // ---------------------------------------------------------------------------
 function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'metrics' | 'sources' | 'onboard'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'sources' | 'onboard' | 'runs'>('metrics');
   const [metrics, setMetrics] = useState<AdminMetricsData | null>(null);
   const [sources, setSources] = useState<AdminCompanySource[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
@@ -434,10 +437,48 @@ function AdminDashboard() {
     }
   }, []);
 
+  // Scrape runs telemetry state
+  const [runs, setRuns] = useState<AdminScrapeRunItem[]>([]);
+  const [loadingRuns, setLoadingRuns] = useState(true);
+  const [runsError, setRunsError] = useState<ApiErrorState>(null);
+
+  // ---------------------------------------------------------------------------
+  // Fetch scrape runs telemetry with explicit error handling
+  // ---------------------------------------------------------------------------
+  const fetchRuns = useCallback(async () => {
+    setLoadingRuns(true);
+    setRunsError(null);
+    try {
+      const res = await fetch('/api/admin/scrape/runs');
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        setRunsError({
+          status: res.status,
+          message: json.error || `Server returned ${res.status}`,
+        });
+        return;
+      }
+
+      const json = await res.json();
+      if (json.data?.runs) {
+        setRuns(json.data.runs);
+      }
+    } catch (err) {
+      setRunsError({
+        status: 0,
+        message: 'Network error — could not reach the server.',
+      });
+      console.error('Failed to fetch admin scrape runs:', err);
+    } finally {
+      setLoadingRuns(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMetrics();
     fetchSources();
-  }, [fetchMetrics, fetchSources]);
+    fetchRuns();
+  }, [fetchMetrics, fetchSources, fetchRuns]);
 
   // ---------------------------------------------------------------------------
   // Trigger manual scrape crawl with explicit error handling
@@ -470,10 +511,11 @@ function AdminDashboard() {
           `Crawl initiated! Run ID: ${json.data.runId || json.data.id || 'Active'}`
         );
         setTimeout(() => setGlobalScrapeSuccess(null), 5000);
-        // Refresh metrics and sources after trigger
+        // Refresh metrics, sources, and runs after trigger
         setTimeout(() => {
           fetchMetrics();
           fetchSources();
+          fetchRuns();
         }, 1500);
       }
     } catch (err) {
@@ -624,6 +666,15 @@ function AdminDashboard() {
             <PlusCircle size={16} />
             <span>Onboard ATS Source</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('runs')}
+            className={`btn ${activeTab === 'runs' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px' }}
+          >
+            <Activity size={16} />
+            <span>Crawl Runs</span>
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -650,6 +701,14 @@ function AdminDashboard() {
               fetchSources();
               fetchMetrics();
             }}
+          />
+        )}
+
+        {activeTab === 'runs' && (
+          <RecentScrapeRunsTable
+            runs={runs}
+            loading={loadingRuns}
+            onRefresh={fetchRuns}
           />
         )}
       </main>

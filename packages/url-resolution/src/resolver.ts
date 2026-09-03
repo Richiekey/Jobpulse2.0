@@ -7,6 +7,7 @@ export type UrlSourceType =
   | 'structured_data'
   | 'embedded_json'
   | 'known_ats_url'
+  | 'other_valid_url'
   | 'html_pattern'
   | 'fallback_source';
 
@@ -28,6 +29,10 @@ const ATS_DOMAINS = [
   'recruitee.com',
   'teamtailor.com',
   'smartrecruiters.com',
+  'workable.com',
+  'rippling-ats.com',
+  'breezy.hr',
+  'pinpointhq.com',
 ];
 
 /**
@@ -39,7 +44,8 @@ const CONFIDENCE_HIERARCHY: Record<UrlSourceType, number> = {
   structured_data: 0.85,
   embedded_json: 0.80,
   known_ats_url: 0.75,
-  html_pattern: 0.60,
+  other_valid_url: 0.60,
+  html_pattern: 0.50,
   fallback_source: 0.40,
 };
 
