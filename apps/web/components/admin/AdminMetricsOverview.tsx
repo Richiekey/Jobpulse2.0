@@ -44,6 +44,11 @@ export interface AdminMetricsData {
     successfulRuns: number;
     failedRuns: number;
     successRatePercent: number;
+    jobsDiscovered?: number;
+    jobsInserted?: number;
+    jobsUpdated?: number;
+    jobsRejected?: number;
+    jobsFailed?: number;
   };
   engagement: {
     outboundClicks24h: number;
@@ -154,6 +159,58 @@ export const AdminMetricsOverview: React.FC<AdminMetricsOverviewProps> = ({
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             {metrics.engagement.outboundClicks24h} clicks in 24h
+          </div>
+        </div>
+      </div>
+
+      {/* Dedicated Job Ingestion Pipeline Breakdown (24h) */}
+      <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+          <div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>24-Hour Job Ingestion Funnel</h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Job-level execution statistics across all crawler runs. Note: Source Health ≠ Job Failure Count.
+            </p>
+          </div>
+          <span style={{ fontSize: '0.8rem', color: '#6366f1', background: 'rgba(99, 102, 241, 0.1)', padding: '4px 10px', borderRadius: '6px', fontWeight: 600 }}>
+            Automated Audit
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+          <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Discovered</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '4px' }}>
+              {(metrics.ingestion24h.jobsDiscovered ?? 0).toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ fontSize: '0.75rem', color: '#34d399' }}>Inserted (New)</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', marginTop: '4px' }}>
+              {(metrics.ingestion24h.jobsInserted ?? 0).toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ fontSize: '0.75rem', color: '#60a5fa' }}>Updated (Seen)</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6', marginTop: '4px' }}>
+              {(metrics.ingestion24h.jobsUpdated ?? 0).toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ fontSize: '0.75rem', color: '#fbbf24' }}>Rejected (Invalid)</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f59e0b', marginTop: '4px' }}>
+              {(metrics.ingestion24h.jobsRejected ?? 0).toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ fontSize: '0.75rem', color: '#f87171' }}>Enrichment Failures</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ef4444', marginTop: '4px' }}>
+              {(metrics.ingestion24h.jobsFailed ?? 0).toLocaleString()}
+            </div>
           </div>
         </div>
       </div>

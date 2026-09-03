@@ -19,6 +19,7 @@ export interface JobCandidate {
   discoveryUrl: string;
   sourceJobUrl: string;
   companyIdentifier: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface RawJobPayload {

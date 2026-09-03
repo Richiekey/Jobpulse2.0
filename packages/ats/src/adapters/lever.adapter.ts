@@ -100,7 +100,10 @@ export class LeverAdapter implements ATSAdapter {
     const url = `https://api.lever.co/v0/postings/${site}?mode=json&limit=5`;
 
     try {
-      const response = await httpClient.get<LeverPosting[]>(url, { timeoutMs: 10000 });
+      const response = await httpClient.get<LeverPosting[]>(url, {
+        timeoutMs: 10000,
+        maxSizeBytes: 20 * 1024 * 1024,
+      });
       const durationMs = Date.now() - start;
 
       if (response.status === 200 && Array.isArray(response.data)) {
@@ -140,7 +143,9 @@ export class LeverAdapter implements ATSAdapter {
     const site = companySource.sourceIdentifier;
     const url = `https://api.lever.co/v0/postings/${site}?mode=json`;
 
-    const response = await httpClient.get<LeverPosting[]>(url);
+    const response = await httpClient.get<LeverPosting[]>(url, {
+      maxSizeBytes: 20 * 1024 * 1024,
+    });
     if (!Array.isArray(response.data)) {
       return [];
     }

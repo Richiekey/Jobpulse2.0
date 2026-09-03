@@ -21,6 +21,72 @@ export interface PipelineResult {
 }
 
 export class IngestionPipeline {
+  private static companyCache = new Map<string, string>();
+
+  /**
+   * Dynamically resolves or creates authentic employer companies for aggregators/feeds (e.g. Jobright).
+   * Ensures that aggregator jobs are attributed to the real hiring company rather than a fake aggregator company.
+   */
+  public static async resolveEmployerCompanyId(
+    companyName: string,
+    website?: string
+  ): Promise<string> {
+    const trimmed = companyName.trim();
+    const normalizedName = trimmed.toLowerCase();
+
+    const cached = IngestionPipeline.companyCache.get(normalizedName);
+    if (cached) return cached;
+
+    // 1. Query existing company by normalized_name
+    const { data: existing } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('normalized_name', normalizedName)
+      .maybeSingle();
+
+    if (existing?.id) {
+      IngestionPipeline.companyCache.set(normalizedName, existing.id);
+      return existing.id;
+    }
+
+    // 2. Insert new company record
+    const baseSlug = trimmed
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'company';
+    const slug = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('companies')
+      .insert({
+        name: trimmed,
+        normalized_name: normalizedName,
+        slug,
+        website: website || null,
+        status: 'active',
+        verified: false,
+      })
+      .select('id')
+      .single();
+
+    if (insertError) {
+      // Handle possible race condition on unique normalized_name
+      const { data: retry } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('normalized_name', normalizedName)
+        .maybeSingle();
+      if (retry?.id) {
+        IngestionPipeline.companyCache.set(normalizedName, retry.id);
+        return retry.id;
+      }
+      throw new Error(`Failed to resolve employer company for "${companyName}": ${insertError.message}`);
+    }
+
+    IngestionPipeline.companyCache.set(normalizedName, inserted.id);
+    return inserted.id;
+  }
+
   /**
    * Processes a single job candidate through the entire 8-stage pipeline:
    * Fetch -> Parse -> Normalize -> Validate -> Resolve -> Deduplicate -> Atomic Transactional Store.
@@ -79,9 +145,22 @@ export class IngestionPipeline {
         normalizedJob.description || ''
       );
 
+      // Determine effective company ID:
+      // For aggregators (like Jobright), jobs belong to the extracted employer (rawJob.rawCompany),
+      // preserving the invariant that Jobright repository != employer.
+      let effectiveCompanyId = companySource.companyId;
+      if (rawJob.rawCompany && adapter.platformSlug === 'jobright') {
+        effectiveCompanyId = await IngestionPipeline.resolveEmployerCompanyId(
+          rawJob.rawCompany,
+          typeof rawJob.sourceMetadata?.['companyWebsite'] === 'string'
+            ? (rawJob.sourceMetadata['companyWebsite'] as string)
+            : undefined
+        );
+      }
+
       // 6. Generate Level-3 Canonical Fingerprint
       const canonicalFingerprint = DeduplicationEngine.generateCanonicalFingerprint(
-        companySource.companyId,
+        effectiveCompanyId,
         normalizedJob.canonicalTitle,
         normalizedJob.locations
       );
@@ -105,7 +184,7 @@ export class IngestionPipeline {
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         'ingest_job_transaction',
         {
-          p_company_id: companySource.companyId,
+          p_company_id: effectiveCompanyId,
           p_canonical_title: normalizedJob.canonicalTitle,
           p_display_title: normalizedJob.displayTitle,
           p_description: normalizedJob.description,

@@ -34,7 +34,24 @@ interface AshbyJobListing {
   employmentType?: string;
   isRemote?: boolean;
   compensationTierSummary?: string;
+  compensation?: {
+    compensationTierSummary?: string | null;
+    scrapeableCompensationSalarySummary?: string | null;
+    compensationTiers?: Array<{
+      id?: string;
+      tierSummary?: string | null;
+      components?: Array<{
+        summary?: string | null;
+        compensationType?: string;
+        interval?: string;
+        currencyCode?: string;
+        minValue?: number | null;
+        maxValue?: number | null;
+      }>;
+    }>;
+  };
   jobUrl?: string;
+  applyUrl?: string;
   publishedAt?: string;
   descriptionHtml?: string;
   descriptionPlain?: string;
@@ -99,7 +116,7 @@ export class AshbyAdapter implements ATSAdapter {
   public async validateSource(config: CompanySourceConfig): Promise<SourceValidationResult> {
     const start = Date.now();
     const jobBoardName = config.sourceIdentifier;
-    const url = `https://api.ashbyhq.com/posting-api/job-board/${jobBoardName}`;
+    const url = `https://api.ashbyhq.com/posting-api/job-board/${jobBoardName}?includeCompensation=true`;
 
     try {
       const response = await httpClient.get<AshbyBoardResponse>(url, { timeoutMs: 10000 });
@@ -140,7 +157,7 @@ export class AshbyAdapter implements ATSAdapter {
 
   public async discover(companySource: CompanySourceConfig): Promise<JobCandidate[]> {
     const jobBoardName = companySource.sourceIdentifier;
-    const url = `https://api.ashbyhq.com/posting-api/job-board/${jobBoardName}`;
+    const url = `https://api.ashbyhq.com/posting-api/job-board/${jobBoardName}?includeCompensation=true`;
 
     const response = await httpClient.get<AshbyBoardResponse>(url);
     if (!response.data || !Array.isArray(response.data.jobs)) {
@@ -153,13 +170,22 @@ export class AshbyAdapter implements ATSAdapter {
       discoveryUrl: url,
       sourceJobUrl: job.jobUrl || `https://jobs.ashbyhq.com/${jobBoardName}/${job.id}`,
       companyIdentifier: jobBoardName,
+      payload: {
+        ...(job as unknown as Record<string, unknown>),
+        discoveryUrl: url,
+        companyIdentifier: jobBoardName,
+      },
     }));
   }
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
-    const url = `https://api.ashbyhq.com/posting-api/job-board/${candidate.companyIdentifier}/job/${candidate.externalJobId}`;
-    const response = await httpClient.get<Record<string, unknown>>(url);
-    const payload = response.data || {};
+    const payload = (candidate.payload ?? {}) as Record<string, unknown>;
+    if (!payload['discoveryUrl'] && candidate.discoveryUrl) {
+      payload['discoveryUrl'] = candidate.discoveryUrl;
+    }
+    if (!payload['companyIdentifier'] && candidate.companyIdentifier) {
+      payload['companyIdentifier'] = candidate.companyIdentifier;
+    }
     const payloadHash = DeduplicationEngine.hashPayload(payload);
 
     return {
@@ -220,6 +246,19 @@ export class AshbyAdapter implements ATSAdapter {
       rawWorkplaceType = 'onsite';
     }
 
+    const rawSalary =
+      data.compensationTierSummary ||
+      data.compensation?.compensationTierSummary ||
+      data.compensation?.scrapeableCompensationSalarySummary ||
+      undefined;
+
+    // INVARIANT: Never synthesize /application suffix. Use explicit data.applyUrl or data.jobUrl without guessed path modifications.
+    const rawApplyUrl = data.applyUrl || data.jobUrl || undefined;
+    const sourceJobUrl = data.jobUrl || data.applyUrl || '';
+    const discoveryUrl =
+      (rawPayload.payload['discoveryUrl'] as string) ||
+      `https://api.ashbyhq.com/posting-api/job-board/${(rawPayload.payload['companyIdentifier'] as string) || 'board'}?includeCompensation=true`;
+
     return {
       sourceId: rawPayload.sourceId,
       externalJobId: data.id,
@@ -227,14 +266,13 @@ export class AshbyAdapter implements ATSAdapter {
       rawDescription: description || 'No description provided.',
       rawDescriptionHtml: data.descriptionHtml || null,
       rawLocations,
-      rawSalary: data.compensationTierSummary || undefined,
+      rawSalary,
       rawPostedAt: data.publishedAt || new Date().toISOString(),
       rawEmploymentType: data.employmentType || undefined,
       rawWorkplaceType,
-      // INVARIANT: Never synthesize /application suffix. Use explicit data.jobUrl without guessed path modifications.
-      rawApplyUrl: data.jobUrl || undefined,
-      sourceJobUrl: data.jobUrl || '',
-      discoveryUrl: `https://api.ashbyhq.com/posting-api/job-board/job/${data.id}`,
+      rawApplyUrl,
+      sourceJobUrl,
+      discoveryUrl,
       sourceMetadata: {
         department: data.department,
         team: data.team,

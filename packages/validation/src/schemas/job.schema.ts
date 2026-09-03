@@ -56,4 +56,5 @@ export const JobCandidateSchema = z.object({
   discoveryUrl: z.string().url(),
   sourceJobUrl: z.string().url(),
   companyIdentifier: z.string().min(1),
+  payload: z.record(z.unknown()).optional(),
 });

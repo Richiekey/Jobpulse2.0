@@ -32,7 +32,7 @@ export function validateWorkerEnvironment(env: NodeJS.ProcessEnv = process.env):
   }
 
   // 2. Validate Supabase Service Role Key (strictly no anon key fallback)
-  const serviceRoleKey = env['SUPABASE_SERVICE_ROLE_KEY'];
+  const serviceRoleKey = env['SUPABASE_SERVICE_ROLE_KEY'] || env['SUPABASE_SECRET_KEY'];
   if (!serviceRoleKey || !serviceRoleKey.trim()) {
     errors.push('SUPABASE_SERVICE_ROLE_KEY is required for privileged worker operations (anon key cannot substitute).');
   } else if (

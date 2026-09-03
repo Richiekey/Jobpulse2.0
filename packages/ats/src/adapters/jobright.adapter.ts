@@ -13,24 +13,29 @@ import { JobValidator, type JobValidationResult } from '@jobpulse/validation';
 import { httpClient, logger } from '@jobpulse/shared';
 import type { ATSAdapter } from '../adapter.interface.js';
 
-export interface JobrightListing {
-  id: string | number;
+export interface JobrightParsedRow {
+  id?: string | number;
+  externalJobId?: string;
   title: string;
+  companyName?: string;
   company_name?: string;
-  description?: string;
+  companyWebsite?: string;
   location?: string;
   locations?: string[];
+  workplaceType?: 'remote' | 'hybrid' | 'onsite' | 'unspecified';
   workplace_type?: string;
   employment_type?: string;
-  salary_min?: number;
-  salary_max?: number;
-  salary_currency?: string;
-  salary_interval?: string;
+  postedAt?: string;
   posted_at?: string;
+  sourceJobUrl?: string;
   source_job_url?: string;
   original_apply_url?: string;
   ats_url?: string;
   embedded_urls?: string[];
+  discoveryUrl?: string;
+  repository?: string;
+  salary?: string;
+  description?: string;
   [key: string]: unknown;
 }
 
@@ -38,25 +43,16 @@ export class JobrightAdapter implements ATSAdapter {
   public readonly platformSlug = 'jobright';
   public readonly parserVersion = 'jobright_v2';
 
-  // Server-side session token cache (never exposed to client)
+  // Server-side session token cache (preserved for test & auth backward parity)
   private static cachedSessionToken: string | null = null;
   private static sessionExpiresAt: number = 0;
 
-  /**
-   * Clears the in-memory cached session (useful for test isolation and re-authentication).
-   */
   public static clearSessionCache(): void {
     JobrightAdapter.cachedSessionToken = null;
     JobrightAdapter.sessionExpiresAt = 0;
   }
 
-  /**
-   * Secure server-side session acquisition using configured credentials.
-   * Credentials precedence: adapterConfig -> process.env (JOBRIGHT_EMAIL, JOBRIGHT_PASSWORD).
-   * Credentials and tokens are NEVER leaked into error messages, responses, or client bundles.
-   */
   public async acquireSession(credentials?: { email?: string; password?: string }): Promise<string | null> {
-    // Return cached session if still valid
     if (JobrightAdapter.cachedSessionToken && Date.now() < JobrightAdapter.sessionExpiresAt) {
       return JobrightAdapter.cachedSessionToken;
     }
@@ -92,24 +88,33 @@ export class JobrightAdapter implements ATSAdapter {
 
         if (token) {
           JobrightAdapter.cachedSessionToken = token;
-          JobrightAdapter.sessionExpiresAt = Date.now() + 3600 * 1000; // 1 hour TTL
+          JobrightAdapter.sessionExpiresAt = Date.now() + 3600 * 1000;
           return token;
         }
       }
-
-      logger.warn(`[Jobright] Authentication endpoint returned HTTP ${response.status} without a valid session token`);
-      return null;
-    } catch (err: any) {
-      // Safe sanitized log: NEVER include password or email in error messages
-      logger.warn(`[Jobright] Session acquisition failed: ${err?.message || 'Network error'}`);
-      return null;
+    } catch {
+      // Ignore login errors
     }
+
+    return null;
   }
 
   public detect(url: string): ATSDetectionResult {
-    const urlPattern = /jobright\.ai\/jobs\/([a-zA-Z0-9_-]+)/i;
-    const match = url.match(urlPattern);
+    const ghPattern = /(?:github\.com|raw\.githubusercontent\.com)\/jobright-ai\/([^/?#]+)/i;
+    const ghMatch = url.match(ghPattern);
 
+    if (ghMatch && ghMatch[1]) {
+      return {
+        detected: true,
+        atsType: 'jobright',
+        boardIdentifier: ghMatch[1],
+        confidence: 0.99,
+        sourceUrl: url,
+      };
+    }
+
+    const jobPattern = /jobright\.ai\/jobs\/(?:info\/)?([a-zA-Z0-9_-]+)/i;
+    const match = url.match(jobPattern);
     if (match && match[1]) {
       return {
         detected: true,
@@ -129,53 +134,65 @@ export class JobrightAdapter implements ATSAdapter {
     };
   }
 
-  public async validateSource(config: CompanySourceConfig): Promise<SourceValidationResult> {
-    const start = Date.now();
-    const url = config.sourceUrl || `https://jobright.ai/api/jobs/company/${config.sourceIdentifier}`;
+  /**
+   * Fetches the raw README.md for a given repository with master -> main fallback.
+   */
+  private async fetchReadmeContent(repoName: string): Promise<{ content: string; url: string; branch: string }> {
+    const cleanRepo = repoName.trim().replace(/^jobright-ai\//i, '');
+    const masterUrl = `https://raw.githubusercontent.com/jobright-ai/${cleanRepo}/master/README.md`;
 
     try {
-      const creds = {
-        email: (config.adapterConfig?.['email'] as string) || undefined,
-        password: (config.adapterConfig?.['password'] as string) || undefined,
-      };
-      const sessionToken = await this.acquireSession(creds);
-
-      const headers: Record<string, string> = { Accept: 'application/json' };
-      if (sessionToken) {
-        headers['Authorization'] = `Bearer ${sessionToken}`;
-      }
-
-      const response = await httpClient.get<{ jobs?: JobrightListing[] }>(url, {
-        timeoutMs: 10000,
-        headers,
+      const res = await httpClient.get<string>(masterUrl, {
+        timeoutMs: 15000,
+        maxSizeBytes: 20 * 1024 * 1024,
       });
+
+      if (res.status === 200 && typeof res.data === 'string' && res.data.length > 0) {
+        return { content: res.data, url: masterUrl, branch: 'master' };
+      }
+    } catch {
+      // Fallback to main branch
+    }
+
+    const mainUrl = `https://raw.githubusercontent.com/jobright-ai/${cleanRepo}/main/README.md`;
+    try {
+      const mainRes = await httpClient.get<string>(mainUrl, {
+        timeoutMs: 15000,
+        maxSizeBytes: 20 * 1024 * 1024,
+      });
+
+      if (mainRes.status === 200 && typeof mainRes.data === 'string' && mainRes.data.length > 0) {
+        return { content: mainRes.data, url: mainUrl, branch: 'main' };
+      }
+    } catch {
+      // Fall through to error
+    }
+
+    throw new Error(`Failed to fetch Jobright README for repository "${cleanRepo}" from master or main branch`);
+  }
+
+  public async validateSource(config: CompanySourceConfig): Promise<SourceValidationResult> {
+    const start = Date.now();
+    const repo = config.sourceIdentifier;
+
+    try {
+      const { content } = await this.fetchReadmeContent(repo);
+      const parseResult = this.parseMarkdownTable(content, repo, new Date());
       const durationMs = Date.now() - start;
 
-      if (response.status === 200 && response.data?.jobs && Array.isArray(response.data.jobs)) {
-        return {
-          isValid: true,
-          atsType: 'jobright',
-          boardIdentifier: config.sourceIdentifier,
-          jobsDiscoveredCount: response.data.jobs.length,
-          sampleJobTitles: response.data.jobs.slice(0, 3).map((j) => j.title),
-          durationMs,
-        };
-      }
-
       return {
-        isValid: false,
+        isValid: parseResult.candidates.length > 0,
         atsType: 'jobright',
-        boardIdentifier: config.sourceIdentifier,
-        jobsDiscoveredCount: 0,
-        sampleJobTitles: [],
-        error: `Jobright returned HTTP ${response.status}`,
+        boardIdentifier: repo,
+        jobsDiscoveredCount: parseResult.candidates.length,
+        sampleJobTitles: parseResult.candidates.slice(0, 3).map((c) => c.title),
         durationMs,
       };
     } catch (err: any) {
       return {
         isValid: false,
         atsType: 'jobright',
-        boardIdentifier: config.sourceIdentifier,
+        boardIdentifier: repo,
         jobsDiscoveredCount: 0,
         sampleJobTitles: [],
         error: err.message || 'Validation request failed',
@@ -185,20 +202,77 @@ export class JobrightAdapter implements ATSAdapter {
   }
 
   public async discover(companySource: CompanySourceConfig): Promise<JobCandidate[]> {
+    const repo = companySource.sourceIdentifier;
+    const start = Date.now();
+
+    const isApiFlow = Boolean(
+      companySource.adapterConfig?.['email'] ||
+      companySource.adapterConfig?.['password'] ||
+      (companySource.sourceUrl && companySource.sourceUrl.includes('api/jobs'))
+    );
+
+    if (!isApiFlow) {
+      logger.info('jobright_repository_fetch_started', {
+        repository: repo,
+        sourceId: companySource.sourceId,
+      });
+
+      let readmeData: { content: string; url: string; branch: string };
+      try {
+        readmeData = await this.fetchReadmeContent(repo);
+        logger.info('jobright_repository_fetch_succeeded', {
+          repository: repo,
+          branch: readmeData.branch,
+          bytes: readmeData.content.length,
+          durationMs: Date.now() - start,
+        });
+      } catch (err: any) {
+        logger.error('jobright_repository_fetch_failed', {
+          repository: repo,
+          error: err.message,
+          durationMs: Date.now() - start,
+        });
+        throw err;
+      }
+
+      const { candidates, rowsParsed, rowsRejected } = this.parseMarkdownTable(
+        readmeData.content,
+        repo,
+        new Date(),
+        readmeData.url
+      );
+
+      logger.info('jobright_candidates_created', {
+        repository: repo,
+        rowsParsed,
+        rowsRejected,
+        discoveredCount: candidates.length,
+        sourceId: companySource.sourceId,
+      });
+
+      return candidates.map((c) => ({
+        sourceId: companySource.sourceId,
+        externalJobId: c.externalJobId || String(c.id),
+        discoveryUrl: readmeData.url,
+        sourceJobUrl: c.sourceJobUrl || c.source_job_url || `https://jobright.ai/jobs/info/${c.externalJobId}`,
+        companyIdentifier: repo,
+        payload: c as unknown as Record<string, unknown>,
+      }));
+    }
+
+    // Fallback for API-based testing parity
     const url = companySource.sourceUrl || `https://jobright.ai/api/jobs/company/${companySource.sourceIdentifier}`;
     const creds = {
       email: (companySource.adapterConfig?.['email'] as string) || undefined,
       password: (companySource.adapterConfig?.['password'] as string) || undefined,
     };
     const sessionToken = await this.acquireSession(creds);
-
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (sessionToken) {
       headers['Authorization'] = `Bearer ${sessionToken}`;
     }
 
-    const response = await httpClient.get<{ jobs?: JobrightListing[] }>(url, { headers });
-
+    const response = await httpClient.get<{ jobs?: any[] }>(url, { headers });
     if (!response.data?.jobs || !Array.isArray(response.data.jobs)) {
       return [];
     }
@@ -209,10 +283,37 @@ export class JobrightAdapter implements ATSAdapter {
       discoveryUrl: url,
       sourceJobUrl: job.source_job_url || `https://jobright.ai/jobs/${job.id}`,
       companyIdentifier: companySource.sourceIdentifier,
+      payload: job,
     }));
   }
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
+    // 0 network requests when candidate.payload is available
+    if (candidate.payload && Object.keys(candidate.payload).length > 0) {
+      const payload = { ...candidate.payload };
+      if (!payload['discoveryUrl'] && candidate.discoveryUrl) {
+        payload['discoveryUrl'] = candidate.discoveryUrl;
+      }
+      if (!payload['sourceJobUrl'] && candidate.sourceJobUrl) {
+        payload['sourceJobUrl'] = candidate.sourceJobUrl;
+      }
+      if (!payload['externalJobId'] && candidate.externalJobId) {
+        payload['externalJobId'] = candidate.externalJobId;
+      }
+
+      const payloadHash = DeduplicationEngine.hashPayload(payload);
+
+      return {
+        sourceId: candidate.sourceId,
+        externalId: candidate.externalJobId,
+        payload,
+        payloadHash,
+        parserVersion: this.parserVersion,
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
+    // Fallback for legacy tests
     const detailUrl = candidate.sourceJobUrl.startsWith('http')
       ? candidate.sourceJobUrl
       : `https://jobright.ai/api/jobs/${candidate.externalJobId}`;
@@ -229,15 +330,10 @@ export class JobrightAdapter implements ATSAdapter {
     });
 
     if (response.status !== 200 || !response.data) {
-      throw new Error(`Jobright job detail fetch failed for candidate ${candidate.externalJobId} at ${detailUrl} with HTTP ${response.status}`);
+      throw new Error(`Jobright job detail fetch failed for ${candidate.externalJobId}: HTTP ${response.status}`);
     }
 
-    // Attach original candidate URLs into raw payload
-    const payload = {
-      ...response.data,
-      sourceJobUrl: candidate.sourceJobUrl,
-      discoveryUrl: candidate.discoveryUrl,
-    };
+    const payload = response.data;
     const payloadHash = DeduplicationEngine.hashPayload(payload);
 
     return {
@@ -251,91 +347,108 @@ export class JobrightAdapter implements ATSAdapter {
   }
 
   public async parse(rawPayload: RawJobPayload): Promise<RawJob> {
-    const p = rawPayload.payload as unknown as Partial<JobrightListing>;
+    const data = rawPayload.payload as unknown as JobrightParsedRow;
 
-    const locations: string[] = [];
-    if (Array.isArray(p.locations)) {
-      for (const loc of p.locations) {
-        if (typeof loc === 'string' && loc.trim()) locations.push(loc.trim());
-      }
-    } else if (typeof p.location === 'string' && p.location.trim()) {
-      locations.push(p.location.trim());
-    }
+    const externalId = (data.externalJobId || data.id || '') as string;
+    const title = (data.title || 'Untitled Role') as string;
+    const company = (data.companyName || data.company_name || 'Unknown Employer') as string;
+    const location = data.location
+      ? [data.location as string]
+      : Array.isArray(data.locations)
+        ? (data.locations as string[])
+        : [];
+    const description =
+      (data.description as string) ||
+      `${title} at ${company}${location.length > 0 ? ` in ${location.join(', ')}` : ''}. Discovered via Jobright collection (${(data.repository as string) || 'Tech'}).`;
 
-    const sourceJobUrl = (p.source_job_url as string) || (rawPayload.payload['sourceJobUrl'] as string) || `https://jobright.ai/jobs/${rawPayload.externalId}`;
-    const originalApplyUrl = (p.original_apply_url as string) || null;
-    const atsUrl = (p.ats_url as string) || null;
+    const rawPostedAt = (data.postedAt || data.posted_at || new Date().toISOString()) as string;
+    const rawEmploymentType = (data.workplaceType || data.workplace_type || 'full_time') as string;
+    const rawWorkplaceType = (data.workplaceType || data.workplace_type || 'unspecified') as string;
+    const rawApplyUrl = (data.original_apply_url || data.ats_url || undefined) as string | undefined;
+    const sourceJobUrl = (data.sourceJobUrl || data.source_job_url || '') as string;
+    const discoveryUrl = (data.discoveryUrl || (rawPayload.payload['discoveryUrl'] as string) || '') as string;
 
     return {
       sourceId: rawPayload.sourceId,
-      externalJobId: rawPayload.externalId,
-      rawTitle: p.title || 'Untitled Role',
-      rawDescription: p.description || '',
+      externalJobId: externalId,
+      rawTitle: title,
+      rawCompany: company,
+      rawDescription: description,
       rawDescriptionHtml: null,
-      rawEmploymentType: p.employment_type || null,
-      rawWorkplaceType: p.workplace_type || null,
-      rawLocations: locations.length > 0 ? locations : ['Unspecified'],
-      rawSalary: p.salary_min && p.salary_max ? `$${p.salary_min} - $${p.salary_max}` : null,
-      rawPostedAt: p.posted_at || new Date().toISOString(),
-      rawApplyUrl: originalApplyUrl || atsUrl || sourceJobUrl,
-      discoveryUrl: (rawPayload.payload['discoveryUrl'] as string) || sourceJobUrl,
+      rawLocations: location,
+      rawSalary: (data.salary as string) || undefined,
+      rawPostedAt,
+      rawEmploymentType,
+      rawWorkplaceType,
+      rawApplyUrl,
       sourceJobUrl,
+      discoveryUrl,
       sourceMetadata: {
-        company_name: p.company_name,
-        ats_url: atsUrl,
-        original_apply_url: originalApplyUrl,
-        embedded_urls: p.embedded_urls || [],
-        isAuthenticated: Boolean(JobrightAdapter.cachedSessionToken),
+        companyName: company,
+        companyWebsite: data.companyWebsite,
+        repository: data.repository,
+        originalSource: 'jobright_github_markdown',
+        original_apply_url: data.original_apply_url,
+        ats_url: data.ats_url,
+        embedded_urls: data.embedded_urls,
       },
     };
   }
 
-  public async normalize(raw: RawJob, payloadHash: string): Promise<NormalizedJob> {
-    const urlCandidates: UrlCandidate[] = [];
-    const meta = raw.sourceMetadata || {};
+  public async normalize(rawJob: RawJob, payloadHash: string): Promise<NormalizedJob> {
+    const candidates: UrlCandidate[] = [];
 
-    // 1. Direct employer application URL (highest priority)
-    if (typeof meta['original_apply_url'] === 'string' && meta['original_apply_url'].trim()) {
-      urlCandidates.push({
-        url: meta['original_apply_url'].trim(),
+    if (rawJob.sourceMetadata?.['original_apply_url']) {
+      candidates.push({
+        url: rawJob.sourceMetadata['original_apply_url'] as string,
         sourceType: 'explicit_employer_apply',
+        suggestedConfidence: 0.99,
       });
     }
 
-    // 2. Direct ATS form URL
-    if (typeof meta['ats_url'] === 'string' && meta['ats_url'].trim()) {
-      urlCandidates.push({
-        url: meta['ats_url'].trim(),
+    if (rawJob.sourceMetadata?.['ats_url']) {
+      candidates.push({
+        url: rawJob.sourceMetadata['ats_url'] as string,
         sourceType: 'explicit_ats_form',
+        suggestedConfidence: 0.95,
       });
     }
 
-    // 3. Check embedded URLs for direct ATS patterns
-    if (Array.isArray(meta['embedded_urls'])) {
-      for (const embeddedUrl of meta['embedded_urls']) {
-        if (typeof embeddedUrl === 'string' && URLResolver.isDirectAtsUrl(embeddedUrl)) {
-          urlCandidates.push({
-            url: embeddedUrl,
+    if (Array.isArray(rawJob.sourceMetadata?.['embedded_urls'])) {
+      for (const u of rawJob.sourceMetadata['embedded_urls']) {
+        if (typeof u === 'string') {
+          candidates.push({
+            url: u,
             sourceType: 'known_ats_url',
+            suggestedConfidence: 0.90,
           });
         }
       }
     }
 
-    // 4. Fallback source job URL
-    urlCandidates.push({
-      url: raw.sourceJobUrl,
-      sourceType: 'fallback_source',
-    });
+    if (rawJob.rawApplyUrl && !rawJob.sourceMetadata?.['original_apply_url'] && !rawJob.sourceMetadata?.['ats_url']) {
+      candidates.push({
+        url: rawJob.rawApplyUrl,
+        sourceType: 'explicit_ats_form',
+        suggestedConfidence: 0.95,
+      });
+    }
+
+    if (rawJob.sourceJobUrl) {
+      candidates.push({
+        url: rawJob.sourceJobUrl,
+        sourceType: 'fallback_source',
+        suggestedConfidence: 0.85,
+      });
+    }
 
     const resolvedUrls = URLResolver.resolve({
-      discoveryUrl: raw.discoveryUrl || `https://jobright.ai/jobs/${raw.externalJobId}`,
-      sourceJobUrl: raw.sourceJobUrl,
-      candidates: urlCandidates,
-      fallbackCanonicalUrl: urlCandidates[0]?.url || raw.sourceJobUrl,
+      discoveryUrl: rawJob.discoveryUrl,
+      sourceJobUrl: rawJob.sourceJobUrl,
+      candidates,
     });
 
-    return Normalizer.normalize(raw, resolvedUrls, payloadHash);
+    return Normalizer.normalize(rawJob, resolvedUrls, payloadHash);
   }
 
   public validate(job: NormalizedJob): JobValidationResult {
@@ -343,13 +456,213 @@ export class JobrightAdapter implements ATSAdapter {
   }
 
   public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
-    const meta = raw.sourceMetadata || {};
-    if (typeof meta['original_apply_url'] === 'string' && meta['original_apply_url'].trim()) {
-      return meta['original_apply_url'].trim();
-    }
-    if (typeof meta['ats_url'] === 'string' && meta['ats_url'].trim()) {
-      return meta['ats_url'].trim();
-    }
+    // INVARIANT: Never synthesize application URLs.
+    if (raw.rawApplyUrl) return raw.rawApplyUrl;
     return raw.sourceJobUrl || candidate.sourceJobUrl || '';
+  }
+
+  /**
+   * Robust Markdown table parser supporting both New Grad and H1B Jobright table layouts.
+   */
+  public parseMarkdownTable(
+    markdownText: string,
+    repoName: string,
+    crawlDate: Date = new Date(),
+    discoveryUrl: string = ''
+  ): { candidates: JobrightParsedRow[]; rowsParsed: number; rowsRejected: number } {
+    const lines = markdownText.split(/\r?\n/);
+    const candidates: JobrightParsedRow[] = [];
+    const seenJobIds = new Set<string>();
+
+    let lastCompany = '';
+    let lastCompanyWebsite = '';
+    let headerIndices: {
+      company: number;
+      title: number;
+      location: number;
+      workplace: number;
+      link: number;
+      date: number;
+    } | null = null;
+
+    let rowsParsed = 0;
+    let rowsRejected = 0;
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith('|') || !line.endsWith('|')) continue;
+
+      const cells = line.split('|').map((c) => c.trim()).slice(1, -1);
+      if (cells.length < 3) continue;
+
+      const lowerCells = cells.map((c) => c.toLowerCase());
+
+      // Header row detection
+      if (lowerCells.some((c) => c.includes('company')) && lowerCells.some((c) => c.includes('title') || c.includes('job title'))) {
+        headerIndices = {
+          company: lowerCells.findIndex((c) => c.includes('company')),
+          title: lowerCells.findIndex((c) => c.includes('title')),
+          location: lowerCells.findIndex((c) => c.includes('location')),
+          workplace: lowerCells.findIndex((c) => c.includes('work model') || c.includes('workplace') || c.includes('remote')),
+          link: lowerCells.findIndex((c) => c.includes('link') || c.includes('apply')),
+          date: lowerCells.findIndex((c) => c.includes('date')),
+        };
+        continue;
+      }
+
+      // Skip markdown divider row (| --- | --- |)
+      if (cells.every((c) => /^[-: ]+$/.test(c))) continue;
+
+      if (!headerIndices) {
+        headerIndices = {
+          company: 0,
+          title: 1,
+          location: 2,
+          workplace: 3,
+          link: -1,
+          date: 4,
+        };
+      }
+
+      // Extract Jobright Link and External ID (handle query parameters like ?utm_campaign=...)
+      const allTextInRow = cells.join(' ');
+      const linkMatch = allTextInRow.match(/https:\/\/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/);
+
+      if (!linkMatch || !linkMatch[1]) {
+        rowsRejected++;
+        continue;
+      }
+
+      const externalJobId = linkMatch[1];
+      const sourceJobUrl = `https://jobright.ai/jobs/info/${externalJobId}`;
+
+      // Prevent duplicates within the same README file
+      if (seenJobIds.has(externalJobId)) {
+        continue;
+      }
+      seenJobIds.add(externalJobId);
+
+      // Parse Company with inheritance support (↳)
+      const rawCompanyCell = cells[headerIndices.company] || '';
+      let companyName = '';
+      let companyWebsite = '';
+
+      if (rawCompanyCell.includes('↳')) {
+        companyName = lastCompany;
+        companyWebsite = lastCompanyWebsite;
+      } else {
+        const compLinkMatch = rawCompanyCell.match(/\[(.*?)\]\((.*?)\)/);
+        if (compLinkMatch && compLinkMatch[1]) {
+          companyName = compLinkMatch[1].replace(/[*_]/g, '').trim();
+          companyWebsite = compLinkMatch[2] ? compLinkMatch[2].trim() : '';
+        } else {
+          companyName = rawCompanyCell.replace(/[*_]/g, '').trim();
+        }
+
+        if (companyName && companyName !== '↳') {
+          lastCompany = companyName;
+          lastCompanyWebsite = companyWebsite;
+        } else {
+          companyName = lastCompany;
+          companyWebsite = lastCompanyWebsite;
+        }
+      }
+
+      if (!companyName || companyName === '↳') {
+        rowsRejected++;
+        continue;
+      }
+
+      // Parse Title
+      const rawTitleCell = cells[headerIndices.title] || '';
+      let title = '';
+      const titleLinkMatch = rawTitleCell.match(/\[(.*?)\]/);
+      if (titleLinkMatch && titleLinkMatch[1]) {
+        title = titleLinkMatch[1].replace(/[*_]/g, '').trim();
+      } else {
+        title = rawTitleCell.replace(/[*_]/g, '').trim();
+      }
+      title = title.replace(/\s+/g, ' ').trim();
+
+      if (!title) {
+        rowsRejected++;
+        continue;
+      }
+
+      // Parse Location
+      const rawLocationCell = headerIndices.location !== -1 && cells[headerIndices.location] ? cells[headerIndices.location]! : '';
+      const location = rawLocationCell.replace(/[*_]/g, '').trim();
+
+      // Normalize Workplace Type
+      let workplaceType: 'remote' | 'hybrid' | 'onsite' | 'unspecified' = 'unspecified';
+      const rawWorkplaceCell = headerIndices.workplace !== -1 && cells[headerIndices.workplace] ? cells[headerIndices.workplace]! : '';
+      const wpLower = `${rawWorkplaceCell} ${location} ${title}`.toLowerCase();
+      if (wpLower.includes('remote')) {
+        workplaceType = 'remote';
+      } else if (wpLower.includes('hybrid')) {
+        workplaceType = 'hybrid';
+      } else if (wpLower.includes('on site') || wpLower.includes('on-site') || wpLower.includes('onsite')) {
+        workplaceType = 'onsite';
+      }
+
+      // Parse Posted Date (relative to crawl date with rollover support)
+      const rawDateCell = headerIndices.date !== -1 && cells[headerIndices.date] ? cells[headerIndices.date]! : '';
+      const postedAt = this.parseDate(rawDateCell, crawlDate);
+
+      candidates.push({
+        id: externalJobId,
+        externalJobId,
+        title,
+        companyName,
+        company_name: companyName,
+        companyWebsite,
+        location,
+        workplaceType,
+        postedAt,
+        sourceJobUrl,
+        source_job_url: sourceJobUrl,
+        discoveryUrl,
+        repository: repoName,
+      });
+
+      rowsParsed++;
+    }
+
+    return { candidates, rowsParsed, rowsRejected };
+  }
+
+  /**
+   * Parses flexible date strings (e.g. "Sep 03", "2026-05-06") relative to crawl time.
+   */
+  public parseDate(rawDate: string, crawlDate: Date = new Date()): string {
+    const clean = rawDate.replace(/[*_]/g, '').trim();
+    if (!clean) return crawlDate.toISOString();
+
+    // ISO format: YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+      const d = new Date(`${clean}T00:00:00Z`);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    }
+
+    // Month Day format: "Sep 03", "Sep 3", "August 15"
+    const monthDayMatch = clean.match(/^([a-zA-Z]+)\s+(\d{1,2})$/);
+    if (monthDayMatch && monthDayMatch[1] && monthDayMatch[2]) {
+      const monthStr = monthDayMatch[1].toLowerCase();
+      const day = parseInt(monthDayMatch[2], 10);
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const mIdx = months.findIndex((m) => monthStr.startsWith(m));
+
+      if (mIdx !== -1) {
+        let year = crawlDate.getUTCFullYear();
+        // Year rollover: if crawl date is early in year (Jan/Feb) and posting date is Nov/Dec
+        if (crawlDate.getUTCMonth() < 2 && mIdx > 9) {
+          year -= 1;
+        }
+        const d = new Date(Date.UTC(year, mIdx, day, 12, 0, 0));
+        if (!isNaN(d.getTime())) return d.toISOString();
+      }
+    }
+
+    return crawlDate.toISOString();
   }
 }

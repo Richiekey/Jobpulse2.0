@@ -330,13 +330,25 @@ export class ScraperRunner {
         }
         runId = scrapeRun.id;
       } else {
-        // Adopt existing pending run
+        // Adopt existing pending run and merge metadata
+        const { data: existingRun } = await supabase
+          .from('scrape_runs')
+          .select('metadata')
+          .eq('id', runId)
+          .single();
+
+        const mergedMetadata = {
+          ...((existingRun?.metadata as Record<string, unknown>) || {}),
+          worker_id: workerId,
+          concurrency: options.concurrency ?? this.defaultConcurrency,
+        };
+
         await supabase
           .from('scrape_runs')
           .update({
             status: 'running',
             started_at: new Date().toISOString(),
-            metadata: { worker_id: workerId },
+            metadata: mergedMetadata,
           })
           .eq('id', runId);
       }
@@ -374,7 +386,17 @@ export class ScraperRunner {
         .neq('health_status', 'disabled');
 
       if (options.companyIdentifier) {
-        query = query.eq('source_identifier', options.companyIdentifier);
+        const { data: matchedCompany } = await supabase
+          .from('companies')
+          .select('id')
+          .or(`normalized_name.eq.${options.companyIdentifier},slug.eq.${options.companyIdentifier}`)
+          .maybeSingle();
+
+        if (matchedCompany?.id) {
+          query = query.or(`source_identifier.eq.${options.companyIdentifier},company_id.eq.${matchedCompany.id}`);
+        } else {
+          query = query.eq('source_identifier', options.companyIdentifier);
+        }
       }
       if (options.sourceId) {
         query = query.eq('source_id', options.sourceId);
@@ -413,8 +435,7 @@ export class ScraperRunner {
       const eligibleSources = SourceScheduler.filterAndOrderEligibleSources(allLoadedSources, {
         currentTime: options.currentTime,
         limitSources: options.limitSources,
-        companyIdentifier: options.companyIdentifier,
-        sourceId: options.sourceId,
+        forceDue: Boolean(options.companyIdentifier || options.sourceId),
       });
 
       logger.info(
@@ -476,7 +497,22 @@ export class ScraperRunner {
           error: r.errorMessage,
         }));
 
-      // 6. Complete scrape_runs audit record
+      // 6. Complete scrape_runs audit record, preserving initial trigger metadata
+      const { data: currentRunRecord } = await supabase
+        .from('scrape_runs')
+        .select('metadata')
+        .eq('id', runId)
+        .single();
+
+      const completionMetadata = {
+        ...((currentRunRecord?.metadata as Record<string, unknown>) || {}),
+        worker_id: workerId,
+        partial_failure: summary.failed > 0,
+        sources_attempted: summary.attempted,
+        sources_succeeded: summary.succeeded,
+        sources_failed: summary.failed,
+      };
+
       await supabase
         .from('scrape_runs')
         .update({
@@ -491,13 +527,7 @@ export class ScraperRunner {
           jobs_rejected: summary.rejected,
           jobs_failed: summary.failedJobs,
           error_summary: errorDetails as any,
-          metadata: {
-            worker_id: workerId,
-            partial_failure: summary.failed > 0,
-            sources_attempted: summary.attempted,
-            sources_succeeded: summary.succeeded,
-            sources_failed: summary.failed,
-          },
+          metadata: completionMetadata,
         })
         .eq('id', runId);
 
@@ -553,7 +583,17 @@ export class ScraperRunner {
     if (!claimedRun) return null;
 
     logger.info(`Claimed pending scrape run ${claimedRun.id} from queue. Executing...`);
-    return this.run({ runId: claimedRun.id });
+
+    const meta = (claimedRun.metadata || {}) as Record<string, unknown>;
+    const rawCompanyId = meta['company_identifier'];
+    const companyIdentifier = typeof rawCompanyId === 'string' && rawCompanyId !== 'all' ? rawCompanyId : undefined;
+    const sourceId = typeof meta['source_id'] === 'string' ? meta['source_id'] : undefined;
+
+    return this.run({
+      runId: claimedRun.id,
+      companyIdentifier,
+      sourceId,
+    });
   }
 
   /**
