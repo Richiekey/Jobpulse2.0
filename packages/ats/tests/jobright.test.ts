@@ -7,7 +7,6 @@ describe('JobrightAdapter URL Resolution & Security Matrix', () => {
   const adapter = new JobrightAdapter();
 
   beforeEach(() => {
-    JobrightAdapter.clearSessionCache();
     vi.restoreAllMocks();
   });
 
@@ -140,143 +139,93 @@ describe('JobrightAdapter URL Resolution & Security Matrix', () => {
   });
 });
 
-describe('JobrightAdapter Authenticated Flow Parity (P1)', () => {
+describe('JobrightAdapter Strict Zero-Network Payload Fetch Architecture', () => {
   const adapter = new JobrightAdapter();
 
   beforeEach(() => {
-    JobrightAdapter.clearSessionCache();
     vi.restoreAllMocks();
   });
 
-  it('acquires and caches session token when valid credentials are provided', async () => {
-    const postSpy = vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
-      status: 200,
-      data: { token: 'jwt_session_token_xyz123' },
-      headers: new Headers(),
-      statusText: 'OK',
-      url: 'https://jobright.ai/api/auth/login',
-    });
+  it('fetch() consumes candidate.payload directly with zero network requests', async () => {
+    const getSpy = vi.spyOn(httpClient, 'get');
+    const postSpy = vi.spyOn(httpClient, 'post');
 
-    const token1 = await adapter.acquireSession({
-      email: 'test@example.com',
-      password: 'super-secret-password',
-    });
-
-    expect(token1).toBe('jwt_session_token_xyz123');
-    expect(postSpy).toHaveBeenCalledTimes(1);
-    expect(postSpy).toHaveBeenCalledWith(
-      'https://jobright.ai/api/auth/login',
-      { email: 'test@example.com', password: 'super-secret-password' },
-      expect.objectContaining({ timeoutMs: 10000 })
-    );
-
-    // Second call should return cached token without triggering a second HTTP POST
-    const token2 = await adapter.acquireSession({
-      email: 'test@example.com',
-      password: 'super-secret-password',
-    });
-    expect(token2).toBe('jwt_session_token_xyz123');
-    expect(postSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('handles authentication failure gracefully without leaking credentials in errors', async () => {
-    vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
-      status: 401,
-      data: { error: 'Invalid credentials' },
-      headers: new Headers(),
-      statusText: 'Unauthorized',
-      url: 'https://jobright.ai/api/auth/login',
-    });
-
-    const token = await adapter.acquireSession({
-      email: 'bad@example.com',
-      password: 'wrong-password',
-    });
-
-    expect(token).toBeNull();
-  });
-
-  it('uses authenticated session headers in discover() and preserves candidate fields', async () => {
-    vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
-      status: 200,
-      data: { token: 'auth_token_777' },
-      headers: new Headers(),
-      statusText: 'OK',
-      url: 'https://jobright.ai/api/auth/login',
-    });
-
-    const getSpy = vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
-      status: 200,
-      data: {
-        jobs: [
-          {
-            id: 'job_101',
-            title: 'Staff Software Engineer',
-            source_job_url: 'https://jobright.ai/jobs/job_101',
-          },
-        ],
-      },
-      headers: new Headers(),
-      statusText: 'OK',
-      url: 'https://jobright.ai/api/jobs/company/tech-corp',
-    });
-
-    const config: CompanySourceConfig = {
-      id: 'cfg_jr_1',
-      companyId: 'comp_1',
+    const candidate = {
       sourceId: '10000000-0000-0000-0000-000000000005',
-      sourceIdentifier: 'tech-corp',
-      sourceUrl: 'https://jobright.ai/api/jobs/company/tech-corp',
-      adapterConfig: {
-        email: 'user@techcorp.com',
-        password: 'secure_password_123',
+      externalJobId: 'jr_valid_123',
+      discoveryUrl: 'https://raw.githubusercontent.com/jobright-ai/2026-Software-Engineer-New-Grad/master/README.md',
+      sourceJobUrl: 'https://jobright.ai/jobs/info/jr_valid_123',
+      companyIdentifier: '2026-Software-Engineer-New-Grad',
+      payload: {
+        id: 'jr_valid_123',
+        externalJobId: 'jr_valid_123',
+        title: 'Cloud Security Architect',
+        companyName: 'Guidehouse',
+        companyWebsite: 'https://guidehouse.com',
+        location: 'Reston, VA',
+        workplaceType: 'remote' as const,
+        postedAt: '2026-09-03T12:00:00.000Z',
       },
-      isActive: true,
-      healthStatus: 'healthy',
-      priority: 1,
-      scheduleIntervalMinutes: 60,
-      consecutiveFailures: 0,
-      lastCheckedAt: null,
-      lastSuccessAt: null,
-      lastFailureAt: null,
-      lastError: null,
-      lastJobCount: 0,
-      discoveryMethod: 'manual',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
-    const candidates = await adapter.discover(config);
+    const rawPayload = await adapter.fetch(candidate);
 
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.externalJobId).toBe('job_101');
-    expect(getSpy).toHaveBeenCalledWith(
-      'https://jobright.ai/api/jobs/company/tech-corp',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer auth_token_777',
-        }),
-      })
-    );
+    expect(rawPayload.sourceId).toBe('10000000-0000-0000-0000-000000000005');
+    expect(rawPayload.externalId).toBe('jr_valid_123');
+    expect(rawPayload.payload['title']).toBe('Cloud Security Architect');
+    expect(rawPayload.payloadHash).toHaveLength(64);
+
+    // Verify ZERO network requests were executed
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
   });
 
-  it('throws an explicit error on detail fetch failure (no synthetic jobs created)', async () => {
-    vi.spyOn(httpClient, 'get').mockResolvedValueOnce({
-      status: 404,
-      data: null,
-      headers: new Headers(),
-      statusText: 'Not Found',
-      url: 'https://jobright.ai/api/jobs/non_existent_999',
-    });
+  it('fetch() throws an explicit error when candidate.payload is missing without network fallback', async () => {
+    const getSpy = vi.spyOn(httpClient, 'get');
+    const postSpy = vi.spyOn(httpClient, 'post');
 
-    await expect(
-      adapter.fetch({
-        sourceId: '10000000-0000-0000-0000-000000000005',
-        externalJobId: 'non_existent_999',
-        discoveryUrl: 'https://jobright.ai/jobs/non_existent_999',
-        sourceJobUrl: 'https://jobright.ai/api/jobs/non_existent_999',
-        companyIdentifier: 'unknown',
-      })
-    ).rejects.toThrow(/Jobright job detail fetch failed/);
+    const candidateWithoutPayload = {
+      sourceId: '10000000-0000-0000-0000-000000000005',
+      externalJobId: 'jr_missing_payload',
+      discoveryUrl: 'https://raw.githubusercontent.com/jobright-ai/2026-Software-Engineer-New-Grad/master/README.md',
+      sourceJobUrl: 'https://jobright.ai/jobs/info/jr_missing_payload',
+      companyIdentifier: '2026-Software-Engineer-New-Grad',
+    };
+
+    await expect(adapter.fetch(candidateWithoutPayload)).rejects.toThrow(
+      /is missing candidate\.payload/
+    );
+
+    // Verify ZERO fallback HTTP requests were attempted
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetch() throws an explicit error when candidate.payload is empty without network fallback', async () => {
+    const getSpy = vi.spyOn(httpClient, 'get');
+    const postSpy = vi.spyOn(httpClient, 'post');
+
+    const candidateWithEmptyPayload = {
+      sourceId: '10000000-0000-0000-0000-000000000005',
+      externalJobId: 'jr_empty_payload',
+      discoveryUrl: 'https://raw.githubusercontent.com/jobright-ai/2026-Software-Engineer-New-Grad/master/README.md',
+      sourceJobUrl: 'https://jobright.ai/jobs/info/jr_empty_payload',
+      companyIdentifier: '2026-Software-Engineer-New-Grad',
+      payload: {},
+    };
+
+    await expect(adapter.fetch(candidateWithEmptyPayload)).rejects.toThrow(
+      /is missing candidate\.payload/
+    );
+
+    // Verify ZERO fallback HTTP requests were attempted
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('proves Jobright adapter contains no session or private login methods', () => {
+    expect((adapter as any).acquireSession).toBeUndefined();
+    expect((JobrightAdapter as any).clearSessionCache).toBeUndefined();
+    expect((JobrightAdapter as any).cachedSessionToken).toBeUndefined();
   });
 });

@@ -43,62 +43,6 @@ export class JobrightAdapter implements ATSAdapter {
   public readonly platformSlug = 'jobright';
   public readonly parserVersion = 'jobright_v2';
 
-  // Server-side session token cache (preserved for test & auth backward parity)
-  private static cachedSessionToken: string | null = null;
-  private static sessionExpiresAt: number = 0;
-
-  public static clearSessionCache(): void {
-    JobrightAdapter.cachedSessionToken = null;
-    JobrightAdapter.sessionExpiresAt = 0;
-  }
-
-  public async acquireSession(credentials?: { email?: string; password?: string }): Promise<string | null> {
-    if (JobrightAdapter.cachedSessionToken && Date.now() < JobrightAdapter.sessionExpiresAt) {
-      return JobrightAdapter.cachedSessionToken;
-    }
-
-    const email = credentials?.email || (typeof process !== 'undefined' ? process.env['JOBRIGHT_EMAIL'] : undefined);
-    const password = credentials?.password || (typeof process !== 'undefined' ? process.env['JOBRIGHT_PASSWORD'] : undefined);
-
-    if (!email || !password) {
-      return null;
-    }
-
-    try {
-      const response = await httpClient.post<{
-        token?: string;
-        access_token?: string;
-        sessionId?: string;
-        data?: { token?: string };
-      }>(
-        'https://jobright.ai/api/auth/login',
-        { email, password },
-        {
-          timeoutMs: 10000,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-
-      if (response.status === 200 && response.data) {
-        const token =
-          response.data.token ||
-          response.data.access_token ||
-          response.data.sessionId ||
-          response.data.data?.token;
-
-        if (token) {
-          JobrightAdapter.cachedSessionToken = token;
-          JobrightAdapter.sessionExpiresAt = Date.now() + 3600 * 1000;
-          return token;
-        }
-      }
-    } catch {
-      // Ignore login errors
-    }
-
-    return null;
-  }
-
   public detect(url: string): ATSDetectionResult {
     const ghPattern = /(?:github\.com|raw\.githubusercontent\.com)\/jobright-ai\/([^/?#]+)/i;
     const ghMatch = url.match(ghPattern);
@@ -205,135 +149,74 @@ export class JobrightAdapter implements ATSAdapter {
     const repo = companySource.sourceIdentifier;
     const start = Date.now();
 
-    const isApiFlow = Boolean(
-      companySource.adapterConfig?.['email'] ||
-      companySource.adapterConfig?.['password'] ||
-      (companySource.sourceUrl && companySource.sourceUrl.includes('api/jobs'))
+    logger.info('jobright_repository_fetch_started', {
+      repository: repo,
+      sourceId: companySource.sourceId,
+    });
+
+    let readmeData: { content: string; url: string; branch: string };
+    try {
+      readmeData = await this.fetchReadmeContent(repo);
+      logger.info('jobright_repository_fetch_succeeded', {
+        repository: repo,
+        branch: readmeData.branch,
+        bytes: readmeData.content.length,
+        durationMs: Date.now() - start,
+      });
+    } catch (err: any) {
+      logger.error('jobright_repository_fetch_failed', {
+        repository: repo,
+        error: err.message,
+        durationMs: Date.now() - start,
+      });
+      throw err;
+    }
+
+    const { candidates, rowsParsed, rowsRejected } = this.parseMarkdownTable(
+      readmeData.content,
+      repo,
+      new Date(),
+      readmeData.url
     );
 
-    if (!isApiFlow) {
-      logger.info('jobright_repository_fetch_started', {
-        repository: repo,
-        sourceId: companySource.sourceId,
-      });
-
-      let readmeData: { content: string; url: string; branch: string };
-      try {
-        readmeData = await this.fetchReadmeContent(repo);
-        logger.info('jobright_repository_fetch_succeeded', {
-          repository: repo,
-          branch: readmeData.branch,
-          bytes: readmeData.content.length,
-          durationMs: Date.now() - start,
-        });
-      } catch (err: any) {
-        logger.error('jobright_repository_fetch_failed', {
-          repository: repo,
-          error: err.message,
-          durationMs: Date.now() - start,
-        });
-        throw err;
-      }
-
-      const { candidates, rowsParsed, rowsRejected } = this.parseMarkdownTable(
-        readmeData.content,
-        repo,
-        new Date(),
-        readmeData.url
-      );
-
-      logger.info('jobright_candidates_created', {
-        repository: repo,
-        rowsParsed,
-        rowsRejected,
-        discoveredCount: candidates.length,
-        sourceId: companySource.sourceId,
-      });
-
-      return candidates.map((c) => ({
-        sourceId: companySource.sourceId,
-        externalJobId: c.externalJobId || String(c.id),
-        discoveryUrl: readmeData.url,
-        sourceJobUrl: c.sourceJobUrl || c.source_job_url || `https://jobright.ai/jobs/info/${c.externalJobId}`,
-        companyIdentifier: repo,
-        payload: c as unknown as Record<string, unknown>,
-      }));
-    }
-
-    // Fallback for API-based testing parity
-    const url = companySource.sourceUrl || `https://jobright.ai/api/jobs/company/${companySource.sourceIdentifier}`;
-    const creds = {
-      email: (companySource.adapterConfig?.['email'] as string) || undefined,
-      password: (companySource.adapterConfig?.['password'] as string) || undefined,
-    };
-    const sessionToken = await this.acquireSession(creds);
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (sessionToken) {
-      headers['Authorization'] = `Bearer ${sessionToken}`;
-    }
-
-    const response = await httpClient.get<{ jobs?: any[] }>(url, { headers });
-    if (!response.data?.jobs || !Array.isArray(response.data.jobs)) {
-      return [];
-    }
-
-    return response.data.jobs.map((job) => ({
+    logger.info('jobright_candidates_created', {
+      repository: repo,
+      rowsParsed,
+      rowsRejected,
+      discoveredCount: candidates.length,
       sourceId: companySource.sourceId,
-      externalJobId: String(job.id),
-      discoveryUrl: url,
-      sourceJobUrl: job.source_job_url || `https://jobright.ai/jobs/${job.id}`,
-      companyIdentifier: companySource.sourceIdentifier,
-      payload: job,
+    });
+
+    return candidates.map((c) => ({
+      sourceId: companySource.sourceId,
+      externalJobId: c.externalJobId || String(c.id),
+      discoveryUrl: readmeData.url,
+      sourceJobUrl: c.sourceJobUrl || c.source_job_url || `https://jobright.ai/jobs/info/${c.externalJobId}`,
+      companyIdentifier: repo,
+      payload: c as unknown as Record<string, unknown>,
     }));
   }
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
-    // 0 network requests when candidate.payload is available
-    if (candidate.payload && Object.keys(candidate.payload).length > 0) {
-      const payload = { ...candidate.payload };
-      if (!payload['discoveryUrl'] && candidate.discoveryUrl) {
-        payload['discoveryUrl'] = candidate.discoveryUrl;
-      }
-      if (!payload['sourceJobUrl'] && candidate.sourceJobUrl) {
-        payload['sourceJobUrl'] = candidate.sourceJobUrl;
-      }
-      if (!payload['externalJobId'] && candidate.externalJobId) {
-        payload['externalJobId'] = candidate.externalJobId;
-      }
-
-      const payloadHash = DeduplicationEngine.hashPayload(payload);
-
-      return {
-        sourceId: candidate.sourceId,
-        externalId: candidate.externalJobId,
-        payload,
-        payloadHash,
-        parserVersion: this.parserVersion,
-        fetchedAt: new Date().toISOString(),
-      };
+    // Strictly require candidate payload from GitHub repository discovery — 0 network requests
+    if (!candidate.payload || typeof candidate.payload !== 'object' || Object.keys(candidate.payload).length === 0) {
+      throw new Error(
+        `Jobright fetch failed: Candidate ${candidate.externalJobId} is missing candidate.payload. ` +
+        `Jobright adapter strictly requires candidate payload from GitHub discovery with 0 network requests.`
+      );
     }
 
-    // Fallback for legacy tests
-    const detailUrl = candidate.sourceJobUrl.startsWith('http')
-      ? candidate.sourceJobUrl
-      : `https://jobright.ai/api/jobs/${candidate.externalJobId}`;
-
-    const sessionToken = await this.acquireSession();
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (sessionToken) {
-      headers['Authorization'] = `Bearer ${sessionToken}`;
+    const payload = { ...candidate.payload };
+    if (!payload['discoveryUrl'] && candidate.discoveryUrl) {
+      payload['discoveryUrl'] = candidate.discoveryUrl;
+    }
+    if (!payload['sourceJobUrl'] && candidate.sourceJobUrl) {
+      payload['sourceJobUrl'] = candidate.sourceJobUrl;
+    }
+    if (!payload['externalJobId'] && candidate.externalJobId) {
+      payload['externalJobId'] = candidate.externalJobId;
     }
 
-    const response = await httpClient.get<Record<string, unknown>>(detailUrl, {
-      timeoutMs: 12000,
-      headers,
-    });
-
-    if (response.status !== 200 || !response.data) {
-      throw new Error(`Jobright job detail fetch failed for ${candidate.externalJobId}: HTTP ${response.status}`);
-    }
-
-    const payload = response.data;
     const payloadHash = DeduplicationEngine.hashPayload(payload);
 
     return {

@@ -23,68 +23,113 @@ export interface PipelineResult {
 export class IngestionPipeline {
   private static companyCache = new Map<string, string>();
 
+  public static clearCompanyCache(): void {
+    IngestionPipeline.companyCache.clear();
+  }
+
   /**
    * Dynamically resolves or creates authentic employer companies for aggregators/feeds (e.g. Jobright).
    * Ensures that aggregator jobs are attributed to the real hiring company rather than a fake aggregator company.
+   * Deterministic, collision-safe, and race-condition protected.
    */
   public static async resolveEmployerCompanyId(
     companyName: string,
     website?: string
   ): Promise<string> {
     const trimmed = companyName.trim();
+    if (!trimmed) {
+      throw new Error('Cannot resolve employer for empty company name');
+    }
     const normalizedName = trimmed.toLowerCase();
 
+    // Fast-path: In-memory cache
     const cached = IngestionPipeline.companyCache.get(normalizedName);
     if (cached) return cached;
 
-    // 1. Query existing company by normalized_name
-    const { data: existing } = await supabase
+    // 1. Authoritative lookup by normalized_name
+    const { data: existing, error: selectError } = await supabase
       .from('companies')
       .select('id')
       .eq('normalized_name', normalizedName)
       .maybeSingle();
+
+    if (selectError) {
+      throw new Error(`Failed to query existing company "${companyName}": ${selectError.message}`);
+    }
 
     if (existing?.id) {
       IngestionPipeline.companyCache.set(normalizedName, existing.id);
       return existing.id;
     }
 
-    // 2. Insert new company record
+    // 2. Deterministic Base Slug Generation
     const baseSlug = trimmed
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || 'company';
-    const slug = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
+      .replace(/^-+|-+$/g, '') || 'company';
 
-    const { data: inserted, error: insertError } = await supabase
-      .from('companies')
-      .insert({
-        name: trimmed,
-        normalized_name: normalizedName,
-        slug,
-        website: website || null,
-        status: 'active',
-        verified: false,
-      })
-      .select('id')
-      .single();
+    // 3. Deterministic Collision-Safe Slug Resolution & Insertion
+    let suffix = 1;
+    let candidateSlug = baseSlug;
 
-    if (insertError) {
-      // Handle possible race condition on unique normalized_name
-      const { data: retry } = await supabase
+    while (suffix <= 20) {
+      // Check if candidateSlug is already taken
+      const { data: slugOwner } = await supabase
+        .from('companies')
+        .select('id, normalized_name')
+        .eq('slug', candidateSlug)
+        .maybeSingle();
+
+      if (slugOwner) {
+        if (slugOwner.normalized_name === normalizedName) {
+          // Same company was created concurrently
+          IngestionPipeline.companyCache.set(normalizedName, slugOwner.id);
+          return slugOwner.id;
+        }
+        // Collided with a different company's slug — try next deterministic suffix
+        suffix++;
+        candidateSlug = `${baseSlug}-${suffix}`;
+        continue;
+      }
+
+      // Slug is available — attempt atomic insertion
+      const { data: inserted, error: insertError } = await supabase
+        .from('companies')
+        .insert({
+          name: trimmed,
+          normalized_name: normalizedName,
+          slug: candidateSlug,
+          website: website || null,
+          status: 'active',
+          verified: false,
+        })
+        .select('id')
+        .single();
+
+      if (!insertError && inserted?.id) {
+        IngestionPipeline.companyCache.set(normalizedName, inserted.id);
+        return inserted.id;
+      }
+
+      // If insert failed due to race condition:
+      // A) Another thread/worker inserted the exact same normalized_name
+      const { data: raceWinner } = await supabase
         .from('companies')
         .select('id')
         .eq('normalized_name', normalizedName)
         .maybeSingle();
-      if (retry?.id) {
-        IngestionPipeline.companyCache.set(normalizedName, retry.id);
-        return retry.id;
+
+      if (raceWinner?.id) {
+        IngestionPipeline.companyCache.set(normalizedName, raceWinner.id);
+        return raceWinner.id;
       }
-      throw new Error(`Failed to resolve employer company for "${companyName}": ${insertError.message}`);
+
+      // B) Another thread grabbed candidateSlug with a different normalized_name
+      suffix++;
+      candidateSlug = `${baseSlug}-${suffix}`;
     }
 
-    IngestionPipeline.companyCache.set(normalizedName, inserted.id);
-    return inserted.id;
+    throw new Error(`Failed to deterministically resolve or insert company "${companyName}" after maximum slug attempts`);
   }
 
   /**
