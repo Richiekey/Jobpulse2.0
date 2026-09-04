@@ -8,6 +8,11 @@ describe('ScraperRunner Execution Modes & Manual Global Semantics (P0 / P1 Invar
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(supabase, 'rpc').mockImplementation(async (fn: string) => {
+      if (fn === 'try_acquire_scrape_lock') return { data: true, error: null } as any;
+      if (fn === 'release_scrape_lock') return { data: true, error: null } as any;
+      return { data: null, error: null } as any;
+    });
     runner = new ScraperRunner({ concurrency: 2 });
   });
 

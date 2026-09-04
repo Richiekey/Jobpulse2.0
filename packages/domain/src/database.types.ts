@@ -561,6 +561,7 @@ export interface Database {
           full_name: string | null;
           avatar_url: string | null;
           role: string;
+          current_organization_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -570,6 +571,7 @@ export interface Database {
           full_name?: string | null;
           avatar_url?: string | null;
           role?: string;
+          current_organization_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -579,6 +581,153 @@ export interface Database {
           full_name?: string | null;
           avatar_url?: string | null;
           role?: string;
+          current_organization_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      organizations: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          domain: string | null;
+          logo_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          domain?: string | null;
+          logo_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          slug?: string;
+          domain?: string | null;
+          logo_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      organization_members: {
+        Row: {
+          id: string;
+          organization_id: string;
+          user_id: string;
+          role: 'owner' | 'admin' | 'worker';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          user_id: string;
+          role?: 'owner' | 'admin' | 'worker';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          user_id?: string;
+          role?: 'owner' | 'admin' | 'worker';
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      worker_profiles: {
+        Row: {
+          id: string;
+          organization_id: string;
+          user_id: string;
+          cv_url: string | null;
+          resumes: Json;
+          skills: string[];
+          experience_years: number | null;
+          education: Json;
+          preferred_roles: string[];
+          preferred_locations: string[];
+          availability: string;
+          notes: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          user_id: string;
+          cv_url?: string | null;
+          resumes?: Json;
+          skills?: string[];
+          experience_years?: number | null;
+          education?: Json;
+          preferred_roles?: string[];
+          preferred_locations?: string[];
+          availability?: string;
+          notes?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          user_id?: string;
+          cv_url?: string | null;
+          resumes?: Json;
+          skills?: string[];
+          experience_years?: number | null;
+          education?: Json;
+          preferred_roles?: string[];
+          preferred_locations?: string[];
+          availability?: string;
+          notes?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      job_assignments: {
+        Row: {
+          id: string;
+          organization_id: string;
+          job_id: string;
+          worker_id: string;
+          assigned_by: string;
+          status: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+          deadline_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          job_id: string;
+          worker_id: string;
+          assigned_by: string;
+          status?: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+          deadline_at?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          job_id?: string;
+          worker_id?: string;
+          assigned_by?: string;
+          status?: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+          deadline_at?: string | null;
+          notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -593,6 +742,9 @@ export interface Database {
           status: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived';
           applied_at: string;
           notes: string | null;
+          organization_id: string | null;
+          assigned_by: string | null;
+          worker_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -605,6 +757,9 @@ export interface Database {
           status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived';
           applied_at?: string;
           notes?: string | null;
+          organization_id?: string | null;
+          assigned_by?: string | null;
+          worker_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -617,6 +772,9 @@ export interface Database {
           status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived';
           applied_at?: string;
           notes?: string | null;
+          organization_id?: string | null;
+          assigned_by?: string | null;
+          worker_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -696,9 +854,11 @@ export interface Database {
     };
     Enums: {
       application_status_enum: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived';
+      assignment_status_enum: 'assigned' | 'in_progress' | 'completed' | 'skipped';
       employment_type_enum: 'full_time' | 'part_time' | 'contract' | 'internship' | 'temporary' | 'other';
       health_status_enum: 'healthy' | 'degraded' | 'failing' | 'disabled';
       job_status_enum: 'active' | 'suspect' | 'stale' | 'expired' | 'removed';
+      org_role_enum: 'owner' | 'admin' | 'worker';
       scrape_run_status_enum: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
       source_type_enum: 'ats_direct' | 'aggregator' | 'sitemap' | 'feed' | 'manual';
       sync_status_enum: 'pending' | 'synced' | 'failed';
@@ -780,6 +940,43 @@ export interface Database {
       is_admin: {
         Args: Record<string, never>;
         Returns: boolean;
+      };
+      create_organization_with_owner: {
+        Args: {
+          p_name: string;
+          p_slug: string;
+          p_domain?: string | null;
+          p_logo_url?: string | null;
+        };
+        Returns: {
+          id: string;
+          name: string;
+          slug: string;
+          role: 'owner';
+        };
+      };
+      is_org_member: {
+        Args: {
+          p_org_id: string;
+          p_user_id?: string;
+        };
+        Returns: boolean;
+      };
+      is_org_admin: {
+        Args: {
+          p_org_id: string;
+          p_user_id?: string;
+        };
+        Returns: boolean;
+      };
+      get_user_org_ids: {
+        Args: {
+          p_user_id?: string;
+        };
+        Returns: Array<{
+          organization_id: string;
+          role: 'owner' | 'admin' | 'worker';
+        }>;
       };
     };
   };

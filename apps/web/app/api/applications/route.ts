@@ -9,6 +9,7 @@ const ApplicationSchema = z.object({
   jobTitle: z.string().trim().min(1).max(150),
   status: z.enum(['saved', 'applied', 'screening', 'interview', 'offer', 'rejected', 'withdrawn', 'archived']).default('applied'),
   notes: z.string().max(2000).optional().nullable(),
+  organizationId: z.string().uuid().optional().nullable(),
 });
 
 export async function GET(request: NextRequest) {
@@ -21,11 +22,26 @@ export async function GET(request: NextRequest) {
     const { user, supabase } = authResult;
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const organizationId = searchParams.get('organizationId');
 
-    let query = supabase
-      .from('applications')
-      .select('*')
-      .eq('user_id', user.id);
+    let query = supabase.from('applications').select('*');
+
+    if (organizationId) {
+      // Check if user is admin or member of this organization
+      const orgCheck = await AuthGuard.requireOrgMember(organizationId);
+      if ('errorResponse' in orgCheck) {
+        return orgCheck.errorResponse;
+      }
+
+      query = query.eq('organization_id', organizationId);
+      // If caller is worker (not owner/admin), restrict to their own applications
+      if (orgCheck.membership.role === 'worker') {
+        query = query.eq('user_id', user.id);
+      }
+    } else {
+      // Personal mode: only caller's own applications
+      query = query.eq('user_id', user.id);
+    }
 
     if (status && status !== 'all') {
       query = query.eq('status', status);
@@ -65,21 +81,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { jobId, companyName, jobTitle, status, notes } = parseResult.data;
+    const { jobId, companyName, jobTitle, status, notes, organizationId } = parseResult.data;
+
+    if (organizationId) {
+      const orgCheck = await AuthGuard.requireOrgMember(organizationId);
+      if ('errorResponse' in orgCheck) {
+        return orgCheck.errorResponse;
+      }
+    }
+
+    const insertPayload: Record<string, any> = {
+      user_id: user.id,
+      job_id: jobId || null,
+      company_name: companyName,
+      job_title: jobTitle,
+      status,
+      notes: notes || null,
+      applied_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (organizationId) {
+      insertPayload.organization_id = organizationId;
+      insertPayload.worker_id = user.id;
+    }
 
     const { data, error: insertError } = await supabase
       .from('applications')
       .upsert(
-        {
-          user_id: user.id,
-          job_id: jobId || null,
-          company_name: companyName,
-          job_title: jobTitle,
-          status,
-          notes: notes || null,
-          applied_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
+        insertPayload,
         jobId ? { onConflict: 'user_id, job_id' } : undefined
       )
       .select('*')
