@@ -210,6 +210,48 @@ describe('Application Events & CRM API (Batch L)', () => {
       expect(json.error).toContain('Note content cannot be empty');
     });
 
+    it('rejects client attempts to directly fabricate lifecycle events like status_changed or assigned', async () => {
+      const mockApp = {
+        id: appId,
+        user_id: userId,
+        organization_id: orgId,
+        status: 'applied',
+      };
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: userId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: mockApp,
+            error: null,
+          }),
+        }),
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'status_changed',
+          note: 'Fabricated interview status',
+        }),
+      });
+
+      const res = await postApplicationEvent(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Authoritative lifecycle events');
+    });
+
     it('returns 201 when adding a CRM note event', async () => {
       const mockApp = {
         id: appId,
@@ -223,7 +265,8 @@ describe('Application Events & CRM API (Batch L)', () => {
         application_id: appId,
         organization_id: orgId,
         actor_id: userId,
-        event_type: 'note_updated',
+        actor_type: 'user',
+        event_type: 'note_added',
         from_status: 'screening',
         to_status: 'screening',
         metadata: { note: 'Called candidate for screening interview' },
@@ -266,7 +309,7 @@ describe('Application Events & CRM API (Batch L)', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          eventType: 'note_updated',
+          eventType: 'note_added',
           note: 'Called candidate for screening interview',
         }),
       });
@@ -276,7 +319,7 @@ describe('Application Events & CRM API (Batch L)', () => {
 
       expect(res.status).toBe(201);
       expect(json.success).toBe(true);
-      expect(json.data.eventType).toBe('note_updated');
+      expect(json.data.eventType).toBe('note_added');
       expect(json.data.metadata.note).toBe('Called candidate for screening interview');
     });
   });

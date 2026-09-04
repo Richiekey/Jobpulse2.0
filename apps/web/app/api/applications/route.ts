@@ -43,6 +43,11 @@ export async function GET(request: NextRequest) {
       query = query.eq('user_id', user.id);
     }
 
+    const includeArchived = searchParams.get('includeArchived') === 'true';
+    if (!includeArchived) {
+      query = query.is('deleted_at', null);
+    }
+
     if (status && status !== 'all') {
       query = query.eq('status', status);
     }

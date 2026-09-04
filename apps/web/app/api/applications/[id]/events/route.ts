@@ -1,13 +1,10 @@
 import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
-import { z } from 'zod';
-
-const AppendEventSchema = z.object({
-  eventType: z.enum(['note_updated', 'status_changed', 'assigned', 'reassigned']).default('note_updated'),
-  note: z.string().trim().min(1, 'Note content cannot be empty').max(2000),
-  metadata: z.record(z.unknown()).optional().default({}),
-});
+import {
+  AppendApplicationCrmEventSchema,
+  isProhibitedClientLifecycleEvent,
+} from '@jobpulse/validation';
 
 export async function GET(
   request: NextRequest,
@@ -27,10 +24,10 @@ export async function GET(
 
     const { user, supabase } = authResult;
 
-    // Verify application existence and access permissions
+    // Verify application existence and access permissions (owner, assigned worker, org admin)
     const { data: app, error: appError } = await supabase
       .from('applications')
-      .select('id, user_id, organization_id')
+      .select('id, user_id, organization_id, worker_id')
       .eq('id', applicationId)
       .maybeSingle();
 
@@ -38,16 +35,16 @@ export async function GET(
       return ApiResponse.error('Application not found or unauthorized to access.', appError, 404);
     }
 
-    const isOwner = app.user_id === user.id;
-    let hasOrgAccess = false;
-    if (!isOwner && app.organization_id) {
-      const orgCheck = await AuthGuard.requireOrgMember(app.organization_id);
+    const isOwnerOrWorker = app.user_id === user.id || app.worker_id === user.id;
+    let isOrgAdmin = false;
+    if (!isOwnerOrWorker && app.organization_id) {
+      const orgCheck = await AuthGuard.requireOrgAdmin(app.organization_id);
       if (!('errorResponse' in orgCheck)) {
-        hasOrgAccess = true;
+        isOrgAdmin = true;
       }
     }
 
-    if (!isOwner && !hasOrgAccess) {
+    if (!isOwnerOrWorker && !isOrgAdmin) {
       return ApiResponse.error('Application not found or unauthorized to access.', null, 404);
     }
 
@@ -61,7 +58,7 @@ export async function GET(
 
     let query = supabase
       .from('application_events')
-      .select('id, application_id, organization_id, actor_id, event_type, from_status, to_status, metadata, created_at')
+      .select('id, application_id, organization_id, actor_id, actor_type, event_type, from_status, to_status, metadata, created_at')
       .eq('application_id', applicationId)
       .order('created_at', { ascending: true });
 
@@ -77,8 +74,10 @@ export async function GET(
 
     const rawEvents = events || [];
 
-    // Optionally enrich actor info from profiles table
-    const actorIds = Array.from(new Set(rawEvents.map((e) => e.actor_id).filter(Boolean)));
+    // Enrich actor info from profiles table where actor_id is present
+    const actorIds = Array.from(
+      new Set(rawEvents.map((e) => e.actor_id).filter((id): id is string => Boolean(id)))
+    );
     let actorMap: Record<string, { id: string; email: string | null; fullName: string | null; avatarUrl: string | null }> = {};
 
     if (actorIds.length > 0) {
@@ -107,12 +106,13 @@ export async function GET(
       applicationId: e.application_id,
       organizationId: e.organization_id,
       actorId: e.actor_id,
+      actorType: e.actor_type || 'user',
       eventType: e.event_type,
       fromStatus: e.from_status,
       toStatus: e.to_status,
       metadata: (e.metadata as Record<string, unknown>) || {},
       createdAt: e.created_at,
-      actor: actorMap[e.actor_id] || null,
+      actor: e.actor_id ? actorMap[e.actor_id] || null : null,
     }));
 
     return ApiResponse.success(formatted);
@@ -142,7 +142,7 @@ export async function POST(
     // Verify application existence and access permissions
     const { data: app, error: appError } = await supabase
       .from('applications')
-      .select('id, user_id, organization_id, status, notes')
+      .select('id, user_id, organization_id, worker_id, status')
       .eq('id', applicationId)
       .maybeSingle();
 
@@ -150,31 +150,42 @@ export async function POST(
       return ApiResponse.error('Application not found or unauthorized to access.', appError, 404);
     }
 
-    const isOwner = app.user_id === user.id;
-    let hasOrgAccess = false;
-    if (!isOwner && app.organization_id) {
-      const orgCheck = await AuthGuard.requireOrgMember(app.organization_id);
+    const isOwnerOrWorker = app.user_id === user.id || app.worker_id === user.id;
+    let isOrgAdmin = false;
+    if (!isOwnerOrWorker && app.organization_id) {
+      const orgCheck = await AuthGuard.requireOrgAdmin(app.organization_id);
       if (!('errorResponse' in orgCheck)) {
-        hasOrgAccess = true;
+        isOrgAdmin = true;
       }
     }
 
-    if (!isOwner && !hasOrgAccess) {
+    if (!isOwnerOrWorker && !isOrgAdmin) {
       return ApiResponse.error('Application not found or unauthorized to access.', null, 404);
     }
 
     const rawBody = await request.json().catch(() => ({}));
-    const parseResult = AppendEventSchema.safeParse(rawBody);
+
+    // HARD SECURITY GATE: Reject client attempts to fabricate authoritative lifecycle events
+    if (rawBody?.eventType && isProhibitedClientLifecycleEvent(rawBody.eventType)) {
+      return ApiResponse.error(
+        `Authoritative lifecycle events (${rawBody.eventType}) cannot be directly created by clients. Only CRM events ('note_added', 'comment_added') are permitted.`,
+        null,
+        400
+      );
+    }
+
+    const parseResult = AppendApplicationCrmEventSchema.safeParse(rawBody);
 
     if (!parseResult.success) {
       return ApiResponse.error(
-        `Invalid event payload: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+        `Invalid CRM event payload: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
         parseResult.error,
         400
       );
     }
 
     const { eventType, note, metadata } = parseResult.data;
+    const actorType = isOrgAdmin ? 'admin' : (app.worker_id === user.id ? 'worker' : 'user');
 
     const { data: newEvent, error: insertError } = await supabase
       .from('application_events')
@@ -182,6 +193,7 @@ export async function POST(
         application_id: applicationId,
         organization_id: app.organization_id || null,
         actor_id: user.id,
+        actor_type: actorType,
         event_type: eventType,
         from_status: app.status,
         to_status: app.status,
@@ -194,7 +206,7 @@ export async function POST(
       .single();
 
     if (insertError || !newEvent) {
-      return ApiResponse.error('Failed to append timeline event.', insertError, 500);
+      return ApiResponse.error('Failed to append CRM timeline event.', insertError, 500);
     }
 
     const formatted = {
@@ -202,6 +214,7 @@ export async function POST(
       applicationId: newEvent.application_id,
       organizationId: newEvent.organization_id,
       actorId: newEvent.actor_id,
+      actorType: newEvent.actor_type,
       eventType: newEvent.event_type,
       fromStatus: newEvent.from_status,
       toStatus: newEvent.to_status,

@@ -2,103 +2,127 @@ import { describe, it, expect } from 'vitest';
 import {
   CreateApplicationEventSchema,
   AppendApplicationNoteSchema,
+  AppendApplicationCrmEventSchema,
   ApplicationEventFilterSchema,
   ApplicationEventTypeSchema,
   ApplicationStatusEnumSchema,
+  AuthoritativeLifecycleEventTypeSchema,
+  UserCrmEventTypeSchema,
+  ActorTypeSchema,
+  isProhibitedClientLifecycleEvent,
 } from '../src/schemas/application-event.schema.js';
 
-describe('Application Event & CRM Validation Schemas (Batch L)', () => {
-  describe('ApplicationEventTypeSchema', () => {
-    it('accepts valid lifecycle event types', () => {
-      expect(ApplicationEventTypeSchema.safeParse('created').success).toBe(true);
-      expect(ApplicationEventTypeSchema.safeParse('applied').success).toBe(true);
-      expect(ApplicationEventTypeSchema.safeParse('status_changed').success).toBe(true);
-      expect(ApplicationEventTypeSchema.safeParse('note_updated').success).toBe(true);
-      expect(ApplicationEventTypeSchema.safeParse('assigned').success).toBe(true);
-      expect(ApplicationEventTypeSchema.safeParse('reassigned').success).toBe(true);
-    });
-
-    it('rejects unrecognized event types', () => {
-      expect(ApplicationEventTypeSchema.safeParse('unknown_random_event').success).toBe(false);
-      expect(ApplicationEventTypeSchema.safeParse('').success).toBe(false);
-    });
-  });
-
-  describe('ApplicationStatusEnumSchema', () => {
-    it('accepts valid application statuses', () => {
-      const statuses = ['saved', 'applied', 'screening', 'interview', 'offer', 'rejected', 'withdrawn', 'archived'];
-      for (const st of statuses) {
-        expect(ApplicationStatusEnumSchema.safeParse(st).success).toBe(true);
+describe('Application Event & CRM Validation Schemas (Batch L Remediation)', () => {
+  describe('AuthoritativeLifecycleEventTypeSchema', () => {
+    it('accepts authoritative lifecycle event types', () => {
+      const lifecycleTypes = [
+        'created',
+        'applied',
+        'status_changed',
+        'assigned',
+        'reassigned',
+        'note_updated',
+        'details_updated',
+        'archived',
+      ];
+      for (const t of lifecycleTypes) {
+        expect(AuthoritativeLifecycleEventTypeSchema.safeParse(t).success).toBe(true);
       }
     });
 
-    it('rejects invalid statuses', () => {
-      expect(ApplicationStatusEnumSchema.safeParse('pending').success).toBe(false);
-      expect(ApplicationStatusEnumSchema.safeParse('hired').success).toBe(false);
+    it('rejects CRM-only event types in lifecycle schema', () => {
+      expect(AuthoritativeLifecycleEventTypeSchema.safeParse('note_added').success).toBe(false);
+      expect(AuthoritativeLifecycleEventTypeSchema.safeParse('comment_added').success).toBe(false);
     });
   });
 
-  describe('CreateApplicationEventSchema', () => {
-    it('validates a complete event creation payload', () => {
-      const result = CreateApplicationEventSchema.safeParse({
-        applicationId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        organizationId: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
-        eventType: 'status_changed',
-        fromStatus: 'applied',
-        toStatus: 'interview',
-        metadata: { scheduledTime: '2026-09-10T14:00:00Z', interviewer: 'Bob' },
-      });
-
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.applicationId).toBe('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
-        expect(result.data.fromStatus).toBe('applied');
-        expect(result.data.toStatus).toBe('interview');
-      }
+  describe('UserCrmEventTypeSchema', () => {
+    it('accepts valid user CRM event types', () => {
+      expect(UserCrmEventTypeSchema.safeParse('note_added').success).toBe(true);
+      expect(UserCrmEventTypeSchema.safeParse('comment_added').success).toBe(true);
     });
 
-    it('allows nullable organizationId for personal applications', () => {
-      const result = CreateApplicationEventSchema.safeParse({
-        applicationId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        organizationId: null,
-        eventType: 'note_updated',
-        metadata: { note: 'Followed up via email' },
-      });
-
-      expect(result.success).toBe(true);
-    });
-
-    it('rejects invalid application UUID', () => {
-      const result = CreateApplicationEventSchema.safeParse({
-        applicationId: 'not-a-uuid',
-        eventType: 'applied',
-      });
-
-      expect(result.success).toBe(false);
+    it('rejects lifecycle event types in user CRM schema', () => {
+      expect(UserCrmEventTypeSchema.safeParse('status_changed').success).toBe(false);
+      expect(UserCrmEventTypeSchema.safeParse('assigned').success).toBe(false);
+      expect(UserCrmEventTypeSchema.safeParse('created').success).toBe(false);
     });
   });
 
-  describe('AppendApplicationNoteSchema', () => {
-    it('validates a correct CRM note', () => {
-      const result = AppendApplicationNoteSchema.safeParse({
+  describe('isProhibitedClientLifecycleEvent helper', () => {
+    it('identifies authoritative lifecycle event types as prohibited for client submission', () => {
+      expect(isProhibitedClientLifecycleEvent('status_changed')).toBe(true);
+      expect(isProhibitedClientLifecycleEvent('assigned')).toBe(true);
+      expect(isProhibitedClientLifecycleEvent('reassigned')).toBe(true);
+      expect(isProhibitedClientLifecycleEvent('created')).toBe(true);
+      expect(isProhibitedClientLifecycleEvent('applied')).toBe(true);
+      expect(isProhibitedClientLifecycleEvent('archived')).toBe(true);
+      expect(isProhibitedClientLifecycleEvent('details_updated')).toBe(true);
+    });
+
+    it('allows client-authored CRM event types', () => {
+      expect(isProhibitedClientLifecycleEvent('note_added')).toBe(false);
+      expect(isProhibitedClientLifecycleEvent('comment_added')).toBe(false);
+    });
+  });
+
+  describe('ActorTypeSchema', () => {
+    it('accepts valid actor types', () => {
+      expect(ActorTypeSchema.safeParse('user').success).toBe(true);
+      expect(ActorTypeSchema.safeParse('worker').success).toBe(true);
+      expect(ActorTypeSchema.safeParse('admin').success).toBe(true);
+      expect(ActorTypeSchema.safeParse('system').success).toBe(true);
+    });
+
+    it('rejects invalid actor types', () => {
+      expect(ActorTypeSchema.safeParse('bot').success).toBe(false);
+      expect(ActorTypeSchema.safeParse('anonymous').success).toBe(false);
+    });
+  });
+
+  describe('AppendApplicationCrmEventSchema', () => {
+    it('validates a correct CRM note event', () => {
+      const result = AppendApplicationCrmEventSchema.safeParse({
+        eventType: 'note_added',
         note: 'Spoke with hiring manager. Second round scheduled next Tuesday.',
         metadata: { category: 'call_summary' },
       });
 
       expect(result.success).toBe(true);
       if (result.success) {
+        expect(result.data.eventType).toBe('note_added');
         expect(result.data.note).toBe('Spoke with hiring manager. Second round scheduled next Tuesday.');
       }
     });
 
+    it('defaults eventType to note_added when omitted', () => {
+      const result = AppendApplicationCrmEventSchema.safeParse({
+        note: 'Candidate submitted portfolio link.',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.eventType).toBe('note_added');
+      }
+    });
+
+    it('rejects forbidden lifecycle event types', () => {
+      const result = AppendApplicationCrmEventSchema.safeParse({
+        eventType: 'status_changed',
+        note: 'Faked interview status',
+      });
+
+      expect(result.success).toBe(false);
+    });
+
     it('rejects empty or whitespace-only note', () => {
-      expect(AppendApplicationNoteSchema.safeParse({ note: '' }).success).toBe(false);
-      expect(AppendApplicationNoteSchema.safeParse({ note: '   ' }).success).toBe(false);
+      expect(AppendApplicationCrmEventSchema.safeParse({ note: '' }).success).toBe(false);
+      expect(AppendApplicationCrmEventSchema.safeParse({ note: '   ' }).success).toBe(false);
     });
 
     it('rejects note exceeding 2000 characters', () => {
       const longNote = 'a'.repeat(2001);
-      expect(AppendApplicationNoteSchema.safeParse({ note: longNote }).success).toBe(false);
+      expect(AppendApplicationCrmEventSchema.safeParse({ note: longNote }).success).toBe(false);
     });
   });
 

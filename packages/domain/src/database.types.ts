@@ -745,6 +745,7 @@ export interface Database {
           organization_id: string | null;
           assigned_by: string | null;
           worker_id: string | null;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -760,6 +761,7 @@ export interface Database {
           organization_id?: string | null;
           assigned_by?: string | null;
           worker_id?: string | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -775,6 +777,7 @@ export interface Database {
           organization_id?: string | null;
           assigned_by?: string | null;
           worker_id?: string | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -784,7 +787,8 @@ export interface Database {
           id: string;
           application_id: string;
           organization_id: string | null;
-          actor_id: string;
+          actor_id: string | null;
+          actor_type: 'user' | 'worker' | 'admin' | 'system';
           event_type: string;
           from_status: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
           to_status: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
@@ -795,7 +799,8 @@ export interface Database {
           id?: string;
           application_id: string;
           organization_id?: string | null;
-          actor_id: string;
+          actor_id?: string | null;
+          actor_type?: 'user' | 'worker' | 'admin' | 'system';
           event_type: string;
           from_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
           to_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
@@ -806,7 +811,8 @@ export interface Database {
           id?: string;
           application_id?: string;
           organization_id?: string | null;
-          actor_id?: string;
+          actor_id?: string | null;
+          actor_type?: 'user' | 'worker' | 'admin' | 'system';
           event_type?: string;
           from_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
           to_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;

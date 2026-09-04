@@ -113,10 +113,14 @@ describe('Application Lifecycle & State Machine (S20/S21, P1)', () => {
     it('returns 404 Not Found when attempting to delete a non-existent or unauthorized application', async () => {
       const mockSupabase = {
         from: vi.fn().mockReturnValue({
-          delete: vi.fn().mockReturnValue({
+          update: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                select: vi.fn().mockResolvedValue({ data: [], error: null }),
+              is: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  }),
+                }),
               }),
             }),
           }),
@@ -142,15 +146,19 @@ describe('Application Lifecycle & State Machine (S20/S21, P1)', () => {
       expect(json.error).toContain('Application not found or unauthorized to delete');
     });
 
-    it('returns 200 with deleted: true when application is successfully deleted', async () => {
+    it('returns 200 with deleted: true when application is successfully archived/soft-deleted', async () => {
       const mockSupabase = {
         from: vi.fn().mockReturnValue({
-          delete: vi.fn().mockReturnValue({
+          update: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                select: vi.fn().mockResolvedValue({
-                  data: [{ id: '00000000-0000-0000-0000-000000000001' }],
-                  error: null,
+              is: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: { id: '00000000-0000-0000-0000-000000000001' },
+                      error: null,
+                    }),
+                  }),
                 }),
               }),
             }),

@@ -108,10 +108,16 @@ export async function DELETE(
       }
     }
 
+    const now = new Date().toISOString();
     let deleteQuery = supabase
       .from('applications')
-      .delete()
-      .eq('id', applicationId);
+      .update({
+        deleted_at: now,
+        status: 'archived',
+        updated_at: now,
+      })
+      .eq('id', applicationId)
+      .is('deleted_at', null);
 
     if (organizationId) {
       deleteQuery = deleteQuery.eq('organization_id', organizationId);
@@ -119,13 +125,13 @@ export async function DELETE(
       deleteQuery = deleteQuery.eq('user_id', user.id);
     }
 
-    const { data: deletedRows, error: deleteError } = await deleteQuery.select('id');
+    const { data: archivedApp, error: deleteError } = await deleteQuery.select('id').maybeSingle();
 
     if (deleteError) {
       return ApiResponse.error('Failed to remove application record.', deleteError, 500);
     }
 
-    if (!deletedRows || deletedRows.length === 0) {
+    if (!archivedApp) {
       return ApiResponse.error('Application not found or unauthorized to delete.', null, 404);
     }
 
