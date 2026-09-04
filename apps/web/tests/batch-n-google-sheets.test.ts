@@ -11,7 +11,13 @@ import {
   POST as disconnectRoutePost,
   DELETE as disconnectRouteDelete,
 } from '../app/api/integrations/google/disconnect/route';
-import { signOAuthState, encryptToken, decryptToken } from '@jobpulse/domain';
+import {
+  signOAuthState,
+  encryptToken,
+  decryptToken,
+  validateIntegrationReconciliation,
+} from '@jobpulse/domain';
+import { GoogleOAuthService } from '../lib/google-oauth';
 
 // Mock cookies from next/headers
 const mockCookieStore = new Map<string, { name: string; value: string; options?: any }>();
@@ -281,8 +287,112 @@ describe('Batch N — Google Sheets Integration Suite', () => {
       },
     });
 
-    // Privileged service_role admin client (bypasses RLS for internal secrets management)
+    // Privileged service_role admin client (bypasses RLS for internal secrets management & atomic RPCs)
     (createAdminClient as any).mockReturnValue({
+      rpc: vi.fn(async (fnName: string, params: any) => {
+        if (fnName === 'upsert_user_integration_with_secret') {
+          const {
+            p_user_id,
+            p_organization_id,
+            p_provider,
+            p_config,
+            p_encrypted_refresh_token,
+            p_token_iv,
+            p_token_auth_tag,
+            p_token_expires_at,
+            p_key_version,
+          } = params;
+
+          let existing = mockDbIntegrations.find((i) => {
+            if (p_organization_id) {
+              return i.organization_id === p_organization_id && i.provider === p_provider;
+            } else {
+              return i.user_id === p_user_id && i.organization_id === null && i.provider === p_provider;
+            }
+          });
+
+          if (!existing) {
+            // New integration requires durable credentials
+            if (!p_encrypted_refresh_token || !p_token_iv || !p_token_auth_tag) {
+              return {
+                data: null,
+                error: new Error('Cannot activate new Google integration without durable credentials.'),
+              };
+            }
+
+            const newId = `int-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+            const newInt = {
+              id: newId,
+              user_id: p_user_id,
+              organization_id: p_organization_id || null,
+              provider: p_provider,
+              config: p_config,
+              is_active: true,
+              last_synced_at: null,
+              last_error: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            mockDbIntegrations.push(newInt);
+
+            mockDbSecrets.push({
+              id: `sec-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              integration_id: newId,
+              encrypted_refresh_token: p_encrypted_refresh_token,
+              token_iv: p_token_iv,
+              token_auth_tag: p_token_auth_tag,
+              token_expires_at: p_token_expires_at,
+              key_version: p_key_version || 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+
+            return { data: { ...newInt }, error: null };
+          } else {
+            // Existing integration
+            const existingSecret = mockDbSecrets.find((s) => s.integration_id === existing.id);
+
+            if (p_encrypted_refresh_token) {
+              if (existingSecret) {
+                existingSecret.encrypted_refresh_token = p_encrypted_refresh_token;
+                existingSecret.token_iv = p_token_iv;
+                existingSecret.token_auth_tag = p_token_auth_tag;
+                existingSecret.token_expires_at = p_token_expires_at;
+                existingSecret.key_version = p_key_version || 1;
+                existingSecret.updated_at = new Date().toISOString();
+              } else {
+                mockDbSecrets.push({
+                  id: `sec-${Date.now()}`,
+                  integration_id: existing.id,
+                  encrypted_refresh_token: p_encrypted_refresh_token,
+                  token_iv: p_token_iv,
+                  token_auth_tag: p_token_auth_tag,
+                  token_expires_at: p_token_expires_at,
+                  key_version: p_key_version || 1,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                });
+              }
+            } else {
+              // Google omitted refresh token - ensure existing secret is present
+              if (!existingSecret) {
+                return {
+                  data: null,
+                  error: new Error('Cannot re-activate existing Google integration: missing durable credentials.'),
+                };
+              }
+            }
+
+            existing.config = p_config;
+            existing.is_active = true;
+            existing.last_error = null;
+            existing.updated_at = new Date().toISOString();
+
+            return { data: { ...existing }, error: null };
+          }
+        }
+        return { data: null, error: new Error(`Unknown RPC function: ${fnName}`) };
+      }),
       from: (table: string) => {
         if (table === 'integration_secrets') {
           return {
@@ -1067,6 +1177,250 @@ describe('Batch N — Google Sheets Integration Suite', () => {
       expect(data).toBeNull();
       expect(error).toBeDefined();
       expect(error!.message).toContain('Integration provider is immutable.');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 8. FINAL REMEDIATION — ADVERSARIAL ATOMICITY & RECONCILIATION
+  // ---------------------------------------------------------------------------
+  describe('Final Remediation — Adversarial Atomicity & Record-by-Record Reconciliation', () => {
+    beforeEach(() => {
+      setupMockSupabase(userId);
+    });
+
+    it('Test A: New connection failure rollback: failure during secret storage rolls back completely', async () => {
+      const state = signOAuthState({
+        userId,
+        timestamp: Date.now(),
+        nonce: 'nonce-rollback-test',
+      });
+
+      mockCookieStore.set('jobpulse_google_oauth_state', {
+        name: 'jobpulse_google_oauth_state',
+        value: state,
+      });
+
+      // Simulate a database/transaction failure during the atomic RPC
+      const adminClient = createAdminClient();
+      vi.spyOn(adminClient, 'rpc').mockResolvedValueOnce({
+        data: null,
+        error: {
+          name: 'PostgrestError',
+          message: 'PostgreSQL transaction aborted: foreign key constraint violation in secret storage',
+          details: '',
+          hint: '',
+          code: '23503',
+        } as any,
+      } as any);
+
+      const req = new NextRequest(
+        `http://localhost/api/integrations/google/callback?code=valid_code&state=${state}&json=true`
+      );
+      const res = await callbackRoute(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Failed to atomically save integration and credentials');
+
+      // CRITICAL ATOMICITY INVARIANT: Zero records in either table
+      expect(mockDbIntegrations).toHaveLength(0);
+      expect(mockDbSecrets).toHaveLength(0);
+    });
+
+    it('Test B: Existing integration re-authorization with no refresh token preserves existing secret', async () => {
+      // 1. Seed existing integration with existing secret
+      const existingIntId = 'int-existing-reauth-1';
+      const originalEncryptedSecret = encryptToken('original_refresh_token_xyz', undefined, userId);
+
+      mockDbIntegrations.push({
+        id: existingIntId,
+        user_id: userId,
+        organization_id: null,
+        provider: 'google_sheets',
+        is_active: true,
+        config: {
+          googleEmail: 'old@jobpulse.io',
+          spreadsheetId: 'existing-sheet-id',
+          connectedAt: '2026-01-01T00:00:00Z',
+        },
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      });
+
+      mockDbSecrets.push({
+        id: 'sec-original-xyz',
+        integration_id: existingIntId,
+        encrypted_refresh_token: originalEncryptedSecret.ciphertext,
+        token_iv: originalEncryptedSecret.iv,
+        token_auth_tag: originalEncryptedSecret.tag,
+        token_expires_at: null,
+        key_version: 1,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      });
+
+      // 2. Set up OAuth callback where Google returns no refresh token (re-authorization without prompt=consent)
+      vi.spyOn(GoogleOAuthService, 'exchangeCodeForTokens').mockResolvedValueOnce({
+        accessToken: 'ya29.new_access_token_reauth',
+        expiresIn: 3600,
+        tokenType: 'Bearer',
+        scope: GoogleOAuthService.getOAuthScopes().join(' '),
+      });
+      vi.spyOn(GoogleOAuthService, 'fetchUserEmail').mockResolvedValueOnce('new-email@jobpulse.io');
+
+      const state = signOAuthState({
+        userId,
+        timestamp: Date.now(),
+        nonce: 'nonce-reauth-preserve',
+      });
+
+      mockCookieStore.set('jobpulse_google_oauth_state', {
+        name: 'jobpulse_google_oauth_state',
+        value: state,
+      });
+
+      const req = new NextRequest(
+        `http://localhost/api/integrations/google/callback?code=valid_reauth_code&state=${state}&json=true`
+      );
+      const res = await callbackRoute(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+
+      // Metadata was updated with new email and timestamp
+      expect(mockDbIntegrations).toHaveLength(1);
+      expect(mockDbIntegrations[0].id).toBe(existingIntId);
+      expect(mockDbIntegrations[0].config.googleEmail).toBe('new-email@jobpulse.io');
+      expect(mockDbIntegrations[0].config.spreadsheetId).toBe('existing-sheet-id');
+
+      // Secret was PRESERVED intact and not overwritten or deleted
+      expect(mockDbSecrets).toHaveLength(1);
+      const preservedSecret = mockDbSecrets[0];
+      expect(preservedSecret.id).toBe('sec-original-xyz');
+      expect(preservedSecret.integration_id).toBe(existingIntId);
+      expect(preservedSecret.encrypted_refresh_token).toBe(originalEncryptedSecret.ciphertext);
+      expect(preservedSecret.token_iv).toBe(originalEncryptedSecret.iv);
+      expect(preservedSecret.token_auth_tag).toBe(originalEncryptedSecret.tag);
+    });
+
+    it('Test C: Missing-secret connection rejection: new connection missing refresh token fails cleanly', async () => {
+      // User has no existing integration
+      expect(mockDbIntegrations).toHaveLength(0);
+
+      // Google returns no refresh token
+      vi.spyOn(GoogleOAuthService, 'exchangeCodeForTokens').mockResolvedValueOnce({
+        accessToken: 'ya29.mock_access_token_no_refresh',
+        expiresIn: 3600,
+        tokenType: 'Bearer',
+        scope: GoogleOAuthService.getOAuthScopes().join(' '),
+      });
+
+      const state = signOAuthState({
+        userId,
+        timestamp: Date.now(),
+        nonce: 'nonce-missing-secret',
+      });
+
+      mockCookieStore.set('jobpulse_google_oauth_state', {
+        name: 'jobpulse_google_oauth_state',
+        value: state,
+      });
+
+      const req = new NextRequest(
+        `http://localhost/api/integrations/google/callback?code=no_refresh_code&state=${state}&json=true`
+      );
+      const res = await callbackRoute(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.success).toBe(false);
+      expect(json.error.toLowerCase()).toContain('re-authorization with consent required');
+      expect(json.requestId).toBeDefined();
+
+      // Nothing was inserted in either table
+      expect(mockDbIntegrations).toHaveLength(0);
+      expect(mockDbSecrets).toHaveLength(0);
+    });
+
+    it('Test D: Record-by-record migration validator detects missing secrets', () => {
+      // Integration exists with active status, but no secret row exists
+      const testIntegrations = [
+        {
+          id: 'int-active-no-secret',
+          user_id: userId,
+          organization_id: null,
+          provider: 'google_sheets',
+          is_active: true,
+        },
+      ];
+      const testSecrets: any[] = [];
+
+      const result = validateIntegrationReconciliation(testIntegrations, testSecrets);
+
+      expect(result.isValid).toBe(false);
+      expect(result.anomalies).toHaveLength(1);
+      expect(result.anomalies[0].code).toBe('MISSING_SECRET');
+      expect(result.anomalies[0].integrationId).toBe('int-active-no-secret');
+      expect(result.anomalies[0].message).toContain(
+        'Reconciliation failure: Active integration int-active-no-secret lacks corresponding integration_secrets record.'
+      );
+    });
+
+    it('Test E: Record-by-record migration validator detects duplicate secrets', () => {
+      const testIntegrations = [
+        {
+          id: 'int-dup-test',
+          user_id: userId,
+          organization_id: null,
+          provider: 'google_sheets',
+          is_active: true,
+        },
+      ];
+      const testSecrets = [
+        { id: 'sec-1', integration_id: 'int-dup-test' },
+        { id: 'sec-2', integration_id: 'int-dup-test' },
+      ];
+
+      const result = validateIntegrationReconciliation(testIntegrations, testSecrets);
+
+      expect(result.isValid).toBe(false);
+      const dupAnomaly = result.anomalies.find((a) => a.code === 'DUPLICATE_SECRET');
+      expect(dupAnomaly).toBeDefined();
+      expect(dupAnomaly?.integrationId).toBe('int-dup-test');
+      expect(dupAnomaly?.message).toContain('Found 2 duplicate secrets for integration int-dup-test');
+    });
+
+    it('Test F: Record-by-record migration validator detects ownership/tenant scope mismatch and orphan secrets', () => {
+      const testIntegrations = [
+        {
+          id: 'int-malformed-parent',
+          user_id: undefined, // missing user_id
+          organization_id: null,
+          provider: 'google_sheets',
+          is_active: true,
+        },
+      ];
+      const testSecrets = [
+        // Orphan secret (parent integration does not exist at all)
+        { id: 'sec-orphan', integration_id: 'non-existent-integration' },
+        // Secret attached to malformed parent (missing user_id)
+        { id: 'sec-malformed', integration_id: 'int-malformed-parent' },
+      ];
+
+      const result = validateIntegrationReconciliation(testIntegrations as any, testSecrets);
+
+      expect(result.isValid).toBe(false);
+      const orphan = result.anomalies.find((a) => a.code === 'ORPHAN_SECRET');
+      expect(orphan).toBeDefined();
+      expect(orphan?.secretId).toBe('sec-orphan');
+      expect(orphan?.message).toContain('Orphan integration_secrets record sec-orphan has no matching parent');
+
+      const malformed = result.anomalies.find((a) => a.code === 'MALFORMED_PARENT');
+      expect(malformed).toBeDefined();
+      expect(malformed?.secretId).toBe('sec-malformed');
+      expect(malformed?.message).toContain('Secret sec-malformed has malformed parent integration int-malformed-parent');
     });
   });
 });

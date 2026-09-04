@@ -111,11 +111,11 @@ export async function GET(request: NextRequest) {
       encryptedPayload = encryptToken(tokens.refreshToken, undefined, aad);
     }
 
-    const tokenExpiresAt = new Date(
-      Date.now() + tokens.expiresIn * 1000
-    ).toISOString();
+    const tokenExpiresAt = tokens.expiresIn
+      ? new Date(Date.now() + tokens.expiresIn * 1000).toISOString()
+      : null;
 
-    // Check existing integration record
+    // Check existing integration record to merge config
     let query = supabase
       .from('user_integrations')
       .select('*')
@@ -129,6 +129,15 @@ export async function GET(request: NextRequest) {
 
     const { data: existingIntegration } = await query.maybeSingle();
 
+    // If new integration and no refresh token, Google re-auth omitted consent; require re-consent
+    if (!existingIntegration && !tokens.refreshToken) {
+      return ApiResponse.error(
+        'Google did not provide a refresh token for new integration. Re-authorization with consent required.',
+        { code: 'consent_required' },
+        400
+      );
+    }
+
     const currentConfig: GoogleSheetsConfig = (existingIntegration?.config &&
     typeof existingIntegration.config === 'object'
       ? existingIntegration.config
@@ -138,82 +147,32 @@ export async function GET(request: NextRequest) {
       ...currentConfig,
       googleEmail,
       connectedAt: new Date().toISOString(),
-      scopes: tokens.scope.split(' '),
+      scopes: tokens.scope ? tokens.scope.split(' ') : [],
     };
 
-    let savedRecord = null;
-
-    if (existingIntegration) {
-      const { data, error: updateError } = await supabase
-        .from('user_integrations')
-        .update({
-          config: updatedConfig,
-          is_active: true,
-          last_error: null,
-        })
-        .eq('id', existingIntegration.id)
-        .select('*')
-        .single();
-
-      if (updateError) {
-        return ApiResponse.error(
-          'Failed to update integration record',
-          updateError,
-          500
-        );
+    // Atomically persist integration metadata and isolated secret via RPC
+    const adminClient = createAdminClient();
+    const { data: savedRecord, error: rpcError } = await adminClient.rpc(
+      'upsert_user_integration_with_secret',
+      {
+        p_user_id: user.id,
+        p_organization_id: statePayload.organizationId || null,
+        p_provider: 'google_sheets',
+        p_config: updatedConfig,
+        p_encrypted_refresh_token: encryptedPayload?.ciphertext ?? null,
+        p_token_iv: encryptedPayload?.iv ?? null,
+        p_token_auth_tag: encryptedPayload?.tag ?? null,
+        p_token_expires_at: tokenExpiresAt,
+        p_key_version: 1,
       }
-      savedRecord = data;
-    } else {
-      const insertData = {
-        user_id: user.id,
-        organization_id: statePayload.organizationId || null,
-        provider: 'google_sheets',
-        config: updatedConfig,
-        is_active: true,
-        last_error: null,
-      };
+    );
 
-      const { data, error: insertError } = await supabase
-        .from('user_integrations')
-        .insert(insertData)
-        .select('*')
-        .single();
-
-      if (insertError) {
-        return ApiResponse.error(
-          'Failed to insert integration record',
-          insertError,
-          500
-        );
-      }
-      savedRecord = data;
-    }
-
-    // Securely persist OAuth secret material into isolated integration_secrets table via admin client
-    if (encryptedPayload && savedRecord?.id) {
-      const adminClient = createAdminClient();
-      const { error: secretError } = await adminClient
-        .from('integration_secrets')
-        .upsert(
-          {
-            integration_id: savedRecord.id,
-            encrypted_refresh_token: encryptedPayload.ciphertext,
-            token_iv: encryptedPayload.iv,
-            token_auth_tag: encryptedPayload.tag,
-            token_expires_at: tokenExpiresAt,
-            key_version: 1,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'integration_id' }
-        );
-
-      if (secretError) {
-        return ApiResponse.error(
-          'Failed to securely persist integration credentials',
-          secretError,
-          500
-        );
-      }
+    if (rpcError || !savedRecord) {
+      return ApiResponse.error(
+        'Failed to atomically save integration and credentials',
+        rpcError,
+        500
+      );
     }
 
     // Clean up CSRF state cookie
