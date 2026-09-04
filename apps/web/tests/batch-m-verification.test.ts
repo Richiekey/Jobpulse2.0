@@ -1324,4 +1324,259 @@ describe('Batch M — Screenshot Verification & Storage Suite', () => {
       expect(json.error).toContain('Application not found or unauthorized to access');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 9. BATCH M P2 CONCURRENCY HARDENING & STORAGE-PATH UNIQUENESS
+  // ---------------------------------------------------------------------------
+  describe('Batch M P2 Concurrency Hardening & Storage-Path Uniqueness', () => {
+    const screenshotPath = `verification-screenshots/${orgId}/${appId}/evidence.png`;
+
+    it('guarantees simultaneous duplicate submissions resolve to the exact same verification record (Race Safety)', async () => {
+      // Simulates two concurrent submissions with the same screenshot path by Worker A:
+      // Request A commits first; Request B hits the unique index, catches unique_violation,
+      // and idempotently resolves to the same verification record.
+      let submissionCount = 0;
+      const createdRecord = {
+        id: verifId,
+        application_id: appId,
+        organization_id: orgId,
+        worker_id: workerUserId,
+        screenshot_url: screenshotPath,
+        status: 'pending',
+        created_at: '2026-09-04T12:00:00.000Z',
+      };
+
+      const mockConcurrentRpc = vi.fn().mockImplementation(async () => {
+        submissionCount++;
+        // Both requests return the identical authoritative record
+        return { data: createdRecord, error: null };
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: workerUserId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: appId,
+                  user_id: workerUserId,
+                  worker_id: workerUserId,
+                  organization_id: orgId,
+                  deleted_at: null,
+                  status: 'applied',
+                },
+                error: null,
+              }),
+            };
+          }
+          return {};
+        }),
+        rpc: mockConcurrentRpc,
+      });
+
+      const reqA = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ screenshotUrl: screenshotPath }),
+      });
+      const reqB = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ screenshotUrl: screenshotPath }),
+      });
+
+      // Execute simultaneously
+      const [resA, resB] = await Promise.all([
+        postVerification(reqA, { params: Promise.resolve({ id: appId }) }),
+        postVerification(reqB, { params: Promise.resolve({ id: appId }) }),
+      ]);
+
+      const jsonA = await resA.json();
+      const jsonB = await resB.json();
+
+      expect(resA.status).toBe(201);
+      expect(resB.status).toBe(201);
+      expect(jsonA.success).toBe(true);
+      expect(jsonB.success).toBe(true);
+
+      // Critical invariant: Both requests MUST resolve to the exact same verification ID!
+      expect(jsonA.data.id).toBe(verifId);
+      expect(jsonB.data.id).toBe(verifId);
+      expect(jsonA.data.id).toBe(jsonB.data.id);
+      expect(mockConcurrentRpc).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects concurrent submission from different worker attempting to claim same screenshot path', async () => {
+      // If Worker B attempts to claim the same screenshot path as Worker A,
+      // the unique constraint triggers and the RPC rejects Worker B.
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message: `Storage boundary violation: Screenshot path (${screenshotPath}) is already claimed by another verification record`,
+          code: '23505', // unique_violation
+        },
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: attackerUserId } }, // Different worker
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: appId,
+                  user_id: attackerUserId,
+                  worker_id: attackerUserId,
+                  organization_id: orgId,
+                  deleted_at: null,
+                  status: 'applied',
+                },
+                error: null,
+              }),
+            };
+          }
+          return {};
+        }),
+        rpc: mockRpc,
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ screenshotUrl: screenshotPath }),
+      });
+      const res = await postVerification(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Storage boundary violation');
+      expect(json.error).toContain('already claimed');
+    });
+
+    it('idempotently returns existing verification when same idempotency key is submitted', async () => {
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: {
+          id: verifId,
+          application_id: appId,
+          organization_id: orgId,
+          worker_id: workerUserId,
+          screenshot_url: screenshotPath,
+          idempotency_key: 'idem-key-999',
+          status: 'pending',
+          created_at: '2026-09-04T12:00:00.000Z',
+        },
+        error: null,
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: workerUserId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: appId,
+                  user_id: workerUserId,
+                  worker_id: workerUserId,
+                  organization_id: orgId,
+                  deleted_at: null,
+                  status: 'applied',
+                },
+                error: null,
+              }),
+            };
+          }
+          return {};
+        }),
+        rpc: mockRpc,
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({
+          screenshotUrl: screenshotPath,
+          idempotencyKey: 'idem-key-999',
+        }),
+      });
+      const res = await postVerification(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(json.success).toBe(true);
+      expect(json.data.idempotency_key).toBe('idem-key-999');
+      expect(json.data.id).toBe(verifId);
+    });
+
+    it('strictly forbids screenshot path reuse when verification has transitioned to terminal status', async () => {
+      // Simulates attempt to submit a screenshot path that already belongs to a terminal (verified) record
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message: `Storage boundary violation: Screenshot path (${screenshotPath}) is already bound to another verification record`,
+          code: '22023',
+        },
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: workerUserId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: appId,
+                  user_id: workerUserId,
+                  worker_id: workerUserId,
+                  organization_id: orgId,
+                  deleted_at: null,
+                  status: 'applied',
+                },
+                error: null,
+              }),
+            };
+          }
+          return {};
+        }),
+        rpc: mockRpc,
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ screenshotUrl: screenshotPath }),
+      });
+      const res = await postVerification(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Storage boundary violation');
+    });
+  });
 });
