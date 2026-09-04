@@ -3,12 +3,13 @@ import type { AssignmentStatus } from './entities/job-assignment.js';
 export class AssignmentLifecycleService {
   /**
    * Valid forward transitions for an assignment under standard workflow rules.
+   * Terminal states (completed, skipped) cannot transition to assigned or in_progress.
    */
   private static readonly VALID_TRANSITIONS: Record<AssignmentStatus, ReadonlySet<AssignmentStatus>> = {
     assigned: new Set(['in_progress', 'skipped']),
     in_progress: new Set(['completed', 'skipped']),
-    completed: new Set(['in_progress']), // Admin reopen
-    skipped: new Set(['assigned', 'in_progress']), // Reopen
+    completed: new Set([]), // Terminal: cannot be reset or transitioned
+    skipped: new Set([]), // Terminal: cannot be reset or transitioned
   };
 
   /**
@@ -17,8 +18,8 @@ export class AssignmentLifecycleService {
   private static readonly WORKER_ALLOWED_TRANSITIONS: Record<AssignmentStatus, ReadonlySet<AssignmentStatus>> = {
     assigned: new Set(['in_progress', 'skipped']),
     in_progress: new Set(['completed', 'skipped']),
-    completed: new Set([]), // Workers cannot alter completed assignments without admin intervention
-    skipped: new Set(['in_progress']), // Workers can resume a skipped assignment
+    completed: new Set([]), // Workers cannot alter completed assignments
+    skipped: new Set([]), // Workers cannot alter skipped assignments
   };
 
   /**
@@ -39,7 +40,6 @@ export class AssignmentLifecycleService {
 
   /**
    * Validates if an administrator is authorized to execute the given transition.
-   * Administrators have full jurisdiction to reopen or reassign status.
    */
   public static canAdminTransition(from: AssignmentStatus, to: AssignmentStatus): boolean {
     if (from === to) return true;
@@ -47,9 +47,9 @@ export class AssignmentLifecycleService {
   }
 
   /**
-   * Identifies whether the assignment has reached a terminal or successful stage.
+   * Identifies whether the assignment has reached a terminal stage (completed or skipped).
    */
   public static isTerminal(status: AssignmentStatus): boolean {
-    return status === 'completed';
+    return status === 'completed' || status === 'skipped';
   }
 }

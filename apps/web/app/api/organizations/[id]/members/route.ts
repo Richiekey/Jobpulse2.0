@@ -67,6 +67,13 @@ export async function POST(
     }
 
     const { userId: targetUserId, email, role } = parseResult.data;
+    const { membership: callerMembership } = authResult;
+
+    // Only owners can create owner memberships
+    if (role === 'owner' && callerMembership.role !== 'owner') {
+      return ApiResponse.error('Only organization owners can create owner memberships.', null, 403);
+    }
+
     let resolvedUserId = targetUserId;
 
     // Resolve userId by email if not provided directly
@@ -144,9 +151,56 @@ export async function PATCH(
 
     const { role } = parseResult.data;
 
-    // Only owners can promote someone to owner or modify another owner
+    // Fetch target member
+    const { data: targetMember } = await supabase
+      .from('organization_members')
+      .select('id, user_id, role')
+      .eq('id', memberId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+
+    if (!targetMember) {
+      return ApiResponse.error('Member not found in this organization.', null, 404);
+    }
+
+    // 1. Only owners can promote anyone to owner
     if (role === 'owner' && callerMembership.role !== 'owner') {
       return ApiResponse.error('Only organization owners can grant the owner role.', null, 403);
+    }
+
+    // 2. Admins cannot demote or alter an owner
+    if (targetMember.role === 'owner' && callerMembership.role !== 'owner') {
+      return ApiResponse.error('Organization admins cannot modify owner memberships.', null, 403);
+    }
+
+    // 3. Ownership transfer: atomic ownership transfer RPC
+    if (role === 'owner') {
+      const { data: transferResult, error: transferError } = await supabase.rpc(
+        'transfer_organization_ownership' as any,
+        {
+          p_organization_id: organizationId,
+          p_new_owner_user_id: targetMember.user_id,
+        }
+      );
+
+      if (transferError) {
+        return ApiResponse.error(transferError.message || 'Failed to transfer ownership.', transferError, 400);
+      }
+
+      return ApiResponse.success(transferResult);
+    }
+
+    // 4. Prevent demoting the sole owner
+    if (targetMember.role === 'owner') {
+      const { count } = await supabase
+        .from('organization_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .eq('role', 'owner');
+
+      if ((count ?? 0) <= 1) {
+        return ApiResponse.error('Cannot demote the sole owner of the organization.', null, 400);
+      }
     }
 
     const { data: updatedMember, error: updateError } = await supabase
@@ -178,7 +232,7 @@ export async function DELETE(
       return authResult.errorResponse;
     }
 
-    const { supabase, user } = authResult;
+    const { supabase, membership: callerMembership } = authResult;
     const { searchParams } = new URL(request.url);
     const memberId = searchParams.get('memberId');
 
@@ -186,19 +240,24 @@ export async function DELETE(
       return ApiResponse.error('Invalid memberId query parameter: must be a valid UUID.', null, 400);
     }
 
-    // Protect against removing yourself as owner if you are the last owner
     const { data: targetMember } = await supabase
       .from('organization_members')
       .select('id, user_id, role')
       .eq('id', memberId)
       .eq('organization_id', organizationId)
-      .single();
+      .maybeSingle();
 
     if (!targetMember) {
       return ApiResponse.error('Member not found in this organization.', null, 404);
     }
 
-    if (targetMember.role === 'owner' && targetMember.user_id === user.id) {
+    // Admins cannot delete an owner
+    if (targetMember.role === 'owner' && callerMembership.role !== 'owner') {
+      return ApiResponse.error('Organization admins cannot delete owner memberships.', null, 403);
+    }
+
+    // Protect against removing the sole owner of the organization
+    if (targetMember.role === 'owner') {
       const { count } = await supabase
         .from('organization_members')
         .select('*', { count: 'exact', head: true })

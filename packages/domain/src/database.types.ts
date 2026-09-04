@@ -978,6 +978,19 @@ export interface Database {
           role: 'owner' | 'admin' | 'worker';
         }>;
       };
+      transfer_organization_ownership: {
+        Args: {
+          p_organization_id: string;
+          p_new_owner_user_id: string;
+        };
+        Returns: {
+          success: boolean;
+          organizationId: string;
+          previousOwner: string;
+          newOwner: string;
+          message?: string;
+        };
+      };
     };
   };
 }

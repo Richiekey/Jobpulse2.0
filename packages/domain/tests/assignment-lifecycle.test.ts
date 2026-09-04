@@ -21,22 +21,20 @@ describe('AssignmentLifecycleService (Batch K Workforce Architecture)', () => {
       expect(AssignmentLifecycleService.isValidTransition('in_progress', 'skipped')).toBe(true);
     });
 
-    it('allows reopening skipped assignments', () => {
-      expect(AssignmentLifecycleService.isValidTransition('skipped', 'assigned')).toBe(true);
-      expect(AssignmentLifecycleService.isValidTransition('skipped', 'in_progress')).toBe(true);
+    it('enforces completed as terminal: no transition to assigned or in_progress', () => {
+      expect(AssignmentLifecycleService.isValidTransition('completed', 'assigned')).toBe(false);
+      expect(AssignmentLifecycleService.isValidTransition('completed', 'in_progress')).toBe(false);
+      expect(AssignmentLifecycleService.isValidTransition('completed', 'skipped')).toBe(false);
     });
 
-    it('allows reopening completed assignments back to in_progress (e.g. for revision)', () => {
-      expect(AssignmentLifecycleService.isValidTransition('completed', 'in_progress')).toBe(true);
+    it('enforces skipped as terminal: no transition to assigned or in_progress', () => {
+      expect(AssignmentLifecycleService.isValidTransition('skipped', 'assigned')).toBe(false);
+      expect(AssignmentLifecycleService.isValidTransition('skipped', 'in_progress')).toBe(false);
+      expect(AssignmentLifecycleService.isValidTransition('skipped', 'completed')).toBe(false);
     });
 
     it('rejects invalid direct transitions like assigned -> completed directly without in_progress', () => {
       expect(AssignmentLifecycleService.isValidTransition('assigned', 'completed')).toBe(false);
-    });
-
-    it('rejects invalid transitions from completed to assigned or skipped directly', () => {
-      expect(AssignmentLifecycleService.isValidTransition('completed', 'assigned')).toBe(false);
-      expect(AssignmentLifecycleService.isValidTransition('completed', 'skipped')).toBe(false);
     });
   });
 
@@ -51,34 +49,33 @@ describe('AssignmentLifecycleService (Batch K Workforce Architecture)', () => {
       expect(AssignmentLifecycleService.canWorkerTransition('in_progress', 'skipped')).toBe(true);
     });
 
-    it('allows worker to resume a skipped assignment back to in_progress', () => {
-      expect(AssignmentLifecycleService.canWorkerTransition('skipped', 'in_progress')).toBe(true);
-    });
-
-    it('PREVENTS worker from mutating completed assignments without admin intervention', () => {
+    it('PREVENTS worker from mutating completed assignments', () => {
       expect(AssignmentLifecycleService.canWorkerTransition('completed', 'in_progress')).toBe(false);
       expect(AssignmentLifecycleService.canWorkerTransition('completed', 'assigned')).toBe(false);
       expect(AssignmentLifecycleService.canWorkerTransition('completed', 'skipped')).toBe(false);
     });
 
-    it('PREVENTS worker from resetting skipped to assigned', () => {
+    it('PREVENTS worker from resetting skipped to assigned or in_progress', () => {
       expect(AssignmentLifecycleService.canWorkerTransition('skipped', 'assigned')).toBe(false);
+      expect(AssignmentLifecycleService.canWorkerTransition('skipped', 'in_progress')).toBe(false);
     });
   });
 
   describe('canAdminTransition', () => {
-    it('allows admin to perform any valid transition, including reopening completed', () => {
-      expect(AssignmentLifecycleService.canAdminTransition('completed', 'in_progress')).toBe(true);
-      expect(AssignmentLifecycleService.canAdminTransition('skipped', 'assigned')).toBe(true);
+    it('enforces that admin cannot bypass terminal state invariants', () => {
+      expect(AssignmentLifecycleService.canAdminTransition('completed', 'assigned')).toBe(false);
+      expect(AssignmentLifecycleService.canAdminTransition('completed', 'in_progress')).toBe(false);
+      expect(AssignmentLifecycleService.canAdminTransition('skipped', 'assigned')).toBe(false);
+      expect(AssignmentLifecycleService.canAdminTransition('skipped', 'in_progress')).toBe(false);
     });
   });
 
   describe('isTerminal', () => {
-    it('identifies completed as terminal', () => {
+    it('identifies completed and skipped as terminal', () => {
       expect(AssignmentLifecycleService.isTerminal('completed')).toBe(true);
+      expect(AssignmentLifecycleService.isTerminal('skipped')).toBe(true);
       expect(AssignmentLifecycleService.isTerminal('assigned')).toBe(false);
       expect(AssignmentLifecycleService.isTerminal('in_progress')).toBe(false);
-      expect(AssignmentLifecycleService.isTerminal('skipped')).toBe(false);
     });
   });
 });

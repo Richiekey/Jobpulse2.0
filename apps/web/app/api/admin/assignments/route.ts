@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { CreateJobAssignmentSchema } from '@jobpulse/validation';
+import { AssignmentLifecycleService } from '@jobpulse/domain';
 
 export async function GET(request: NextRequest) {
   try {
@@ -161,11 +162,20 @@ export async function POST(request: NextRequest) {
       return ApiResponse.error('The specified job was not found.', null, 404);
     }
 
-    // Insert or update assignment idempotently
-    const { data: assignment, error: insertError } = await supabase
+    // Check if an assignment already exists for (organizationId, jobId, workerId)
+    const { data: existingAssignment } = await supabase
       .from('job_assignments')
-      .upsert(
-        {
+      .select('id, status, deadline_at, notes')
+      .eq('organization_id', organizationId)
+      .eq('job_id', jobId)
+      .eq('worker_id', workerId)
+      .maybeSingle();
+
+    if (!existingAssignment) {
+      // 1. No existing assignment: create with status 'assigned'
+      const { data: assignment, error: insertError } = await supabase
+        .from('job_assignments')
+        .insert({
           organization_id: organizationId,
           job_id: jobId,
           worker_id: workerId,
@@ -173,18 +183,49 @@ export async function POST(request: NextRequest) {
           status: 'assigned',
           deadline_at: deadlineAt || null,
           notes: notes || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'organization_id, job_id, worker_id' }
-      )
+        })
+        .select('*')
+        .single();
+
+      if (insertError) {
+        return ApiResponse.error('Failed to dispatch job assignment.', insertError, 500);
+      }
+
+      return ApiResponse.success(assignment, undefined, { status: 201 });
+    }
+
+    // 2. Existing terminal assignment: reject re-dispatch to prevent resetting terminal records
+    if (AssignmentLifecycleService.isTerminal(existingAssignment.status)) {
+      return ApiResponse.error(
+        `Cannot re-dispatch: Assignment is in terminal state '${existingAssignment.status}' and cannot be reset to assigned.`,
+        null,
+        409
+      );
+    }
+
+    // 3. Existing active assignment: update metadata without resetting status
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (deadlineAt !== undefined) updatePayload.deadline_at = deadlineAt || null;
+    if (notes !== undefined) updatePayload.notes = notes || null;
+
+    const { data: updatedAssignment, error: updateError } = await supabase
+      .from('job_assignments')
+      .update(updatePayload)
+      .eq('id', existingAssignment.id)
       .select('*')
       .single();
 
-    if (insertError) {
-      return ApiResponse.error('Failed to dispatch job assignment.', insertError, 500);
+    if (updateError) {
+      return ApiResponse.error('Failed to update existing assignment.', updateError, 500);
     }
 
-    return ApiResponse.success(assignment, undefined, { status: 201 });
+    return ApiResponse.success(
+      updatedAssignment,
+      { message: 'Existing active assignment updated without status reset.' },
+      { status: 200 }
+    );
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred while dispatching job assignment.', err, 500);
   }
