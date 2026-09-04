@@ -115,22 +115,29 @@ export async function GET(
       }
     }
 
-    // Generate signed URLs exclusively for private storage screenshots (no external URL passthrough)
+    // Generate signed URLs exclusively for private storage screenshots that strictly match this application's tenancy boundary
+    const expectedOrgScope = app.organization_id || 'personal';
+    const expectedPrefix = `verification-screenshots/${expectedOrgScope}/${applicationId}/`;
+
     const enriched = await Promise.all(
       rawVerifications.map(async (v) => {
         let signedUrl: string | null = null;
         let storagePath = v.screenshot_url;
 
-        // Evidence must be within verification-screenshots bucket
-        if (storagePath && !storagePath.startsWith('http://') && !storagePath.startsWith('https://')) {
-          if (storagePath.startsWith('verification-screenshots/')) {
-            storagePath = storagePath.replace(/^verification-screenshots\//, '');
-          }
+        // Evidence must strictly belong to this application's private storage folder
+        if (
+          storagePath &&
+          storagePath.startsWith(expectedPrefix) &&
+          !storagePath.includes('..') &&
+          !storagePath.startsWith('http://') &&
+          !storagePath.startsWith('https://')
+        ) {
+          const relativeStoragePath = storagePath.replace(/^verification-screenshots\//, '');
 
           try {
             const { data: signedData } = await supabase.storage
               .from('verification-screenshots')
-              .createSignedUrl(storagePath, 3600);
+              .createSignedUrl(relativeStoragePath, 3600);
 
             if (signedData?.signedUrl) {
               signedUrl = signedData.signedUrl;
@@ -241,6 +248,18 @@ export async function POST(
       );
     }
 
+    // Enforce strict tenancy and application boundary binding for storage evidence
+    const expectedOrgScope = app.organization_id || 'personal';
+    const expectedPrefix = `verification-screenshots/${expectedOrgScope}/${applicationId}/`;
+
+    if (!screenshotUrl.startsWith(expectedPrefix)) {
+      return ApiResponse.error(
+        `Storage boundary violation: Screenshot evidence must be located within ${expectedPrefix}`,
+        null,
+        400
+      );
+    }
+
     // Execute atomic RPC submission
     const { data: verification, error: rpcError } = await supabase.rpc(
       'submit_application_verification',
@@ -252,10 +271,11 @@ export async function POST(
     );
 
     if (rpcError) {
+      const isBoundaryViolation = rpcError.message.includes('Storage boundary violation');
       return ApiResponse.error(
         `Failed to submit application verification: ${rpcError.message}`,
         rpcError,
-        500
+        isBoundaryViolation ? 400 : 500
       );
     }
 
