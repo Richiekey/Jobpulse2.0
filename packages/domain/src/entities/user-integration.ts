@@ -18,12 +18,20 @@ export interface UserIntegrationRecord {
   provider: IntegrationProvider;
   config: GoogleSheetsConfig;
   isActive: boolean;
-  encryptedRefreshToken: string | null;
-  tokenIv: string | null;
-  tokenAuthTag: string | null;
-  tokenExpiresAt: string | null;
   lastSyncedAt: string | null;
   lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IntegrationSecretRecord {
+  id: string;
+  integrationId: string;
+  encryptedRefreshToken: string;
+  tokenIv: string;
+  tokenAuthTag: string;
+  tokenExpiresAt: string | null;
+  keyVersion: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,7 +45,6 @@ export interface PublicIntegrationSummary {
   organizationId: string | null;
   isActive: boolean;
   config: GoogleSheetsConfig;
-  tokenExpiresAt: string | null;
   lastSyncedAt: string | null;
   lastError: string | null;
   createdAt: string;
@@ -83,7 +90,6 @@ export function sanitizeIntegrationRecord(record: {
       connectedAt: config.connectedAt,
       autoHeaderInitialized: config.autoHeaderInitialized,
     },
-    tokenExpiresAt: record.token_expires_at !== undefined ? record.token_expires_at : (record.tokenExpiresAt ?? null),
     lastSyncedAt: record.last_synced_at !== undefined ? record.last_synced_at : (record.lastSyncedAt ?? null),
     lastError: record.last_error !== undefined ? record.last_error : (record.lastError ?? null),
     createdAt: record.created_at || record.createdAt || new Date().toISOString(),

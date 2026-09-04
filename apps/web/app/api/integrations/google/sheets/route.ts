@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { GoogleOAuthService } from '@/lib/google-oauth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import {
   decryptToken,
   sanitizeIntegrationRecord,
@@ -49,14 +50,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Privileged secret retrieval: Fetch encrypted credentials from isolated integration_secrets table
+    const adminClient = createAdminClient();
+    const { data: secret, error: secretError } = await adminClient
+      .from('integration_secrets')
+      .select('encrypted_refresh_token, token_iv, token_auth_tag, token_expires_at, key_version')
+      .eq('integration_id', integration.id)
+      .maybeSingle();
+
     if (
-      !integration.encrypted_refresh_token ||
-      !integration.token_iv ||
-      !integration.token_auth_tag
+      secretError ||
+      !secret ||
+      !secret.encrypted_refresh_token ||
+      !secret.token_iv ||
+      !secret.token_auth_tag
     ) {
       return ApiResponse.error(
         'Integration credentials missing or incomplete. Reconnection required.',
-        null,
+        secretError || null,
         400
       );
     }
@@ -67,9 +78,9 @@ export async function GET(request: NextRequest) {
     try {
       refreshToken = decryptToken(
         {
-          ciphertext: integration.encrypted_refresh_token,
-          iv: integration.token_iv,
-          tag: integration.token_auth_tag,
+          ciphertext: secret.encrypted_refresh_token,
+          iv: secret.token_iv,
+          tag: secret.token_auth_tag,
         },
         undefined,
         aad
@@ -153,29 +164,37 @@ export async function POST(request: NextRequest) {
 
     // Optionally initialize standard headers in the target sheet
     let headerSuccess = false;
-    if (
-      initializeHeaders &&
-      integration.encrypted_refresh_token &&
-      integration.token_iv &&
-      integration.token_auth_tag
-    ) {
+    if (initializeHeaders) {
       try {
-        const aad = organizationId || user.id;
-        const refreshToken = decryptToken(
-          {
-            ciphertext: integration.encrypted_refresh_token,
-            iv: integration.token_iv,
-            tag: integration.token_auth_tag,
-          },
-          undefined,
-          aad
-        );
-        const { accessToken } = await GoogleOAuthService.refreshAccessToken(refreshToken);
-        headerSuccess = await GoogleOAuthService.initializeHeaders(
-          accessToken,
-          spreadsheetId,
-          sheetName || 'Sheet1'
-        );
+        const adminClient = createAdminClient();
+        const { data: secret } = await adminClient
+          .from('integration_secrets')
+          .select('encrypted_refresh_token, token_iv, token_auth_tag')
+          .eq('integration_id', integration.id)
+          .maybeSingle();
+
+        if (
+          secret?.encrypted_refresh_token &&
+          secret?.token_iv &&
+          secret?.token_auth_tag
+        ) {
+          const aad = organizationId || user.id;
+          const refreshToken = decryptToken(
+            {
+              ciphertext: secret.encrypted_refresh_token,
+              iv: secret.token_iv,
+              tag: secret.token_auth_tag,
+            },
+            undefined,
+            aad
+          );
+          const { accessToken } = await GoogleOAuthService.refreshAccessToken(refreshToken);
+          headerSuccess = await GoogleOAuthService.initializeHeaders(
+            accessToken,
+            spreadsheetId,
+            sheetName || 'Sheet1'
+          );
+        }
       } catch {
         // Non-fatal: if header initialization fails (e.g. read-only sheet permissions), proceed with binding
       }

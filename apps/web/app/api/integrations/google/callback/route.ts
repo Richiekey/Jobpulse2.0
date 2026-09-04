@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { GoogleOAuthService } from '@/lib/google-oauth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import {
   verifyOAuthState,
   encryptToken,
@@ -143,22 +144,13 @@ export async function GET(request: NextRequest) {
     let savedRecord = null;
 
     if (existingIntegration) {
-      const updateData: Record<string, unknown> = {
-        config: updatedConfig,
-        is_active: true,
-        token_expires_at: tokenExpiresAt,
-        last_error: null,
-      };
-
-      if (encryptedPayload) {
-        updateData['encrypted_refresh_token'] = encryptedPayload.ciphertext;
-        updateData['token_iv'] = encryptedPayload.iv;
-        updateData['token_auth_tag'] = encryptedPayload.tag;
-      }
-
       const { data, error: updateError } = await supabase
         .from('user_integrations')
-        .update(updateData)
+        .update({
+          config: updatedConfig,
+          is_active: true,
+          last_error: null,
+        })
         .eq('id', existingIntegration.id)
         .select('*')
         .single();
@@ -178,10 +170,6 @@ export async function GET(request: NextRequest) {
         provider: 'google_sheets',
         config: updatedConfig,
         is_active: true,
-        encrypted_refresh_token: encryptedPayload?.ciphertext || null,
-        token_iv: encryptedPayload?.iv || null,
-        token_auth_tag: encryptedPayload?.tag || null,
-        token_expires_at: tokenExpiresAt,
         last_error: null,
       };
 
@@ -199,6 +187,33 @@ export async function GET(request: NextRequest) {
         );
       }
       savedRecord = data;
+    }
+
+    // Securely persist OAuth secret material into isolated integration_secrets table via admin client
+    if (encryptedPayload && savedRecord?.id) {
+      const adminClient = createAdminClient();
+      const { error: secretError } = await adminClient
+        .from('integration_secrets')
+        .upsert(
+          {
+            integration_id: savedRecord.id,
+            encrypted_refresh_token: encryptedPayload.ciphertext,
+            token_iv: encryptedPayload.iv,
+            token_auth_tag: encryptedPayload.tag,
+            token_expires_at: tokenExpiresAt,
+            key_version: 1,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'integration_id' }
+        );
+
+      if (secretError) {
+        return ApiResponse.error(
+          'Failed to securely persist integration credentials',
+          secretError,
+          500
+        );
+      }
     }
 
     // Clean up CSRF state cookie

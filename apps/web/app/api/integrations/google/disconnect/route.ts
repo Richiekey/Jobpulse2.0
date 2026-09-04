@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { GoogleOAuthService } from '@/lib/google-oauth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken } from '@jobpulse/domain';
 import { DisconnectIntegrationSchema } from '@jobpulse/validation';
 
@@ -71,26 +72,33 @@ async function handleDisconnect(request: NextRequest) {
     }
 
     // Revoke token with Google if refresh token exists
-    if (
-      integration.encrypted_refresh_token &&
-      integration.token_iv &&
-      integration.token_auth_tag
-    ) {
-      try {
+    try {
+      const adminClient = createAdminClient();
+      const { data: secret } = await adminClient
+        .from('integration_secrets')
+        .select('encrypted_refresh_token, token_iv, token_auth_tag')
+        .eq('integration_id', integration.id)
+        .maybeSingle();
+
+      if (
+        secret?.encrypted_refresh_token &&
+        secret?.token_iv &&
+        secret?.token_auth_tag
+      ) {
         const aad = organizationId || user.id;
         const refreshToken = decryptToken(
           {
-            ciphertext: integration.encrypted_refresh_token,
-            iv: integration.token_iv,
-            tag: integration.token_auth_tag,
+            ciphertext: secret.encrypted_refresh_token,
+            iv: secret.token_iv,
+            tag: secret.token_auth_tag,
           },
           undefined,
           aad
         );
         await GoogleOAuthService.revokeToken(refreshToken);
-      } catch {
-        // Continue deletion even if remote revocation fails or token is already revoked
       }
+    } catch {
+      // Continue deletion even if remote revocation fails or token is already revoked
     }
 
     // Delete the integration record from the database

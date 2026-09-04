@@ -118,4 +118,34 @@ describe('AES-256-GCM Token Encryption Security (Batch N)', () => {
       'CRITICAL SECURITY ERROR: GOOGLE_TOKEN_ENCRYPTION_KEY must be configured in production.'
     );
   });
+
+  it('throws in production if GOOGLE_TOKEN_ENCRYPTION_KEY is weak or malformed rather than silently downgrading', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.GOOGLE_TOKEN_ENCRYPTION_KEY = 'short-weak-passphrase';
+
+    expect(() => resolveEncryptionKey()).toThrow(
+      'CRITICAL SECURITY ERROR: GOOGLE_TOKEN_ENCRYPTION_KEY must be a valid 256-bit (32-byte) hex or base64 key in production.'
+    );
+  });
+
+  it('accepts valid 32-byte base64 key in production', () => {
+    process.env.NODE_ENV = 'production';
+    // Generate valid 32-byte base64 key
+    const validBase64 = crypto.randomBytes(32).toString('base64');
+    process.env.GOOGLE_TOKEN_ENCRYPTION_KEY = validBase64;
+
+    const resolved = resolveEncryptionKey();
+    expect(resolved).toHaveLength(32);
+    expect(resolved).toEqual(Buffer.from(validBase64, 'base64'));
+  });
+
+  it('accepts valid 64-character hex key in production', () => {
+    process.env.NODE_ENV = 'production';
+    const validHex = crypto.randomBytes(32).toString('hex');
+    process.env.GOOGLE_TOKEN_ENCRYPTION_KEY = validHex;
+
+    const resolved = resolveEncryptionKey();
+    expect(resolved).toHaveLength(32);
+    expect(resolved).toEqual(Buffer.from(validHex, 'hex'));
+  });
 });

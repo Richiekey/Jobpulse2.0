@@ -11,7 +11,7 @@ import {
   POST as disconnectRoutePost,
   DELETE as disconnectRouteDelete,
 } from '../app/api/integrations/google/disconnect/route';
-import { signOAuthState, encryptToken } from '@jobpulse/domain';
+import { signOAuthState, encryptToken, decryptToken } from '@jobpulse/domain';
 
 // Mock cookies from next/headers
 const mockCookieStore = new Map<string, { name: string; value: string; options?: any }>();
@@ -33,7 +33,13 @@ vi.mock('../lib/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
+// Mock Supabase admin client
+vi.mock('../lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
+}));
+
 import { createClient } from '../lib/supabase/server';
+import { createAdminClient } from '../lib/supabase/admin';
 
 describe('Batch N — Google Sheets Integration Suite', () => {
   const userId = '11111111-1111-1111-1111-111111111111';
@@ -42,10 +48,12 @@ describe('Batch N — Google Sheets Integration Suite', () => {
   const otherOrgId = '44444444-4444-4444-4444-444444444444';
 
   let mockDbIntegrations: any[] = [];
+  let mockDbSecrets: any[] = [];
   let mockDbOrgMembers: any[] = [];
 
   const setupMockSupabase = (currentUserId: string | null) => {
     mockDbIntegrations = [];
+    mockDbSecrets = [];
     mockDbOrgMembers = [
       {
         id: 'mem-1',
@@ -61,6 +69,7 @@ describe('Batch N — Google Sheets Integration Suite', () => {
       },
     ];
 
+    // Ordinary user/session client (RLS enforced)
     (createClient as any).mockResolvedValue({
       auth: {
         getUser: vi.fn().mockResolvedValue({
@@ -71,6 +80,30 @@ describe('Batch N — Google Sheets Integration Suite', () => {
         }),
       },
       from: (table: string) => {
+        // Table: integration_secrets — RLS is strictly enabled with ZERO client policies.
+        // Ordinary client reads/writes are DENIED by PostgreSQL RLS.
+        if (table === 'integration_secrets') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: null,
+              error: new Error('Permission denied: Row-level security policy blocks access to integration_secrets'),
+            }),
+            single: vi.fn().mockResolvedValue({
+              data: null,
+              error: new Error('Permission denied: Row-level security policy blocks access to integration_secrets'),
+            }),
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({
+                data: null,
+                error: new Error('Permission denied: Row-level security policy blocks access to integration_secrets'),
+              }),
+            }),
+          };
+        }
+
         if (table === 'organization_members') {
           return {
             select: vi.fn().mockReturnThis(),
@@ -137,6 +170,23 @@ describe('Batch N — Google Sheets Integration Suite', () => {
               });
               return Promise.resolve({ data: matched ? { ...matched } : null, error: null });
             }),
+            single: vi.fn(function (this: any) {
+              const matched = mockDbIntegrations.find((item) => {
+                if (this.filters?.provider && item.provider !== this.filters.provider) return false;
+                if (this.filters?.id && item.id !== this.filters.id) return false;
+                if (this.filters?.organization_id && item.organization_id !== this.filters.organization_id)
+                  return false;
+                if (this.filters?.organization_id === null && item.organization_id !== null) return false;
+                if (this.filters?.user_id && item.user_id !== this.filters.user_id) return false;
+                if (this.filters?.is_active !== undefined && item.is_active !== this.filters.is_active)
+                  return false;
+                return true;
+              });
+              return Promise.resolve({
+                data: matched ? { ...matched } : null,
+                error: matched ? null : new Error('Not found'),
+              });
+            }),
             insert: vi.fn((record: any) => {
               const inserted = {
                 id: `int-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -155,6 +205,40 @@ describe('Batch N — Google Sheets Integration Suite', () => {
                 eq: vi.fn((col: string, val: any) => {
                   const idx = mockDbIntegrations.findIndex((i) => i[col] === val);
                   if (idx !== -1) {
+                    const existing = mockDbIntegrations[idx];
+
+                    // Database trigger simulation: enforce_integration_ownership_immutability
+                    if (updates.user_id !== undefined && updates.user_id !== existing.user_id) {
+                      return {
+                        select: vi.fn().mockReturnThis(),
+                        single: vi.fn().mockResolvedValue({
+                          data: null,
+                          error: new Error('Integration identity is immutable: user_id cannot be changed.'),
+                        }),
+                      };
+                    }
+                    if (
+                      updates.organization_id !== undefined &&
+                      updates.organization_id !== existing.organization_id
+                    ) {
+                      return {
+                        select: vi.fn().mockReturnThis(),
+                        single: vi.fn().mockResolvedValue({
+                          data: null,
+                          error: new Error('Integration scope is immutable: organization_id cannot be changed.'),
+                        }),
+                      };
+                    }
+                    if (updates.provider !== undefined && updates.provider !== existing.provider) {
+                      return {
+                        select: vi.fn().mockReturnThis(),
+                        single: vi.fn().mockResolvedValue({
+                          data: null,
+                          error: new Error('Integration provider is immutable.'),
+                        }),
+                      };
+                    }
+
                     mockDbIntegrations[idx] = {
                       ...mockDbIntegrations[idx],
                       ...updates,
@@ -176,8 +260,68 @@ describe('Batch N — Google Sheets Integration Suite', () => {
             delete: vi.fn(function (this: any) {
               return {
                 eq: vi.fn((col: string, val: any) => {
-                  const initialLen = mockDbIntegrations.length;
+                  const toDelete = mockDbIntegrations.filter((i) => i[col] === val);
+                  // Cascade delete to mockDbSecrets (simulating ON DELETE CASCADE)
+                  for (const item of toDelete) {
+                    mockDbSecrets = mockDbSecrets.filter((s) => s.integration_id !== item.id);
+                  }
                   mockDbIntegrations = mockDbIntegrations.filter((i) => i[col] !== val);
+                  return Promise.resolve({ error: null });
+                }),
+              };
+            }),
+          };
+        }
+
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      },
+    });
+
+    // Privileged service_role admin client (bypasses RLS for internal secrets management)
+    (createAdminClient as any).mockReturnValue({
+      from: (table: string) => {
+        if (table === 'integration_secrets') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn(function (this: any, col: string, val: any) {
+              this.filters = this.filters || {};
+              this.filters[col] = val;
+              return this;
+            }),
+            maybeSingle: vi.fn(function (this: any) {
+              const matched = mockDbSecrets.find((s) => {
+                if (this.filters?.integration_id && s.integration_id !== this.filters.integration_id)
+                  return false;
+                return true;
+              });
+              return Promise.resolve({ data: matched ? { ...matched } : null, error: null });
+            }),
+            upsert: vi.fn((record: any) => {
+              const existingIdx = mockDbSecrets.findIndex((s) => s.integration_id === record.integration_id);
+              if (existingIdx !== -1) {
+                mockDbSecrets[existingIdx] = {
+                  ...mockDbSecrets[existingIdx],
+                  ...record,
+                  updated_at: new Date().toISOString(),
+                };
+              } else {
+                mockDbSecrets.push({
+                  id: `sec-${Date.now()}`,
+                  ...record,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                });
+              }
+              return Promise.resolve({ error: null });
+            }),
+            delete: vi.fn(function (this: any) {
+              return {
+                eq: vi.fn((col: string, val: any) => {
+                  mockDbSecrets = mockDbSecrets.filter((s) => s[col] !== val);
                   return Promise.resolve({ error: null });
                 }),
               };
@@ -425,13 +569,22 @@ describe('Batch N — Google Sheets Integration Suite', () => {
       expect(json.data.organizationId).toBeNull();
       expect(json.data.isActive).toBe(true);
 
-      // Verify that database received encrypted token and NOT raw token
+      // Verify that user_integrations contains NO secret columns
       expect(mockDbIntegrations).toHaveLength(1);
       const stored = mockDbIntegrations[0];
-      expect(stored.encrypted_refresh_token).toBeDefined();
-      expect(stored.encrypted_refresh_token).not.toContain('mock_refresh_token');
-      expect(stored.token_iv).toHaveLength(24);
-      expect(stored.token_auth_tag).toHaveLength(32);
+      expect(stored.encrypted_refresh_token).toBeUndefined();
+      expect(stored.token_iv).toBeUndefined();
+      expect(stored.token_auth_tag).toBeUndefined();
+
+      // Verify that isolated integration_secrets received the encrypted token
+      expect(mockDbSecrets).toHaveLength(1);
+      const secret = mockDbSecrets[0];
+      expect(secret.integration_id).toBe(stored.id);
+      expect(secret.encrypted_refresh_token).toBeDefined();
+      expect(secret.encrypted_refresh_token).not.toContain('mock_refresh_token');
+      expect(secret.token_iv).toHaveLength(24);
+      expect(secret.token_auth_tag).toHaveLength(32);
+      expect(secret.key_version).toBe(1);
 
       // Verify cookie was cleared
       expect(mockCookieStore.has('jobpulse_google_oauth_state')).toBe(false);
@@ -462,7 +615,12 @@ describe('Batch N — Google Sheets Integration Suite', () => {
 
       const storedOrgInt = mockDbIntegrations.find((i) => i.organization_id === orgId);
       expect(storedOrgInt).toBeDefined();
-      expect(storedOrgInt.encrypted_refresh_token).toBeDefined();
+      expect(storedOrgInt.encrypted_refresh_token).toBeUndefined();
+
+      const storedOrgSecret = mockDbSecrets.find((s) => s.integration_id === storedOrgInt.id);
+      expect(storedOrgSecret).toBeDefined();
+      expect(storedOrgSecret.encrypted_refresh_token).toBeDefined();
+      expect(storedOrgSecret.key_version).toBe(1);
     });
   });
 
@@ -551,12 +709,17 @@ describe('Batch N — Google Sheets Integration Suite', () => {
         organization_id: null,
         provider: 'google_sheets',
         is_active: true,
-        encrypted_refresh_token: enc.ciphertext,
-        token_iv: enc.iv,
-        token_auth_tag: enc.tag,
         config: {
           googleEmail: 'worker@jobpulse-demo.com',
         },
+      });
+      mockDbSecrets.push({
+        id: 'sec-sheets-1',
+        integration_id: 'int-personal-ready',
+        encrypted_refresh_token: enc.ciphertext,
+        token_iv: enc.iv,
+        token_auth_tag: enc.tag,
+        key_version: 1,
       });
     });
 
@@ -626,15 +789,21 @@ describe('Batch N — Google Sheets Integration Suite', () => {
         organization_id: null,
         provider: 'google_sheets',
         is_active: true,
+        config: {},
+      });
+      mockDbSecrets.push({
+        id: 'sec-disconnect-1',
+        integration_id: 'int-to-disconnect',
         encrypted_refresh_token: enc.ciphertext,
         token_iv: enc.iv,
         token_auth_tag: enc.tag,
-        config: {},
+        key_version: 1,
       });
     });
 
-    it('successfully disconnects personal integration and deletes database record', async () => {
+    it('successfully disconnects personal integration and cascades delete to secrets', async () => {
       expect(mockDbIntegrations).toHaveLength(1);
+      expect(mockDbSecrets).toHaveLength(1);
 
       const req = new NextRequest('http://localhost/api/integrations/google/disconnect', {
         method: 'POST',
@@ -648,7 +817,9 @@ describe('Batch N — Google Sheets Integration Suite', () => {
       expect(json.success).toBe(true);
       expect(json.data.disconnected).toBe(true);
 
+      // Verify cascading deletion purged both metadata and secrets
       expect(mockDbIntegrations).toHaveLength(0);
+      expect(mockDbSecrets).toHaveLength(0);
     });
 
     it('supports DELETE method for disconnect', async () => {
@@ -684,6 +855,218 @@ describe('Batch N — Google Sheets Integration Suite', () => {
 
       expect(res.status).toBe(403);
       expect(json.success).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. ADVERSARIAL SECURITY & DIRECT DATABASE TESTS (BATCH N REMEDIATION)
+  // ---------------------------------------------------------------------------
+  describe('Adversarial Security & Direct Database Invariants', () => {
+    const personalIntId = 'int-personal-adv-1';
+    const orgIntId = 'int-org-adv-1';
+
+    beforeEach(() => {
+      setupMockSupabase(userId);
+
+      // Seed personal integration and secret
+      const encPersonal = encryptToken('personal_refresh_token', undefined, userId);
+      mockDbIntegrations.push({
+        id: personalIntId,
+        user_id: userId,
+        organization_id: null,
+        provider: 'google_sheets',
+        is_active: true,
+        config: { googleEmail: 'user1@jobpulse.io' },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      mockDbSecrets.push({
+        id: 'sec-personal-adv',
+        integration_id: personalIntId,
+        encrypted_refresh_token: encPersonal.ciphertext,
+        token_iv: encPersonal.iv,
+        token_auth_tag: encPersonal.tag,
+        token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+        key_version: 1,
+      });
+
+      // Seed organization integration and secret
+      const encOrg = encryptToken('org_refresh_token', undefined, orgId);
+      mockDbIntegrations.push({
+        id: orgIntId,
+        user_id: userId,
+        organization_id: orgId,
+        provider: 'google_sheets',
+        is_active: true,
+        config: { googleEmail: 'org-admin@company.com' },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      mockDbSecrets.push({
+        id: 'sec-org-adv',
+        integration_id: orgIntId,
+        encrypted_refresh_token: encOrg.ciphertext,
+        token_iv: encOrg.iv,
+        token_auth_tag: encOrg.tag,
+        token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+        key_version: 1,
+      });
+    });
+
+    it('Test A: Organization worker cannot read secrets via ordinary client (DENIED by RLS)', async () => {
+      // Setup as otherUserId (worker in orgId)
+      setupMockSupabase(otherUserId);
+      const userSupabase = await createClient();
+
+      // Direct client attempt to query integration_secrets
+      const { data, error } = await userSupabase
+        .from('integration_secrets')
+        .select('*')
+        .eq('integration_id', orgIntId)
+        .maybeSingle();
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('Permission denied');
+    });
+
+    it('Test B: User cannot read another users personal integration secret (DENIED by RLS)', async () => {
+      setupMockSupabase(otherUserId);
+      const userSupabase = await createClient();
+
+      const { data, error } = await userSupabase
+        .from('integration_secrets')
+        .select('*')
+        .eq('integration_id', personalIntId)
+        .maybeSingle();
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('Permission denied');
+    });
+
+    it('Test C: Organization A member cannot read Organization B secret (DENIED by RLS)', async () => {
+      // otherOrgId has no association with user
+      setupMockSupabase(userId);
+      const userSupabase = await createClient();
+
+      const { data, error } = await userSupabase
+        .from('integration_secrets')
+        .select('*')
+        .eq('integration_id', 'some-org-b-integration-id')
+        .maybeSingle();
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('Permission denied');
+    });
+
+    it('Test D: Anonymous user cannot read any secrets (DENIED by RLS)', async () => {
+      setupMockSupabase(null); // anonymous
+      const anonSupabase = await createClient();
+
+      const { data, error } = await anonSupabase
+        .from('integration_secrets')
+        .select('*')
+        .maybeSingle();
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('Permission denied');
+    });
+
+    it('Test E: Authorized backend service role can access and decrypt secret', async () => {
+      const adminSupabase = createAdminClient();
+
+      const { data: secret, error } = await adminSupabase
+        .from('integration_secrets')
+        .select('*')
+        .eq('integration_id', personalIntId)
+        .maybeSingle();
+
+      expect(error).toBeNull();
+      expect(secret).toBeDefined();
+      expect(secret.key_version).toBe(1);
+
+      // Decrypt with AAD binding
+      const decrypted = decryptToken(
+        {
+          ciphertext: secret.encrypted_refresh_token,
+          iv: secret.token_iv,
+          tag: secret.token_auth_tag,
+        },
+        undefined,
+        userId
+      );
+      expect(decrypted).toBe('personal_refresh_token');
+    });
+
+    it('Test F: Direct SELECT on user_integrations contains ONLY metadata and NO secret columns', async () => {
+      const userSupabase = await createClient();
+
+      const { data: integration } = await userSupabase
+        .from('user_integrations')
+        .select('*')
+        .eq('id', personalIntId)
+        .single();
+
+      expect(integration).toBeDefined();
+      expect(integration.user_id).toBe(userId);
+      expect(integration.provider).toBe('google_sheets');
+      expect(integration.config).toBeDefined();
+      expect(integration.is_active).toBe(true);
+
+      // The secret columns must NOT exist on user_integrations records
+      expect(integration.encrypted_refresh_token).toBeUndefined();
+      expect(integration.token_iv).toBeUndefined();
+      expect(integration.token_auth_tag).toBeUndefined();
+      expect(integration.token_expires_at).toBeUndefined();
+    });
+
+    it('Test G: Ownership immutability: attempting to mutate user_id is rejected by database trigger', async () => {
+      const userSupabase = await createClient();
+
+      const { data, error } = await userSupabase
+        .from('user_integrations')
+        .update({ user_id: otherUserId })
+        .eq('id', personalIntId)
+        .select()
+        .single();
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('Integration identity is immutable: user_id cannot be changed.');
+    });
+
+    it('Test H: Scope immutability: attempting to mutate organization_id is rejected by database trigger', async () => {
+      const userSupabase = await createClient();
+
+      // Attempting to move personal integration to organization
+      const { data, error } = await userSupabase
+        .from('user_integrations')
+        .update({ organization_id: orgId })
+        .eq('id', personalIntId)
+        .select()
+        .single();
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('Integration scope is immutable: organization_id cannot be changed.');
+    });
+
+    it('Test I: Provider immutability: attempting to mutate provider is rejected by database trigger', async () => {
+      const userSupabase = await createClient();
+
+      const { data, error } = await userSupabase
+        .from('user_integrations')
+        .update({ provider: 'notion' })
+        .eq('id', personalIntId)
+        .select()
+        .single();
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('Integration provider is immutable.');
     });
   });
 });

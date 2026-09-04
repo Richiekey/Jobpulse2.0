@@ -11,14 +11,16 @@ export interface EncryptedPayload {
  */
 export function resolveEncryptionKey(explicitKey?: string): Buffer {
   const rawKey = explicitKey || process.env.GOOGLE_TOKEN_ENCRYPTION_KEY;
+  const isProd = process.env.NODE_ENV === 'production';
+
   if (!rawKey) {
     // In production, require explicit secret configuration
-    if (process.env.NODE_ENV === 'production') {
+    if (isProd) {
       throw new Error(
         'CRITICAL SECURITY ERROR: GOOGLE_TOKEN_ENCRYPTION_KEY must be configured in production.'
       );
     }
-    // Fallback key derived deterministically for dev/test environments
+    // Fallback key derived deterministically for dev/test environments only
     return crypto.createHash('sha256').update('jobpulse-default-dev-encryption-key-seed-32bytes!').digest();
   }
 
@@ -33,7 +35,14 @@ export function resolveEncryptionKey(explicitKey?: string): Buffer {
     return base64Buf;
   }
 
-  // Otherwise, derive a 32-byte key via SHA-256
+  // In production, reject invalid key formats rather than silently hashing weak material
+  if (isProd) {
+    throw new Error(
+      'CRITICAL SECURITY ERROR: GOOGLE_TOKEN_ENCRYPTION_KEY must be a valid 256-bit (32-byte) hex or base64 key in production.'
+    );
+  }
+
+  // For non-production development environments, derive a 32-byte key via SHA-256
   return crypto.createHash('sha256').update(rawKey).digest();
 }
 
