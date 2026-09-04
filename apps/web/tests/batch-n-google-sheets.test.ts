@@ -85,6 +85,21 @@ describe('Batch N — Google Sheets Integration Suite', () => {
           error: currentUserId ? null : new Error('Missing session'),
         }),
       },
+      rpc: vi.fn(async (fnName: string, _params: any) => {
+        if (fnName === 'upsert_user_integration_with_secret') {
+          return {
+            data: null,
+            error: {
+              name: 'PostgrestError',
+              message: 'permission denied for function upsert_user_integration_with_secret',
+              details: '',
+              hint: '',
+              code: '42501',
+            } as any,
+          };
+        }
+        return { data: null, error: new Error(`Unknown RPC function: ${fnName}`) };
+      }),
       from: (table: string) => {
         // Table: integration_secrets — RLS is strictly enabled with ZERO client policies.
         // Ordinary client reads/writes are DENIED by PostgreSQL RLS.
@@ -1421,6 +1436,31 @@ describe('Batch N — Google Sheets Integration Suite', () => {
       expect(malformed).toBeDefined();
       expect(malformed?.secretId).toBe('sec-malformed');
       expect(malformed?.message).toContain('Secret sec-malformed has malformed parent integration int-malformed-parent');
+    });
+
+    it('Test G: Authenticated client attempting to call upsert_user_integration_with_secret RPC directly is DENIED (42501)', async () => {
+      // Ordinary authenticated user client
+      const userSupabase = await createClient();
+
+      const { data, error } = await userSupabase.rpc(
+        'upsert_user_integration_with_secret',
+        {
+          p_user_id: userId,
+          p_organization_id: null,
+          p_provider: 'google_sheets',
+          p_config: {},
+          p_encrypted_refresh_token: 'malicious_encrypted_token',
+          p_token_iv: 'iv1234567890',
+          p_token_auth_tag: 'tag123456789012',
+          p_token_expires_at: null,
+          p_key_version: 1,
+        }
+      );
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error!.code).toBe('42501');
+      expect(error!.message).toContain('permission denied for function upsert_user_integration_with_secret');
     });
   });
 });

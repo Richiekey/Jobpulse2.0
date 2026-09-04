@@ -175,8 +175,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.upsert_user_integration_with_secret FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.upsert_user_integration_with_secret TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.upsert_user_integration_with_secret(UUID, UUID, TEXT, JSONB, TEXT, TEXT, TEXT, TIMESTAMPTZ, INT) FROM authenticated, anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.upsert_user_integration_with_secret(UUID, UUID, TEXT, JSONB, TEXT, TEXT, TEXT, TIMESTAMPTZ, INT) TO service_role;
 
 -- 2. Record-by-Record Migration Reconciliation
 DO $$
