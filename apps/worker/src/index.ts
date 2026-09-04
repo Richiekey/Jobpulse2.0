@@ -1,4 +1,5 @@
 import { ScraperRunner } from './engine/runner.js';
+import { SyncRunner } from './engine/sync-runner.js';
 import { logger } from '@jobpulse/shared';
 import { validateWorkerEnvironment, GracefulShutdownManager } from './lifecycle.js';
 
@@ -18,6 +19,7 @@ async function main() {
   logger.info('Starting JobPulse Worker Process...', { isOnce, isDaemon, company: companyArg || 'all' });
 
   const runner = new ScraperRunner({ concurrency: 5 });
+  const syncRunner = new SyncRunner({ batchSize: 10 });
   const shutdownManager = new GracefulShutdownManager();
 
   const handleSignal = async (signal: string) => {
@@ -41,7 +43,7 @@ async function main() {
       process.exit(1);
     }
   } else {
-    logger.info('Worker entering continuous polling daemon mode for pending scrape runs...');
+    logger.info('Worker entering continuous polling daemon mode for scrape runs and application sync events...');
 
     const pollIntervalMs = 5000;
     const pollLoop = async () => {
@@ -56,6 +58,11 @@ async function main() {
             const claimedId = await runner.pollAndExecutePending();
             if (claimedId) {
               logger.info(`Worker completed queued scrape run: ${claimedId}`);
+            }
+
+            const syncedCount = await syncRunner.pollAndExecutePendingSync();
+            if (syncedCount > 0) {
+              logger.info(`Worker synced ${syncedCount} applications to Google Sheets.`);
             }
           } finally {
             completeTask();

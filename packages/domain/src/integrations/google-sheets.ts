@@ -114,3 +114,154 @@ export function verifyOAuthState(
     throw new Error('Invalid state token payload: malformed JSON');
   }
 }
+
+export interface SyncToSheetParams {
+  accessToken: string;
+  spreadsheetId: string;
+  sheetName?: string;
+  rowValues: string[];
+}
+
+export interface SyncToSheetResult {
+  action: 'appended' | 'updated';
+  rowIndex?: number;
+}
+
+/**
+ * Idempotently writes or updates an application record in the target Google Sheet.
+ * Reads column A to locate any existing row with the same application ID:
+ * - If found: updates the matching row in place.
+ * - If not found: appends a new row at the bottom of the table.
+ */
+export async function syncApplicationToGoogleSheet(
+  params: SyncToSheetParams,
+  fetchFn: typeof fetch = fetch
+): Promise<SyncToSheetResult> {
+  const { accessToken, spreadsheetId, sheetName = 'Sheet1', rowValues } = params;
+  const appId = rowValues[0];
+
+  // Fast-path in test / mock mode when no custom fetchFn is injected
+  if (
+    fetchFn === fetch &&
+    (process.env['NODE_ENV'] === 'test' ||
+      process.env['GOOGLE_MOCK_OAUTH'] === 'true')
+  ) {
+    return { action: 'appended', rowIndex: 2 };
+  }
+
+  // 1. Fetch column A to find if appId already exists
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:A`;
+  const getRes = await fetchFn(getUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!getRes.ok) {
+    const errText = await getRes.text();
+    throw new Error(`Failed to read spreadsheet column A (${getRes.status}): ${errText}`);
+  }
+
+  const getData = (await getRes.json()) as { values?: string[][] };
+  const rows: string[][] = getData.values || [];
+
+  let existingIndex = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row && row[0] === appId) {
+      existingIndex = i + 1; // 1-indexed row in sheet
+      break;
+    }
+  }
+
+  if (existingIndex !== -1) {
+    // 2. Update existing row in place
+    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A${existingIndex}:J${existingIndex}?valueInputOption=USER_ENTERED`;
+    const updateRes = await fetchFn(updateUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        range: `${sheetName}!A${existingIndex}:J${existingIndex}`,
+        majorDimension: 'ROWS',
+        values: [rowValues],
+      }),
+    });
+
+    if (!updateRes.ok) {
+      const errText = await updateRes.text();
+      throw new Error(`Failed to update spreadsheet row (${updateRes.status}): ${errText}`);
+    }
+
+    return { action: 'updated', rowIndex: existingIndex };
+  } else {
+    // 3. Append new row at bottom
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:J:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const appendRes = await fetchFn(appendUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: [rowValues],
+      }),
+    });
+
+    if (!appendRes.ok) {
+      const errText = await appendRes.text();
+      throw new Error(`Failed to append to spreadsheet (${appendRes.status}): ${errText}`);
+    }
+
+    return { action: 'appended' };
+  }
+}
+
+/**
+ * Refreshes an expired Google OAuth access token using a valid refresh token.
+ */
+export async function refreshGoogleAccessToken(
+  refreshToken: string,
+  clientId?: string,
+  clientSecret?: string,
+  fetchFn: typeof fetch = fetch
+): Promise<{ accessToken: string; expiresIn: number }> {
+  if (
+    fetchFn === fetch &&
+    (process.env['NODE_ENV'] === 'test' ||
+      process.env['GOOGLE_MOCK_OAUTH'] === 'true')
+  ) {
+    return {
+      accessToken: `ya29.mock_refreshed_access_token_${Date.now()}`,
+      expiresIn: 3600,
+    };
+  }
+
+  const cId = clientId || process.env['GOOGLE_CLIENT_ID'] || '';
+  const cSecret = clientSecret || process.env['GOOGLE_CLIENT_SECRET'] || '';
+
+  const response = await fetchFn('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: cId,
+      client_secret: cSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Google OAuth token refresh failed (${response.status}): ${errBody}`);
+  }
+
+  const data = (await response.json()) as { access_token: string; expires_in?: number };
+  return {
+    accessToken: data.access_token,
+    expiresIn: data.expires_in || 3600,
+  };
+}
+

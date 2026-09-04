@@ -23,5 +23,7 @@ export * from './entities/application-verification.js';
 export * from './entities/user-integration.js';
 export * from './integrations/google-sheets.js';
 export * from './security/encryption.js';
+export * from './entities/sync-event.js';
+export * from './integrations/application-sync.js';
 export * from './seed/catalog-seed.js';
 
