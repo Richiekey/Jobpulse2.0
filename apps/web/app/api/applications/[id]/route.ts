@@ -39,6 +39,9 @@ export async function PATCH(
       );
     }
 
+    const { searchParams } = new URL(request.url);
+    const organizationId = searchParams.get('organizationId');
+
     const updates: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
@@ -48,13 +51,25 @@ export async function PATCH(
     if (parseResult.data.companyName !== undefined) updates.company_name = parseResult.data.companyName;
     if (parseResult.data.jobTitle !== undefined) updates.job_title = parseResult.data.jobTitle;
 
-    const { data: updated, error: updateError } = await supabase
+    if (organizationId) {
+      const orgCheck = await AuthGuard.requireOrgAdmin(organizationId);
+      if ('errorResponse' in orgCheck) {
+        return orgCheck.errorResponse;
+      }
+    }
+
+    let updateQuery = supabase
       .from('applications')
       .update(updates)
-      .eq('id', applicationId)
-      .eq('user_id', user.id)
-      .select('*')
-      .single();
+      .eq('id', applicationId);
+
+    if (organizationId) {
+      updateQuery = updateQuery.eq('organization_id', organizationId);
+    } else {
+      updateQuery = updateQuery.eq('user_id', user.id);
+    }
+
+    const { data: updated, error: updateError } = await updateQuery.select('*').single();
 
     if (updateError || !updated) {
       return ApiResponse.error('Application not found or unauthorized to modify.', updateError, 404);
@@ -83,13 +98,28 @@ export async function DELETE(
     }
 
     const { user, supabase } = authResult;
+    const { searchParams } = new URL(request.url);
+    const organizationId = searchParams.get('organizationId');
 
-    const { data: deletedRows, error: deleteError } = await supabase
+    if (organizationId) {
+      const orgCheck = await AuthGuard.requireOrgAdmin(organizationId);
+      if ('errorResponse' in orgCheck) {
+        return orgCheck.errorResponse;
+      }
+    }
+
+    let deleteQuery = supabase
       .from('applications')
       .delete()
-      .eq('id', applicationId)
-      .eq('user_id', user.id)
-      .select('id');
+      .eq('id', applicationId);
+
+    if (organizationId) {
+      deleteQuery = deleteQuery.eq('organization_id', organizationId);
+    } else {
+      deleteQuery = deleteQuery.eq('user_id', user.id);
+    }
+
+    const { data: deletedRows, error: deleteError } = await deleteQuery.select('id');
 
     if (deleteError) {
       return ApiResponse.error('Failed to remove application record.', deleteError, 500);

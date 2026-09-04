@@ -779,6 +779,41 @@ export interface Database {
           updated_at?: string;
         };
       };
+      application_events: {
+        Row: {
+          id: string;
+          application_id: string;
+          organization_id: string | null;
+          actor_id: string;
+          event_type: string;
+          from_status: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
+          to_status: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          application_id: string;
+          organization_id?: string | null;
+          actor_id: string;
+          event_type: string;
+          from_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
+          to_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          application_id?: string;
+          organization_id?: string | null;
+          actor_id?: string;
+          event_type?: string;
+          from_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
+          to_status?: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived' | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+      };
       saved_jobs: {
         Row: {
           id: string;

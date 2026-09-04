@@ -18,4 +18,5 @@ export * from './entities/organization.js';
 export * from './entities/worker-profile.js';
 export * from './entities/job-assignment.js';
 export * from './assignment-lifecycle.js';
+export * from './entities/application-event.js';
 export * from './seed/catalog-seed.js';
