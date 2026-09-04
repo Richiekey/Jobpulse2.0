@@ -9,6 +9,9 @@ export const AuthoritativeLifecycleEventTypeSchema = z.enum([
   'note_updated',
   'details_updated',
   'archived',
+  'verification_submitted',
+  'verification_approved',
+  'verification_rejected',
 ]);
 
 export const UserCrmEventTypeSchema = z.enum([
@@ -27,6 +30,9 @@ export const ApplicationEventTypeSchema = z.enum([
   'archived',
   'note_added',
   'comment_added',
+  'verification_submitted',
+  'verification_approved',
+  'verification_rejected',
 ]);
 
 export const ActorTypeSchema = z.enum([
@@ -56,6 +62,9 @@ export const ProhibitedClientLifecycleEventTypes = [
   'note_updated',
   'details_updated',
   'archived',
+  'verification_submitted',
+  'verification_approved',
+  'verification_rejected',
 ] as const;
 
 export function isProhibitedClientLifecycleEvent(eventType: string): boolean {

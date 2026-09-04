@@ -13,7 +13,10 @@ export type AuthoritativeLifecycleEventType =
   | 'reassigned'
   | 'note_updated'
   | 'details_updated'
-  | 'archived';
+  | 'archived'
+  | 'verification_submitted'
+  | 'verification_approved'
+  | 'verification_rejected';
 
 /**
  * User-Authored CRM Event Types

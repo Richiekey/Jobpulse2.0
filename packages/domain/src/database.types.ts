@@ -745,6 +745,7 @@ export interface Database {
           organization_id: string | null;
           assigned_by: string | null;
           worker_id: string | null;
+          verification_status: 'pending' | 'verified' | 'rejected';
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
@@ -761,6 +762,7 @@ export interface Database {
           organization_id?: string | null;
           assigned_by?: string | null;
           worker_id?: string | null;
+          verification_status?: 'pending' | 'verified' | 'rejected';
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -777,7 +779,52 @@ export interface Database {
           organization_id?: string | null;
           assigned_by?: string | null;
           worker_id?: string | null;
+          verification_status?: 'pending' | 'verified' | 'rejected';
           deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      application_verifications: {
+        Row: {
+          id: string;
+          application_id: string;
+          organization_id: string | null;
+          worker_id: string;
+          screenshot_url: string;
+          status: 'pending' | 'verified' | 'rejected';
+          reviewer_id: string | null;
+          reviewer_notes: string | null;
+          reviewed_at: string | null;
+          idempotency_key: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          application_id: string;
+          organization_id?: string | null;
+          worker_id: string;
+          screenshot_url: string;
+          status?: 'pending' | 'verified' | 'rejected';
+          reviewer_id?: string | null;
+          reviewer_notes?: string | null;
+          reviewed_at?: string | null;
+          idempotency_key?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          application_id?: string;
+          organization_id?: string | null;
+          worker_id?: string;
+          screenshot_url?: string;
+          status?: 'pending' | 'verified' | 'rejected';
+          reviewer_id?: string | null;
+          reviewer_notes?: string | null;
+          reviewed_at?: string | null;
+          idempotency_key?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1031,6 +1078,22 @@ export interface Database {
           newOwner: string;
           message?: string;
         };
+      };
+      submit_application_verification: {
+        Args: {
+          p_application_id: string;
+          p_screenshot_url: string;
+          p_idempotency_key?: string | null;
+        };
+        Returns: Database['public']['Tables']['application_verifications']['Row'];
+      };
+      review_application_verification: {
+        Args: {
+          p_verification_id: string;
+          p_status: 'verified' | 'rejected';
+          p_reviewer_notes?: string | null;
+        };
+        Returns: Database['public']['Tables']['application_verifications']['Row'];
       };
     };
   };
