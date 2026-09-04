@@ -20,4 +20,8 @@ export * from './entities/job-assignment.js';
 export * from './assignment-lifecycle.js';
 export * from './entities/application-event.js';
 export * from './entities/application-verification.js';
+export * from './entities/user-integration.js';
+export * from './integrations/google-sheets.js';
+export * from './security/encryption.js';
 export * from './seed/catalog-seed.js';
+
