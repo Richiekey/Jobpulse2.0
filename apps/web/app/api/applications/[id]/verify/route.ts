@@ -115,13 +115,13 @@ export async function GET(
       }
     }
 
-    // Generate signed URLs for private storage screenshots
+    // Generate signed URLs exclusively for private storage screenshots (no external URL passthrough)
     const enriched = await Promise.all(
       rawVerifications.map(async (v) => {
         let signedUrl: string | null = null;
         let storagePath = v.screenshot_url;
 
-        // If screenshot_url is a storage path rather than an external HTTP URL
+        // Evidence must be within verification-screenshots bucket
         if (storagePath && !storagePath.startsWith('http://') && !storagePath.startsWith('https://')) {
           if (storagePath.startsWith('verification-screenshots/')) {
             storagePath = storagePath.replace(/^verification-screenshots\//, '');
@@ -136,11 +136,8 @@ export async function GET(
               signedUrl = signedData.signedUrl;
             }
           } catch {
-            // If signed URL generation fails, fallback gracefully
             signedUrl = null;
           }
-        } else {
-          signedUrl = v.screenshot_url;
         }
 
         return {
@@ -148,6 +145,7 @@ export async function GET(
           applicationId: v.application_id,
           organizationId: v.organization_id,
           workerId: v.worker_id,
+          storagePath: v.screenshot_url,
           screenshotUrl: v.screenshot_url,
           signedUrl,
           status: v.status,

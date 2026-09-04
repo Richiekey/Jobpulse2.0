@@ -8,22 +8,40 @@ import {
 
 describe('Application Verification Schema Validation (Batch M)', () => {
   describe('CreateVerificationSchema', () => {
-    it('accepts valid https URL with image extension', () => {
-      const result = CreateVerificationSchema.safeParse({
+    it('strictly rejects external https and http URLs', () => {
+      const httpsResult = CreateVerificationSchema.safeParse({
         screenshotUrl: 'https://storage.jobpulse.io/verification-screenshots/app1/evidence.png',
       });
-      expect(result.success).toBe(true);
+      expect(httpsResult.success).toBe(false);
+
+      const httpResult = CreateVerificationSchema.safeParse({
+        screenshotUrl: 'http://malicious-external-site.com/evidence.png',
+      });
+      expect(httpResult.success).toBe(false);
     });
 
-    it('accepts valid internal storage paths with image extensions', () => {
+    it('strictly rejects paths outside the verification-screenshots bucket', () => {
       const paths = [
-        'verification-screenshots/org-123/app-456/screenshot.png',
-        'org-123/app-456/evidence.jpg',
+        'resumes/app-456/evidence.jpg',
         'uploads/user-789/shot.webp',
-        'app-123/screen.gif',
+        'public-bucket/screen.gif',
       ];
 
       for (const p of paths) {
+        const result = CreateVerificationSchema.safeParse({ screenshotUrl: p });
+        expect(result.success).toBe(false);
+      }
+    });
+
+    it('accepts valid private storage paths within verification-screenshots', () => {
+      const validPaths = [
+        'verification-screenshots/org-123/app-456/screenshot.png',
+        'verification-screenshots/org-123/app-456/evidence.jpg',
+        'verification-screenshots/user-789/shot.webp',
+        'verification-screenshots/app-123/screen.gif',
+      ];
+
+      for (const p of validPaths) {
         const result = CreateVerificationSchema.safeParse({ screenshotUrl: p });
         expect(result.success).toBe(true);
       }

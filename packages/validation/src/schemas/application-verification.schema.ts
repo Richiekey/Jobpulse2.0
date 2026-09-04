@@ -9,36 +9,28 @@ export const VerificationStatusEnumSchema = z.enum([
 const ALLOWED_IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|gif)$/i;
 
 /**
- * Storage Path or URL validator
- * Validates that screenshotUrl is either:
- * 1) A relative storage path targeting the verification-screenshots bucket:
- *    e.g. 'verification-screenshots/.../file.png' or '{org_or_user}/{app_id}/{file}.png'
- * 2) An HTTPS/HTTP URL ending with a supported image extension or targeting supabase storage
+ * Storage Path validator
+ * Strictly enforces that screenshotUrl is a private storage object path located within
+ * the 'verification-screenshots' bucket, ending with a supported image extension.
+ * Arbitrary external HTTP/HTTPS URLs are strictly rejected.
  */
 const ScreenshotUrlSchema = z
   .string()
   .trim()
   .min(5, 'Screenshot reference must be at least 5 characters')
-  .max(2048, 'Screenshot reference exceeds maximum length of 2048 characters')
-  .refine((val) => {
-    // Check if it is a valid URL
-    try {
-      const parsed = new URL(val);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        return false;
-      }
-      return true;
-    } catch {
-      // If not a full URL, validate as a structured storage path
-      // Must not contain path traversal characters (..)
-      if (val.includes('..')) {
-        return false;
-      }
-      return ALLOWED_IMAGE_EXTENSIONS.test(val);
+  .max(1024, 'Screenshot reference exceeds maximum length of 1024 characters')
+  .refine(
+    (val) =>
+      val.startsWith('verification-screenshots/') &&
+      !val.startsWith('http://') &&
+      !val.startsWith('https://') &&
+      !val.includes('..') &&
+      ALLOWED_IMAGE_EXTENSIONS.test(val),
+    {
+      message:
+        'Screenshot reference must be a valid storage path located within verification-screenshots/ ending with .png, .jpg, .jpeg, .webp, or .gif (external URLs are strictly prohibited)',
     }
-  }, {
-    message: 'Screenshot URL must be a valid URL or a storage path referencing an authorized image file (.png, .jpg, .jpeg, .webp, .gif)',
-  });
+  );
 
 export const CreateVerificationSchema = z.object({
   screenshotUrl: ScreenshotUrlSchema,

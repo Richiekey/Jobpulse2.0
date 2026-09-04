@@ -102,6 +102,44 @@ describe('Batch M — Screenshot Verification & Storage Suite', () => {
       expect(json.error).toContain('valid UUID');
     });
 
+    it('rejects POST with external https or http URL with 400', async () => {
+      (createClient as any).mockResolvedValue(mockAuthUser(workerUserId));
+
+      const httpsReq = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ screenshotUrl: 'https://external-site.com/evidence.png' }),
+      });
+      const httpsRes = await postVerification(httpsReq, { params: Promise.resolve({ id: appId }) });
+      const httpsJson = await httpsRes.json();
+
+      expect(httpsRes.status).toBe(400);
+      expect(httpsJson.error).toContain('external URLs are strictly prohibited');
+
+      const httpReq = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ screenshotUrl: 'http://malicious.io/shot.png' }),
+      });
+      const httpRes = await postVerification(httpReq, { params: Promise.resolve({ id: appId }) });
+      const httpJson = await httpRes.json();
+
+      expect(httpRes.status).toBe(400);
+      expect(httpJson.error).toContain('external URLs are strictly prohibited');
+    });
+
+    it('rejects POST with arbitrary storage path outside verification-screenshots/', async () => {
+      (createClient as any).mockResolvedValue(mockAuthUser(workerUserId));
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ screenshotUrl: 'resumes/applicant-cv.png' }),
+      });
+      const res = await postVerification(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.error).toContain('verification-screenshots/');
+    });
+
     it('rejects POST with unsupported screenshot extension', async () => {
       (createClient as any).mockResolvedValue(mockAuthUser(workerUserId));
 
@@ -113,7 +151,7 @@ describe('Batch M — Screenshot Verification & Storage Suite', () => {
       const json = await res.json();
 
       expect(res.status).toBe(400);
-      expect(json.error).toContain('Screenshot URL must be a valid URL or a storage path');
+      expect(json.error).toContain('verification-screenshots/');
     });
 
     it('rejects POST with path traversal attempt in storage path', async () => {
@@ -127,7 +165,7 @@ describe('Batch M — Screenshot Verification & Storage Suite', () => {
       const json = await res.json();
 
       expect(res.status).toBe(400);
-      expect(json.error).toContain('Screenshot URL must be a valid URL or a storage path');
+      expect(json.error).toContain('verification-screenshots/');
     });
 
     it('rejects PATCH with invalid review status', async () => {
@@ -887,6 +925,81 @@ describe('Batch M — Screenshot Verification & Storage Suite', () => {
       expect(json.data.verifications[0].signedUrl).toContain('token=exp123');
       expect(json.data.verifications[0].worker.fullName).toBe('Worker Bob');
       expect(mockCreateSignedUrl).toHaveBeenCalledWith('org-1/app-1/shot.png', 3600);
+    });
+
+    it('strictly refuses to pass through external HTTP URLs as signedUrl evidence', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: workerUserId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: appId,
+                  user_id: workerUserId,
+                  organization_id: orgId,
+                  deleted_at: null,
+                  verification_status: 'pending',
+                },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'application_verifications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: verifId,
+                    application_id: appId,
+                    organization_id: orgId,
+                    worker_id: workerUserId,
+                    screenshot_url: 'https://attacker.io/fake-proof.png', // legacy or malformed record
+                    status: 'pending',
+                    reviewer_id: null,
+                    reviewer_notes: null,
+                    reviewed_at: null,
+                    idempotency_key: null,
+                    created_at: '2026-09-04T12:00:00.000Z',
+                    updated_at: '2026-09-04T12:00:00.000Z',
+                  },
+                ],
+                error: null,
+              }),
+            };
+          }
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          return {};
+        }),
+        storage: {
+          from: vi.fn().mockReturnValue({
+            createSignedUrl: vi.fn(),
+          }),
+        },
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/verify`);
+      const res = await getVerification(req, { params: Promise.resolve({ id: appId }) });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      // Evidence must NOT echo raw external URL as signedUrl!
+      expect(json.data.verifications[0].signedUrl).toBeNull();
     });
   });
 });
