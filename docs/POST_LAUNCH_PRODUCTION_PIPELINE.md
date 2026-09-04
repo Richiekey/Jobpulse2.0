@@ -418,3 +418,1387 @@ Each batch follows the mandatory gate:
 3. **Security is mandatory** — worker data, org isolation, resumes, screenshots, OAuth, Sheets, applications
 4. **Everything asynchronous must be durable** — survive restart, crash, network failure, API timeout, outage, deployment
 5. **Idempotency everywhere** — applications, sync events, Sheets writes, screenshot uploads, assignments
+
+---
+
+# JobPulse 2.0 — Batch U
+
+## Product UX/UI System & Experience Integrity
+
+**Status:** Planned
+**Batch:** U
+**Type:** Cross-cutting product-quality and UX/UI governance
+**Scope:** Entire JobPulse 2.0 product
+**Primary objective:** Establish a coherent, production-grade UX/UI system that governs every existing and future JobPulse surface, while ensuring the interface accurately represents backend state, permissions, data quality, and operational reality.
+
+---
+
+# 1. Executive Objective
+
+Batch U establishes the **Product UX/UI Experience Layer** for JobPulse 2.0.
+
+This is not a cosmetic redesign.
+
+The purpose is to ensure that the increasingly sophisticated backend, ingestion pipeline, workforce system, application CRM, verification system, synchronization infrastructure, command centers, and operational intelligence are exposed through a product experience that is:
+
+* coherent
+* predictable
+* accessible
+* responsive
+* trustworthy
+* operationally truthful
+* visually consistent
+* state-complete
+* permission-aware
+* maintainable
+* extensible
+
+JobPulse must not evolve into a collection of independently generated screens.
+
+Every feature should feel like it belongs to the same product.
+
+Batch U therefore introduces a formal UX/UI governance layer across the entire application.
+
+---
+
+# 2. Core Principle
+
+The JobPulse architecture should be understood as:
+
+```text
+DISCOVERY
+    ↓
+INGESTION
+    ↓
+NORMALIZATION
+    ↓
+VALIDATION
+    ↓
+DEDUPLICATION
+    ↓
+ENRICHMENT
+    ↓
+QUALITY SCORING
+    ↓
+LIFECYCLE
+    ↓
+PUBLICATION
+    ↓
+SEARCH
+    ↓
+ASSIGNMENT
+    ↓
+APPLICATION
+    ↓
+VERIFICATION
+    ↓
+SYNC
+    ↓
+ANALYTICS
+```
+
+with:
+
+```text
+OBSERVABILITY
+DATA QUALITY
+SOURCE HEALTH
+PROVENANCE
+SECURITY
+RETRY / REPLAY
+AUDIT LOGGING
+```
+
+and now:
+
+```text
+UX/UI EXPERIENCE LAYER
+```
+
+The UX/UI layer is cross-cutting.
+
+It does not sit at the end of the pipeline.
+
+Every layer that becomes user-visible must pass through the UX/UI experience system.
+
+---
+
+# 3. UX/UI Engineering Principle
+
+Every feature must satisfy five dimensions:
+
+```text
+Backend correctness
+        +
+Security correctness
+        +
+Data correctness
+        +
+Observability correctness
+        +
+UX/UI correctness
+        =
+Production-ready feature
+```
+
+A feature is not complete merely because:
+
+* the API works
+* the database is correct
+* the tests pass
+* the deployment succeeds
+
+The user must also be able to understand and operate the feature correctly.
+
+---
+
+# 4. Batch U Objectives
+
+Batch U must establish:
+
+1. A canonical JobPulse design system.
+2. A reusable component system.
+3. A canonical visual language.
+4. A complete application screen inventory.
+5. Consistent navigation and information architecture.
+6. Consistent UX patterns across worker, job seeker, employer, and admin experiences.
+7. Complete loading, empty, success, error, unauthorized, stale, and retry states.
+8. Responsive behavior across desktop, tablet, and mobile.
+9. Accessibility standards.
+10. UX security boundaries.
+11. Operationally truthful UI.
+12. Visual regression protection.
+13. Feature integration rules for future batches.
+14. A formal UX acceptance gate for every future feature.
+
+---
+
+# 5. Product Personas / Experience Surfaces
+
+The UX audit must explicitly account for all major product roles.
+
+At minimum:
+
+### Job Seeker
+
+Responsible for:
+
+* discovering jobs
+* searching/filtering
+* viewing job details
+* saving jobs
+* applying
+* tracking applications
+* verification
+* personal profile/settings
+
+### Worker
+
+Responsible for:
+
+* assigned jobs
+* workforce queue
+* assignment lifecycle
+* application execution
+* verification submission
+* synchronization
+* workload visibility
+
+### Employer / Organization
+
+Responsible for:
+
+* organization management
+* worker management
+* assignments
+* application CRM
+* verification review
+* workforce visibility
+* operational reporting
+
+### Platform Administrator
+
+Responsible for:
+
+* source health
+* ingestion
+* operational monitoring
+* system health
+* organizations
+* workforce
+* application operations
+* verification
+* analytics
+* failures/retries
+
+### Unauthenticated User
+
+Responsible for:
+
+* landing experience
+* job discovery
+* public job pages
+* authentication
+* onboarding
+
+The interface must never assume that these personas share identical navigation, permissions, or workflows.
+
+---
+
+# 6. UX/UI Audit of Existing Product
+
+Before introducing new components, perform a comprehensive audit of the current production application.
+
+Inventory:
+
+* routes
+* pages
+* layouts
+* navigation
+* dashboards
+* forms
+* tables
+* cards
+* modals
+* drawers
+* dialogs
+* filters
+* search interfaces
+* job pages
+* application pages
+* worker pages
+* organization pages
+* admin pages
+* authentication
+* onboarding
+* settings
+* error pages
+* loading states
+* empty states
+* mobile layouts
+
+For every surface record:
+
+```text
+Route
+Persona
+Purpose
+Primary action
+Secondary actions
+Data source
+Permission requirements
+Loading state
+Empty state
+Error state
+Success state
+Unauthorized state
+Mobile behavior
+Accessibility status
+Reusable components
+UX inconsistencies
+```
+
+Do not redesign blindly.
+
+First establish what exists.
+
+---
+
+# 7. Canonical Design System
+
+Create a single source of truth for JobPulse visual design.
+
+The system must define reusable tokens for:
+
+### Typography
+
+* font family
+* heading hierarchy
+* body text
+* labels
+* metadata
+* captions
+* numerical/data typography
+* responsive sizing
+
+### Spacing
+
+Establish a consistent spacing scale.
+
+Avoid arbitrary values introduced independently by individual features.
+
+### Layout
+
+Define:
+
+* page containers
+* maximum widths
+* grids
+* columns
+* sidebar behavior
+* dashboard layouts
+* card layouts
+* table layouts
+* responsive breakpoints
+
+### Visual hierarchy
+
+Define consistent treatment for:
+
+* primary content
+* secondary content
+* metadata
+* warnings
+* errors
+* success
+* system status
+* disabled states
+
+### Controls
+
+Standardize:
+
+* buttons
+* icon buttons
+* links
+* inputs
+* textareas
+* selects
+* comboboxes
+* checkboxes
+* radio buttons
+* switches
+* date/time controls
+* filters
+
+### Feedback
+
+Standardize:
+
+* toast notifications
+* alerts
+* banners
+* inline errors
+* confirmation dialogs
+* progress indicators
+
+---
+
+# 8. Component Architecture
+
+Identify duplicated UI patterns and consolidate them into reusable components.
+
+At minimum establish canonical patterns for:
+
+```text
+Button
+Input
+Select
+Combobox
+SearchInput
+Filter
+Badge
+StatusBadge
+Card
+Table
+DataTable
+Modal
+Dialog
+Drawer
+Tabs
+Tooltip
+Dropdown
+Pagination
+Breadcrumb
+Avatar
+EmptyState
+LoadingState
+ErrorState
+Skeleton
+Alert
+Toast
+ConfirmationDialog
+FormField
+PageHeader
+SectionHeader
+StatCard
+Timeline
+ActivityFeed
+```
+
+Do not create a new component when an existing canonical component already solves the problem.
+
+If an existing component is inadequate, improve the canonical component rather than creating a one-off variant unless there is a documented reason.
+
+---
+
+# 9. Status System
+
+JobPulse contains many stateful systems.
+
+Create a consistent status language across the product.
+
+Examples include:
+
+### Jobs
+
+```text
+ACTIVE
+AGING
+STALE
+EXPIRED
+ARCHIVED
+```
+
+### Assignments
+
+Use the canonical assignment state machine already established by the backend.
+
+### Applications
+
+Use canonical application lifecycle states.
+
+### Verification
+
+```text
+PENDING
+VERIFIED
+REJECTED
+```
+
+### Crawls
+
+Distinguish:
+
+```text
+DISPATCHED
+QUEUED
+RUNNING
+SUCCEEDED
+FAILED
+PARTIAL
+```
+
+Do not visually collapse different backend states into one generic "success" state.
+
+---
+
+# 10. Operational Truthfulness
+
+This is a mandatory Batch U requirement.
+
+The UI must represent **what actually happened**, not what the frontend hopes happened.
+
+For example:
+
+If a crawl API successfully dispatches a job but the crawl has not completed, the UI must not display:
+
+> Crawl completed
+
+It should display something equivalent to:
+
+> Crawl queued
+
+and subsequently transition based on authoritative backend state.
+
+Likewise:
+
+```text
+Dispatch succeeded ≠ Crawl succeeded
+Request accepted ≠ Operation completed
+Upload started ≠ Upload completed
+Application submitted ≠ Application verified
+Sync requested ≠ Sync completed
+```
+
+Every asynchronous operation must expose the appropriate lifecycle.
+
+This requirement exists specifically to prevent misleading operational interfaces.
+
+---
+
+# 11. State Completeness
+
+Every meaningful interactive surface must account for:
+
+```text
+Initial
+Loading
+Success
+Empty
+Error
+Unauthorized
+Forbidden
+Not Found
+Stale
+Retrying
+Retry Failed
+Disabled
+Submitting
+Submitted
+Processing
+Completed
+Terminal Failure
+```
+
+Not every screen requires every state visually, but every applicable state must be deliberately designed.
+
+No production screen should depend on accidental browser behavior or blank space to communicate state.
+
+---
+
+# 12. Empty States
+
+Empty states must distinguish between different reasons for emptiness.
+
+For example:
+
+```text
+No jobs exist
+```
+
+is different from:
+
+```text
+No jobs match your filters
+```
+
+which is different from:
+
+```text
+Jobs are still loading
+```
+
+which is different from:
+
+```text
+You don't have permission to view these jobs
+```
+
+which is different from:
+
+```text
+The source has temporarily failed
+```
+
+Empty states should provide an appropriate next action where one exists.
+
+---
+
+# 13. Error UX
+
+Errors must be understandable and actionable.
+
+Avoid exposing raw:
+
+```text
+500 Internal Server Error
+```
+
+or raw database errors to users.
+
+Where appropriate provide:
+
+* what happened
+* whether user action is required
+* retry option
+* recovery path
+* support/reference identifier when useful
+
+However, never fabricate a successful state to make the interface appear functional.
+
+---
+
+# 14. Authentication and Authorization UX
+
+UI visibility must follow the backend authorization model.
+
+But UI visibility is **not** considered security.
+
+The system must maintain:
+
+```text
+UI authorization
++
+API authorization
++
+RLS authorization
+=
+defense in depth
+```
+
+For every role-sensitive action:
+
+* determine whether the user should see it
+* determine whether the user should be able to invoke it
+* verify backend enforcement independently
+
+Examples:
+
+* worker-only actions
+* organization-admin actions
+* platform-admin actions
+* application owner actions
+* verification reviewer actions
+
+A hidden button is never an authorization boundary.
+
+---
+
+# 15. Navigation Architecture
+
+Audit and standardize:
+
+* primary navigation
+* secondary navigation
+* contextual navigation
+* breadcrumbs
+* role-specific navigation
+* mobile navigation
+* dashboard navigation
+* back navigation
+
+Navigation must make the user's current location obvious.
+
+Avoid duplicated or contradictory routes for the same conceptual resource.
+
+Establish canonical destinations.
+
+For example, there should be one authoritative application detail experience rather than multiple competing application views created by separate batches.
+
+---
+
+# 16. Job Discovery UX
+
+Job discovery is one of the primary JobPulse experiences and must receive special attention.
+
+Audit:
+
+* search
+* filters
+* sorting
+* pagination
+* saved jobs
+* job cards
+* job details
+* company information
+* salary information
+* remote/hybrid/on-site representation
+* freshness
+* source attribution
+* application availability
+* direct-apply indicators
+
+The UI must accurately represent canonical job data.
+
+Do not reintroduce frontend hacks to compensate for backend pagination, deduplication, or search behavior.
+
+---
+
+# 17. Application UX
+
+The application experience must integrate:
+
+* application lifecycle
+* assignments
+* CRM events
+* verification
+* notes
+* timestamps
+* worker information where authorized
+* organization information where authorized
+
+The UI must clearly distinguish:
+
+```text
+Applied
+Assigned
+Processing
+Verification pending
+Verified
+Rejected
+Archived
+```
+
+and other canonical backend states.
+
+Application event history must be presented as authoritative history.
+
+The frontend must never invent lifecycle events.
+
+---
+
+# 18. Verification UX
+
+The Batch M verification system must receive a first-class experience.
+
+The interface must support:
+
+### Worker
+
+* submission
+* screenshot selection/upload
+* upload progress
+* validation errors
+* pending status
+* successful submission
+* rejection feedback
+* retry/new verification where permitted
+
+### Reviewer
+
+* verification queue
+* screenshot viewing through authorized signed URLs
+* applicant/application context
+* approve
+* reject
+* reviewer notes
+* review status
+* audit history
+
+The UI must never expose raw private storage URLs.
+
+It must use the authorized signed-URL mechanism established by Batch M.
+
+---
+
+# 19. Workforce UX
+
+The Worker Command Center and Employer/Admin Command Center must not become isolated design systems.
+
+Their future implementation must consume the Batch U primitives.
+
+Standardize:
+
+* assignment cards
+* queues
+* status indicators
+* workload metrics
+* worker tables
+* application queues
+* activity timelines
+* filters
+* bulk actions
+* confirmation flows
+
+---
+
+# 20. Responsive Design
+
+Every production surface must be reviewed at minimum across:
+
+```text
+Mobile
+Tablet
+Desktop
+Large Desktop
+```
+
+Do not simply scale desktop interfaces down.
+
+Responsive behavior must define:
+
+* navigation transformation
+* table behavior
+* card stacking
+* filter behavior
+* modal behavior
+* form layout
+* action placement
+* typography
+* spacing
+* touch targets
+
+Critical workflows must remain usable on mobile.
+
+---
+
+# 21. Accessibility
+
+Establish a practical accessibility baseline.
+
+At minimum:
+
+* semantic HTML
+* keyboard navigation
+* visible focus states
+* appropriate labels
+* accessible form errors
+* accessible dialogs
+* accessible menus
+* appropriate ARIA where required
+* sufficient contrast
+* non-color-only status communication
+* usable touch targets
+* screen-reader meaningful labels
+* logical heading hierarchy
+
+Accessibility must be incorporated into reusable components rather than manually patched page-by-page.
+
+---
+
+# 22. Data-Dense Interfaces
+
+JobPulse contains operationally dense information.
+
+Tables and dashboards must prioritize:
+
+* hierarchy
+* scanning
+* filtering
+* sorting
+* pagination
+* responsive behavior
+* meaningful column prioritization
+* readable metadata
+* status clarity
+
+Avoid displaying every available field merely because the backend exposes it.
+
+The UI should optimize for decisions users need to make.
+
+---
+
+# 23. Loading and Performance UX
+
+Establish consistent patterns for:
+
+* skeleton loading
+* optimistic updates
+* asynchronous actions
+* pagination
+* search
+* route transitions
+* background refresh
+* polling where applicable
+
+Optimistic UI may only be used where rollback/reconciliation is safe.
+
+Never show an optimistic terminal state when backend confirmation is required.
+
+---
+
+# 24. Visual Regression
+
+Introduce a repeatable mechanism for detecting unintended visual regressions.
+
+At minimum identify critical screenshots/pages for:
+
+* public homepage
+* job search
+* job detail
+* authentication
+* application detail
+* worker dashboard
+* employer dashboard
+* admin dashboard
+* verification workflow
+* mobile navigation
+
+The exact tooling may follow the existing project stack.
+
+The important requirement is that significant visual changes become detectable rather than silently accumulating.
+
+---
+
+# 25. UX Consistency Audit
+
+Search the entire codebase for inconsistent implementations of:
+
+* button styles
+* colors
+* typography
+* spacing
+* status badges
+* dialogs
+* inputs
+* loading indicators
+* error messages
+* tables
+* cards
+* navigation
+* page headers
+
+Produce a remediation inventory.
+
+Prioritize:
+
+```text
+P0 — confusing/broken workflow
+P1 — major inconsistency affecting usability
+P2 — visual inconsistency
+P3 — cosmetic refinement
+```
+
+Do not spend the majority of the batch polishing low-value cosmetic details while workflow problems remain.
+
+---
+
+# 26. Feature Integration Contract
+
+From Batch U onward, every new batch must document:
+
+```text
+Feature
+Persona
+Route/surface
+Primary user action
+Existing components reused
+New components introduced
+States introduced
+Permissions
+Responsive behavior
+Accessibility considerations
+Analytics/observability
+```
+
+Future batches must not introduce independent visual patterns without justification.
+
+---
+
+# 27. UX Acceptance Gate for Future Batches
+
+Every future batch must pass:
+
+### Functional
+
+* primary workflow works
+* edge cases work
+* state transitions are understandable
+
+### Visual
+
+* canonical design system used
+* no unexplained one-off components
+* consistent spacing/typography/status treatment
+
+### Responsive
+
+* mobile verified
+* tablet verified
+* desktop verified
+
+### Accessibility
+
+* keyboard verified
+* focus verified
+* labels/errors verified
+* contrast/status communication verified
+
+### Operational Truthfulness
+
+* UI reflects authoritative backend state
+* asynchronous operations are represented correctly
+* failures are not disguised as success
+
+### Security
+
+* UI permissions align with backend permissions
+* no sensitive data leaked through UI
+* private resources remain private
+
+### Regression
+
+* existing critical workflows remain functional
+* visual regression checks pass where configured
+* public job discovery remains unaffected
+
+---
+
+# 28. Source-of-Truth Rule
+
+Do not allow the frontend to create competing interpretations of backend truth.
+
+The backend remains authoritative for:
+
+* job identity
+* job lifecycle
+* application lifecycle
+* assignment lifecycle
+* verification lifecycle
+* organization membership
+* permissions
+* crawl state
+* synchronization state
+* audit events
+
+The UI is a projection of that state.
+
+It is not a second state machine.
+
+---
+
+# 29. Anti-Pattern Prohibition
+
+Batch U explicitly prohibits:
+
+### Frontend reserve hacks
+
+Do not manipulate displayed results to compensate for backend issues.
+
+### Fake metrics
+
+Do not fabricate operational metrics for visual completeness.
+
+### Fake success states
+
+Do not report successful completion before authoritative confirmation.
+
+### Local-only state for durable product state
+
+Do not use localStorage as the authoritative source for cloud-persistent product state.
+
+### One-off visual implementations
+
+Do not repeatedly recreate existing UI patterns.
+
+### Hidden authorization
+
+Do not rely on hidden UI controls as security.
+
+### Raw backend errors
+
+Do not expose implementation details unnecessarily.
+
+### Unbounded dashboard density
+
+Do not fill dashboards with metrics merely because metrics exist.
+
+---
+
+# 30. Design Documentation
+
+Create or update a canonical UX/UI documentation area in the repository.
+
+It should contain, as appropriate:
+
+```text
+UX/UI Architecture
+Design System
+Design Tokens
+Component Inventory
+Component Usage Rules
+Navigation Map
+Screen Inventory
+Persona/Role Matrix
+UX State Matrix
+Accessibility Guidelines
+Responsive Guidelines
+UX Acceptance Checklist
+Visual Regression Strategy
+```
+
+Documentation must be maintained as the product evolves.
+
+---
+
+# 31. Testing Requirements
+
+Batch U must include automated and manual validation where appropriate.
+
+### Automated
+
+At minimum:
+
+* component tests for critical shared components
+* accessibility checks where practical
+* route rendering checks
+* interaction tests for critical workflows
+* visual regression tests for selected critical surfaces
+
+### Manual
+
+Verify:
+
+* desktop
+* mobile
+* keyboard-only navigation
+* critical role workflows
+* error states
+* empty states
+* loading states
+* authorization states
+
+---
+
+# 32. Production Verification
+
+Before Batch U is closed, verify the actual deployed product.
+
+Do not rely solely on:
+
+```text
+npm test
+npm run build
+typecheck
+```
+
+Production verification must include:
+
+* public job discovery
+* search
+* job detail
+* authentication
+* application workflow
+* worker workflow
+* organization workflow
+* verification workflow
+* admin workflow
+* responsive behavior
+* authorization boundaries
+
+The deployed application must be tested using real production data wherever safe.
+
+---
+
+# 33. Regression Protection
+
+Batch U must not break the existing platform.
+
+Mandatory regression checks:
+
+* public job discovery remains functional
+* search remains functional
+* filters remain functional
+* pagination remains functional
+* canonical job URLs remain functional
+* application flows remain functional
+* Batch K organization/workforce functionality remains functional
+* Batch L application/CRM functionality remains functional
+* Batch M verification functionality remains functional
+* authentication remains functional
+* RLS/security boundaries remain intact
+
+---
+
+# 34. Required Deliverables
+
+Gemini must deliver:
+
+### A. UX Audit
+
+Complete inventory of existing UX/UI surfaces and findings.
+
+### B. Design System
+
+Canonical tokens and reusable primitives.
+
+### C. Component System
+
+Reusable production components and documented usage.
+
+### D. Navigation / Information Architecture
+
+Canonical route and navigation structure.
+
+### E. Screen State Matrix
+
+Documented loading/empty/error/success/unauthorized/stale states.
+
+### F. Persona Matrix
+
+Mapping of product surfaces to user roles.
+
+### G. Responsive Audit
+
+Desktop/tablet/mobile verification.
+
+### H. Accessibility Audit
+
+Critical accessibility findings and remediation.
+
+### I. Operational Truthfulness Audit
+
+Verify that UI states correspond to authoritative backend states.
+
+### J. Visual Regression Strategy
+
+Critical screens and regression mechanism.
+
+### K. Future Batch UX Contract
+
+Reusable acceptance checklist for all future batches.
+
+---
+
+# 35. Required Evidence in Completion Report
+
+Gemini must not report Batch U as complete merely because the UI was redesigned.
+
+The completion report must include:
+
+```text
+Commit SHA
+Deployment URL
+Files/components changed
+Design system location
+Component inventory
+Screen inventory
+Navigation changes
+Persona coverage
+State coverage
+Responsive verification
+Accessibility verification
+Operational-truthfulness verification
+Visual regression results
+Automated test results
+Typecheck result
+Production build result
+Production verification results
+Regression results
+Known limitations
+```
+
+For every major claim, provide evidence.
+
+---
+
+# 36. Definition of Done
+
+Batch U is CLOSED only when all of the following are true:
+
+* [ ] Product-wide UX/UI audit completed
+* [ ] Canonical design system established
+* [ ] Reusable component system established
+* [ ] Navigation architecture standardized
+* [ ] Major personas covered
+* [ ] Critical screens inventoried
+* [ ] Critical states implemented
+* [ ] Error/empty/loading states implemented
+* [ ] Authorization UX reviewed
+* [ ] Operational truthfulness reviewed
+* [ ] Responsive behavior verified
+* [ ] Accessibility baseline implemented
+* [ ] Verification UX integrated
+* [ ] Application UX integrated
+* [ ] Workforce UX integrated
+* [ ] Admin UX integrated
+* [ ] Visual regression strategy established
+* [ ] Future-batch UX contract established
+* [ ] Existing production workflows regression-tested
+* [ ] Typecheck passes
+* [ ] Test suite passes
+* [ ] Production build passes
+* [ ] Production deployment verified
+* [ ] No critical P0/P1 UX issues remain
+* [ ] No security boundary has been weakened
+* [ ] No fake/optimistic terminal states misrepresent backend truth
+
+---
+
+# 37. Scope Discipline
+
+Batch U is broad in impact but must remain disciplined in implementation.
+
+Do not use Batch U as an excuse to:
+
+* rewrite the entire application
+* replace the framework
+* replace the backend architecture
+* redesign database schemas
+* redesign authentication
+* rewrite unrelated business logic
+* introduce unnecessary dependencies
+* rebuild working backend systems
+
+The objective is to establish the **experience layer and governance system**, then systematically bring existing surfaces into compliance.
+
+If an existing backend defect is discovered during UX work, document it and fix it only when required for UX correctness or security. Otherwise record it for the appropriate engineering batch.
+
+---
+
+# 38. Implementation Strategy
+
+Recommended sequence:
+
+```text
+Phase 1
+Production UX audit
+        ↓
+Phase 2
+Information architecture + screen inventory
+        ↓
+Phase 3
+Design tokens
+        ↓
+Phase 4
+Core component system
+        ↓
+Phase 5
+Navigation/layout system
+        ↓
+Phase 6
+Critical existing surfaces
+        ↓
+Phase 7
+Application + verification + workforce surfaces
+        ↓
+Phase 8
+Responsive + accessibility pass
+        ↓
+Phase 9
+Operational truthfulness audit
+        ↓
+Phase 10
+Visual regression + production verification
+        ↓
+Phase 11
+Future-batch UX governance contract
+        ↓
+Batch U Gate
+```
+
+Do not begin with cosmetic polishing.
+
+Start with architecture, consistency, state completeness, and information hierarchy.
+
+---
+
+# 39. Final Architectural Rule
+
+From this point forward, JobPulse features should be developed through two parallel questions:
+
+### Engineering question
+
+> Is the system technically correct?
+
+and:
+
+### Product question
+
+> Does the user experience accurately, clearly, and consistently expose that correctness?
+
+Both answers must be **yes**.
+
+The goal of Batch U is to ensure that as JobPulse grows from a job aggregator into a workforce/job-search operating system, the product does not become a collection of technically sophisticated but disconnected interfaces.
+
+The UX/UI system becomes part of the architecture.
+
+**Backend truth → Product state → UX representation → User action**
+
+That chain must remain intact across every future batch.
+
+---
+
+# 40. Gemini Execution Rule
+
+Do not interpret this specification as authorization to declare Batch U complete based on screenshots, passing tests, or a successful build alone.
+
+The implementation must be independently auditable.
+
+After Gemini reports completion, the implementation will be reviewed against:
+
+1. GitHub source
+2. actual deployed application
+3. production behavior
+4. existing product architecture
+5. component consistency
+6. authorization behavior
+7. backend state representation
+8. responsive behavior
+9. accessibility
+10. regression risk
+
+**Gemini's completion report is evidence, not proof.**
+
+Batch U should only be marked closed after independent verification confirms that the UX/UI system is actually implemented and functioning in production.
