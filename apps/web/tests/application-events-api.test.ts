@@ -346,6 +346,7 @@ describe('Application Events & CRM API (Batch L)', () => {
             return {
               update: vi.fn().mockReturnThis(),
               eq: vi.fn().mockReturnThis(),
+              is: vi.fn().mockReturnThis(),
               select: vi.fn().mockReturnThis(),
               single: vi.fn().mockResolvedValue({
                 data: mockUpdated,

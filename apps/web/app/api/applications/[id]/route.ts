@@ -61,7 +61,8 @@ export async function PATCH(
     let updateQuery = supabase
       .from('applications')
       .update(updates)
-      .eq('id', applicationId);
+      .eq('id', applicationId)
+      .is('deleted_at', null);
 
     if (organizationId) {
       updateQuery = updateQuery.eq('organization_id', organizationId);

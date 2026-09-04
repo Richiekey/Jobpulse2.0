@@ -595,20 +595,16 @@ describe('Batch L Adversarial & Integrity Verification Suite', () => {
             error: null,
           }),
         },
-        from: vi.fn().mockReturnValue({
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                select: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({
-                    data: mockUpdated,
-                    error: null,
-                  }),
-                }),
-              }),
-            }),
+        from: vi.fn(() => ({
+          update: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          select: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: mockUpdated,
+            error: null,
           }),
-        }),
+        })),
       });
 
       const req = new NextRequest(`http://localhost/api/applications/${appId}`, {
@@ -627,6 +623,225 @@ describe('Batch L Adversarial & Integrity Verification Suite', () => {
       expect(json.success).toBe(true);
       expect(json.data.company_name).toBe('Alphabet Inc.');
       expect(json.data.job_title).toBe('Staff Software Engineer');
+    });
+
+    it('rejects PATCH update on an already soft-deleted application with 404', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: ownerId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              is: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: null, // is('deleted_at', null) matched nothing
+                      error: { message: 'Row not found' },
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notes: 'Attempting to revive archived application with notes',
+        }),
+      });
+
+      const res = await patchApplication(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(404);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Application not found or unauthorized to modify');
+    });
+  });
+
+  // ===========================================================================
+  // 5. ARCHIVED APPLICATION BOUNDARIES & REPEAT DELETE IDEMPOTENCY
+  // ===========================================================================
+  describe('5. Archived Application Boundaries & Repeat DELETE Idempotency', () => {
+    it('rejects adding CRM events to an archived application with 400', async () => {
+      const mockArchivedApp = {
+        id: appId,
+        user_id: ownerId,
+        organization_id: null,
+        worker_id: null,
+        status: 'archived',
+        deleted_at: '2026-09-04T10:00:00Z',
+      };
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: ownerId } },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: mockArchivedApp,
+                error: null,
+              }),
+            };
+          }
+          return {};
+        }),
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'note_added',
+          note: 'Trying to add note to deleted app',
+        }),
+      });
+
+      const res = await postApplicationEvent(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Cannot append CRM events to an archived application');
+    });
+
+    it('rejects repeat DELETE on an already deleted application with 404', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: ownerId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              is: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: null, // matched 0 rows because deleted_at IS NOT NULL
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}`, {
+        method: 'DELETE',
+      });
+
+      const res = await deleteApplication(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(404);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Application not found or unauthorized to delete');
+    });
+
+    it('prevents client from elevating actorType or injecting lifecycle metadata into CRM note', async () => {
+      const mockApp = {
+        id: appId,
+        user_id: ownerId,
+        organization_id: null,
+        worker_id: null,
+        status: 'applied',
+        deleted_at: null,
+      };
+
+      let insertedPayload: any = null;
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: ownerId } },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: mockApp,
+                error: null,
+              }),
+            };
+          }
+          if (table === 'application_events') {
+            return {
+              insert: vi.fn((payload) => {
+                insertedPayload = payload;
+                return {
+                  select: vi.fn().mockReturnThis(),
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: 'evt-secure-1',
+                      application_id: appId,
+                      organization_id: null,
+                      actor_id: ownerId,
+                      actor_type: payload.actor_type,
+                      event_type: payload.event_type,
+                      from_status: payload.from_status,
+                      to_status: payload.to_status,
+                      metadata: payload.metadata,
+                      created_at: new Date().toISOString(),
+                    },
+                    error: null,
+                  }),
+                };
+              }),
+            };
+          }
+          return {};
+        }),
+      });
+
+      const req = new NextRequest(`http://localhost/api/applications/${appId}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'note_added',
+          note: 'Legitimate interview prep note',
+          actorType: 'admin', // Attempted elevation!
+          metadata: {
+            statusChanged: true, // Attempted state manipulation
+            toStatus: 'offer',
+          },
+        }),
+      });
+
+      const res = await postApplicationEvent(req, { params: Promise.resolve({ id: appId }) });
+      const json = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(json.success).toBe(true);
+      // Client actorType 'admin' was ignored; server derived 'user' based on caller context
+      expect(insertedPayload.actor_type).toBe('user');
+      // Lifecycle status was not modified by metadata
+      expect(insertedPayload.from_status).toBe('applied');
+      expect(insertedPayload.to_status).toBe('applied');
     });
   });
 });

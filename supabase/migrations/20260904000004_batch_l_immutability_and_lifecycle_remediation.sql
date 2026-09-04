@@ -36,6 +36,21 @@ ALTER TABLE public.application_events
 CREATE INDEX IF NOT EXISTS idx_app_events_actor_type 
   ON public.application_events(actor_type, created_at DESC);
 
+-- 2.3 Add event_type check constraint to prevent arbitrary event types
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'application_events_event_type_check'
+  ) THEN
+    ALTER TABLE public.application_events
+      ADD CONSTRAINT application_events_event_type_check
+      CHECK (event_type IN (
+        'created', 'applied', 'status_changed', 'assigned', 'reassigned', 
+        'note_updated', 'details_updated', 'archived', 'note_added', 'comment_added'
+      ));
+  END IF;
+END $$;
+
 -- 2.3 Remove ON DELETE CASCADE, replace with ON DELETE RESTRICT
 ALTER TABLE public.application_events
   DROP CONSTRAINT IF EXISTS application_events_application_id_fkey,
@@ -173,7 +188,12 @@ BEGIN
 
   -- 5.3 ON UPDATE: Complete CRM and Lifecycle Audit Coverage
   IF TG_OP = 'UPDATE' THEN
-    -- Case A: Application Soft-Deleted / Archived
+    -- If application is already deleted/archived and remains deleted, do not emit lifecycle events
+    IF OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS NOT NULL THEN
+      RETURN NEW;
+    END IF;
+
+    -- Case A: Application Soft-Deleted / Archived (Terminal Archival Precedence)
     IF NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL THEN
       INSERT INTO public.application_events (
         application_id,
@@ -196,7 +216,9 @@ BEGIN
         jsonb_build_object(
           'reason', 'Application deleted or archived',
           'deleted_at', NEW.deleted_at,
-          'previous_status', OLD.status
+          'previous_status', OLD.status,
+          'notes', NEW.notes,
+          'worker_id', NEW.worker_id
         ),
         now()
       );
@@ -357,16 +379,16 @@ CREATE POLICY "authorized_users_view_application_events" ON public.application_e
 DROP POLICY IF EXISTS "authorized_users_insert_application_events" ON public.application_events;
 CREATE POLICY "authorized_users_insert_application_events" ON public.application_events
   FOR INSERT WITH CHECK (
-    -- Service role or platform superadmin
+    -- Internal service role (background worker / server bypass)
     current_user = 'service_role'
     OR coalesce(current_setting('request.jwt.claim.role', true), '') = 'service_role'
-    OR public.is_admin()
-    -- Normal authenticated user inserting a legitimate CRM note/comment
+    -- Authenticated client direct inserts: STRICTLY CRM note_added and comment_added only!
     OR (
-      auth.uid() = actor_id
-      AND event_type IN ('note_added', 'comment_added')
+      event_type IN ('note_added', 'comment_added')
+      AND auth.uid() = actor_id
       AND (
-        EXISTS (
+        public.is_admin()
+        OR EXISTS (
           SELECT 1 FROM public.applications a 
           WHERE a.id = application_events.application_id 
             AND (

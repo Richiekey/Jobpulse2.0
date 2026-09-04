@@ -142,7 +142,7 @@ export async function POST(
     // Verify application existence and access permissions
     const { data: app, error: appError } = await supabase
       .from('applications')
-      .select('id, user_id, organization_id, worker_id, status')
+      .select('id, user_id, organization_id, worker_id, status, deleted_at')
       .eq('id', applicationId)
       .maybeSingle();
 
@@ -161,6 +161,10 @@ export async function POST(
 
     if (!isOwnerOrWorker && !isOrgAdmin) {
       return ApiResponse.error('Application not found or unauthorized to access.', null, 404);
+    }
+
+    if (app.deleted_at) {
+      return ApiResponse.error('Cannot append CRM events to an archived application.', null, 400);
     }
 
     const rawBody = await request.json().catch(() => ({}));
