@@ -371,7 +371,7 @@ Authoritative system and workforce analytics.
 
 ---
 
-# 19. Batch S — AI Layer & Provider Architecture
+# 19. Batch S — AI Layer & Provider Architecture (PAUSED)
 
 ### Objective
 Establish the architectural foundation for AI functionality as an **infrastructure capability**, rather than scattering direct model-provider calls throughout the application.
@@ -427,7 +427,7 @@ Q — Admin Command Center
         ↓
 R — Operational Intelligence
         ↓
-S — AI Layer & Provider Architecture
+S — AI Layer & Provider Architecture (PAUSED)
         ↓
 T — Implementation Sequence & Gates Governance
         ↓
