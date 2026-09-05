@@ -328,14 +328,19 @@ Reliable, asynchronous replication of applications to Google Sheets with hardene
 
 # 16. Batch P — Worker Command Center
 
+### Status: COMPLETE, VERIFIED & TESTED
+
 ### Objective
 Dedicated operating environment for workers.
 
-### Routes
-* `/worker/jobs`: Assigned jobs with priority, deadline, direct apply link.
-* `/worker/applications`: Application tracker with status, verification upload, sync status.
-* `/worker/profile`: CV, education, skills, availability management.
-* `/worker/activity`: Real-time chronological activity log.
+### Architecture & Production Deliverables
+* **Worker Shell & Navigation**: `/worker/layout.tsx` and `WorkerNav.tsx` with organization context switching, role badge, session guard, and seamless mobile drawer.
+* **Assigned Jobs Dispatch (`/worker/jobs`)**: Operating screen supporting status tabs (`all`, `assigned`, `in_progress`, `completed`, `skipped`), priority/deadline alerts, direct apply links with click tracking, skip modals, and complete-and-log workflows.
+* **Application & Verification Tracker (`/worker/applications`)**: Multi-stage CRM tracker with screenshot proof upload to private `verification-screenshots` storage, signed URL preview modal, sync engine status badges, and manual retry triggers.
+* **Worker Profile & Availability (`/worker/profile`)**: Interactive profile editor managing cloud CV links, skills tags, experience years, education history, preferred roles, target locations, and availability toggles (`immediate`, `two_weeks`, `one_month`, `not_available`).
+* **Real-Time Activity Stream (`/worker/activity`)**: Aggregated chronological timeline of assignments received, lifecycle advances, proof submissions/reviews, and Google Sheets synchronization events.
+* **Activity Aggregation API (`GET /api/worker/activity`)**: Authenticated endpoint aggregating events with tenant isolation, category filters, and pagination.
+* **Testing**: 11/11 tests passing in `tests/batch-p-worker-command-center.test.ts`, zero regressions across workforce security, verification, and sync suites. Next.js production build passes with 41/41 routes static/dynamically generated.
 
 ---
 

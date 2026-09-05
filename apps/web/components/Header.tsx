@@ -201,6 +201,25 @@ export const Header: React.FC<HeaderProps> = ({
             }}
           />
 
+          {user && (
+            <a
+              href="/worker/jobs"
+              className="btn btn-ghost"
+              style={{
+                fontSize: '0.8125rem',
+                color: 'var(--brand-text)',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+              title="Worker Command Center"
+            >
+              <Briefcase size={15} />
+              <span>Worker Portal</span>
+            </a>
+          )}
+
           {isAdmin && (
             <a
               href="/admin"
@@ -359,6 +378,17 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '4px 0' }} />
+
+          {user && (
+            <a
+              href="/worker/jobs"
+              className="btn btn-ghost"
+              style={{ justifyContent: 'flex-start', width: '100%', padding: '10px 14px', color: 'var(--brand-text)' }}
+            >
+              <Briefcase size={18} />
+              <span>Worker Portal</span>
+            </a>
+          )}
 
           {isAdmin && (
             <a

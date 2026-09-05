@@ -51,11 +51,29 @@ export async function PATCH(
     if (parseResult.data.companyName !== undefined) updates.company_name = parseResult.data.companyName;
     if (parseResult.data.jobTitle !== undefined) updates.job_title = parseResult.data.jobTitle;
 
+    // Fetch application to verify existence and ownership
+    const { data: existingApp, error: fetchError } = await supabase
+      .from('applications')
+      .select('id, user_id, organization_id, deleted_at')
+      .eq('id', applicationId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (fetchError || !existingApp) {
+      return ApiResponse.error('Application not found or unauthorized to modify.', fetchError, 404);
+    }
+
+    const isOwner = existingApp.user_id === user.id;
+
     if (organizationId) {
-      const orgCheck = await AuthGuard.requireOrgAdmin(organizationId);
-      if ('errorResponse' in orgCheck) {
-        return orgCheck.errorResponse;
+      if (!isOwner) {
+        const orgCheck = await AuthGuard.requireOrgAdmin(organizationId);
+        if ('errorResponse' in orgCheck) {
+          return orgCheck.errorResponse;
+        }
       }
+    } else if (!isOwner) {
+      return ApiResponse.error('Application not found or unauthorized to modify.', null, 404);
     }
 
     let updateQuery = supabase
@@ -64,7 +82,7 @@ export async function PATCH(
       .eq('id', applicationId)
       .is('deleted_at', null);
 
-    if (organizationId) {
+    if (organizationId && !isOwner) {
       updateQuery = updateQuery.eq('organization_id', organizationId);
     } else {
       updateQuery = updateQuery.eq('user_id', user.id);
