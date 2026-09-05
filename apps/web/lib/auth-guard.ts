@@ -39,10 +39,10 @@ export class AuthGuard {
    * Enforces that the request has an active, authenticated Supabase user session.
    * Returns AuthenticatedContext or a 401 NextResponse.
    */
-  public static async requireAuthenticatedUser(): Promise<
+  public static async requireAuthenticatedUser(clientOverride?: any): Promise<
     AuthenticatedContext | { errorResponse: ReturnType<typeof ApiResponse.error> }
   > {
-    const supabase = await createClient();
+    const supabase = clientOverride || (await createClient());
     const {
       data: { user },
       error: authError,
@@ -61,10 +61,10 @@ export class AuthGuard {
    * Enforces that the request is authenticated AND possesses verified 'admin' privileges.
    * Returns AdminContext or a 401/403 NextResponse.
    */
-  public static async requireAdmin(): Promise<
+  public static async requireAdmin(clientOverride?: any): Promise<
     AdminContext | { errorResponse: ReturnType<typeof ApiResponse.error> }
   > {
-    const authResult = await this.requireAuthenticatedUser();
+    const authResult = await this.requireAuthenticatedUser(clientOverride);
     if ('errorResponse' in authResult) {
       return authResult;
     }
@@ -99,7 +99,10 @@ export class AuthGuard {
    * of the specified organization, or possesses global system admin status.
    * Returns OrgMemberContext or a 401/403/404 NextResponse.
    */
-  public static async requireOrgMember(organizationId: string): Promise<
+  public static async requireOrgMember(
+    organizationId: string,
+    clientOverride?: any
+  ): Promise<
     OrgMemberContext | { errorResponse: ReturnType<typeof ApiResponse.error> }
   > {
     if (!organizationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(organizationId)) {
@@ -108,7 +111,7 @@ export class AuthGuard {
       };
     }
 
-    const authResult = await this.requireAuthenticatedUser();
+    const authResult = await this.requireAuthenticatedUser(clientOverride);
     if ('errorResponse' in authResult) {
       return authResult;
     }
@@ -180,10 +183,13 @@ export class AuthGuard {
    * or possesses global system admin status.
    * Returns OrgAdminContext or a 401/403 NextResponse.
    */
-  public static async requireOrgAdmin(organizationId: string): Promise<
+  public static async requireOrgAdmin(
+    organizationId: string,
+    clientOverride?: any
+  ): Promise<
     OrgAdminContext | { errorResponse: ReturnType<typeof ApiResponse.error> }
   > {
-    const memberResult = await this.requireOrgMember(organizationId);
+    const memberResult = await this.requireOrgMember(organizationId, clientOverride);
     if ('errorResponse' in memberResult) {
       return memberResult;
     }
