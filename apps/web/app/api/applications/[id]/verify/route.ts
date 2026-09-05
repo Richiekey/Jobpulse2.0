@@ -271,6 +271,12 @@ export async function POST(
     );
 
     if (rpcError) {
+      // P-06: Clean up orphaned uploaded storage object on verification failure
+      if (supabase.storage && typeof supabase.storage.from === 'function') {
+        const relativeStoragePath = screenshotUrl.replace(/^verification-screenshots\//, '');
+        await supabase.storage.from('verification-screenshots').remove([relativeStoragePath]).catch(() => {});
+      }
+
       const isBoundaryViolation = rpcError.message.includes('Storage boundary violation');
       return ApiResponse.error(
         `Failed to submit application verification: ${rpcError.message}`,

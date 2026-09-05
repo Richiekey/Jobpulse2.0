@@ -124,8 +124,9 @@ export default function WorkerApplicationsPage() {
     if (!uploadModalApp || !uploadFile) return;
     setIsUploading(true);
     setUploadError(null);
+    let uploadedStoragePath: string | null = null;
+    const supabase = createClient();
     try {
-      const supabase = createClient();
       const orgScope = uploadModalApp.organization_id || 'personal';
       const cleanFileName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const storagePath = `${orgScope}/${uploadModalApp.id}/${Date.now()}-${cleanFileName}`;
@@ -141,6 +142,8 @@ export default function WorkerApplicationsPage() {
       if (storageError) {
         throw new Error(`Storage upload failed: ${storageError.message}`);
       }
+
+      uploadedStoragePath = storagePath;
 
       // 2. Submit verification record to API
       const fullScreenshotUrl = `verification-screenshots/${storagePath}`;
@@ -161,6 +164,13 @@ export default function WorkerApplicationsPage() {
       setUploadFile(null);
       fetchApplications();
     } catch (err: any) {
+      // P-06: Clean up orphaned uploaded storage object on failure
+      if (uploadedStoragePath) {
+        await supabase.storage
+          .from('verification-screenshots')
+          .remove([uploadedStoragePath])
+          .catch(() => {});
+      }
       setUploadError(err.message || 'Failed to upload verification.');
     } finally {
       setIsUploading(false);

@@ -154,41 +154,20 @@ export default function WorkerJobsPage() {
       const compName = job?.company?.name || 'Company';
       const jobTitle = job?.displayTitle || job?.canonicalTitle || 'Position';
 
-      // 1. Create Application in CRM
-      const appRes = await fetch('/api/applications', {
+      // Atomic completion & application upsert (P-01)
+      const res = await fetch(`/api/worker/assignments/${applyModalAssignment.id}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          jobId: applyModalAssignment.jobId,
+          notes: applyNotes.trim() || 'Application submitted via Worker Center',
           companyName: compName,
           jobTitle: jobTitle,
-          status: 'applied',
-          notes: applyNotes.trim() || 'Application submitted via Worker Center',
-          organizationId: applyModalAssignment.organizationId || undefined,
         }),
       });
 
-      if (!appRes.ok) {
-        const appJson = await appRes.json();
-        // Ignore duplicate application error if already tracked
-        if (!appJson.error?.includes('already tracked')) {
-          throw new Error(appJson.error || 'Failed to record application.');
-        }
-      }
-
-      // 2. Mark Assignment Completed
-      const asgnRes = await fetch(`/api/worker/assignments/${applyModalAssignment.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'completed',
-          notes: applyNotes.trim() || 'Application completed',
-        }),
-      });
-
-      if (!asgnRes.ok) {
-        const asgnJson = await asgnRes.json();
-        throw new Error(asgnJson.error || 'Failed to mark assignment completed.');
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to complete assignment.');
       }
 
       setApplyModalAssignment(null);

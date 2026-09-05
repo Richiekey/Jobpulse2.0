@@ -105,10 +105,10 @@ export default function WorkerActivityPage() {
           <div>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Activity size={24} style={{ color: 'var(--brand-text)' }} />
-              <span>Real-Time Activity Stream</span>
+              <span>Worker Activity Timeline</span>
             </h1>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-              Chronological event audit log of assignments, applications, verification reviews, and sync operations.
+              Chronological audit log of assignments, applications, verification reviews, and sync operations.
             </p>
           </div>
 

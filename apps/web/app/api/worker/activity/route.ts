@@ -38,9 +38,35 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // -------------------------------------------------------------------------
+    // 1. Primary Path: Database-Backed Event Pagination RPC (P-03 & P-04)
+    // -------------------------------------------------------------------------
+    if (typeof supabase.rpc === 'function') {
+      try {
+        const { data: rpcResult, error: rpcError } = await supabase.rpc(
+          'get_worker_activity_stream',
+          {
+            p_organization_id: organizationId || null,
+            p_category: category,
+            p_limit: limit,
+            p_offset: offset,
+          }
+        );
+
+        if (!rpcError && rpcResult && Array.isArray(rpcResult.items)) {
+          return ApiResponse.success(rpcResult);
+        }
+      } catch {
+        // Fallback to table queries if RPC is unavailable in this context
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Fallback Path: Query Authoritative Event Tables
+    // -------------------------------------------------------------------------
     const activityItems: WorkerActivityItem[] = [];
 
-    // 1. Fetch Job Assignments for Worker
+    // 2.1 Fetch Job Assignments for Worker (Authoritative Dispatch Record)
     if (category === 'all' || category === 'assignment') {
       let assignmentQuery = supabase
         .from('job_assignments')
@@ -75,7 +101,7 @@ export async function GET(request: NextRequest) {
         const compName = job?.companies?.name || 'Company';
         const jobTitle = job?.display_title || job?.canonical_title || 'Position';
 
-        // Assignment received event
+        // Authoritative assignment dispatch record
         activityItems.push({
           id: `asgn-created-${a.id}`,
           category: 'assignment',
@@ -91,33 +117,48 @@ export async function GET(request: NextRequest) {
             deadlineAt: a.deadline_at,
           },
         });
+      }
 
-        // If assignment progressed beyond assigned, record status transition
-        if (a.updated_at && a.updated_at !== a.created_at && a.status !== 'assigned') {
-          let actionLabel = 'Updated';
-          if (a.status === 'in_progress') actionLabel = 'Started Working on';
-          else if (a.status === 'completed') actionLabel = 'Completed';
-          else if (a.status === 'skipped') actionLabel = 'Skipped';
+      // Query immutable assignment_events table if available
+      try {
+        let asgnEventsQuery = supabase
+          .from('assignment_events')
+          .select('*')
+          .eq('worker_id', user.id)
+          .neq('event_type', 'assigned')
+          .order('created_at', { ascending: false })
+          .limit(limit);
 
+        if (organizationId) {
+          asgnEventsQuery = asgnEventsQuery.eq('organization_id', organizationId);
+        }
+
+        const { data: asgnEvents } = await asgnEventsQuery;
+
+        for (const ev of asgnEvents || []) {
           activityItems.push({
-            id: `asgn-updated-${a.id}-${a.status}`,
+            id: `asgn-ev-${ev.id}`,
             category: 'assignment',
-            eventType: `assignment_${a.status}`,
-            title: `${actionLabel}: ${jobTitle}`,
-            description: `${compName} assignment marked as ${a.status.replace('_', ' ')}${a.notes ? ` — ${a.notes}` : ''}`,
-            status: a.status,
-            occurredAt: a.updated_at,
-            organizationId: a.organization_id,
+            eventType: `assignment_${ev.to_status}`,
+            title: `Assignment ${ev.event_type.charAt(0).toUpperCase() + ev.event_type.slice(1)}`,
+            description: `Assignment transitioned to ${ev.to_status}${ev.notes ? ` — ${ev.notes}` : ''}`,
+            status: ev.to_status,
+            occurredAt: ev.created_at,
+            organizationId: ev.organization_id,
             metadata: {
-              assignmentId: a.id,
-              jobId: a.job_id,
+              assignmentId: ev.assignment_id,
+              fromStatus: ev.from_status,
+              toStatus: ev.to_status,
+              ...ev.metadata,
             },
           });
         }
+      } catch {
+        // Table may not be mocked in legacy tests
       }
     }
 
-    // 2. Fetch Applications & Events for Worker
+    // 2.2 Fetch Applications & Authoritative Application Events
     let userApplications: any[] = [];
     if (category === 'all' || category === 'application' || category === 'sync' || category === 'verification') {
       let appQuery = supabase
@@ -136,7 +177,7 @@ export async function GET(request: NextRequest) {
 
     if (category === 'all' || category === 'application') {
       for (const app of userApplications) {
-        // Application created event
+        // Authoritative application creation record
         activityItems.push({
           id: `app-created-${app.id}`,
           category: 'application',
@@ -150,26 +191,9 @@ export async function GET(request: NextRequest) {
             applicationId: app.id,
           },
         });
-
-        // If updated, record progression
-        if (app.updated_at && app.updated_at !== app.created_at) {
-          activityItems.push({
-            id: `app-updated-${app.id}-${app.status}`,
-            category: 'application',
-            eventType: 'application_stage_changed',
-            title: `Stage Updated: ${app.job_title}`,
-            description: `${app.company_name} application is now in ${app.status} stage`,
-            status: app.status,
-            occurredAt: app.updated_at,
-            organizationId: app.organization_id,
-            metadata: {
-              applicationId: app.id,
-            },
-          });
-        }
       }
 
-      // Also query application_events if any
+      // Query immutable application_events audit log
       const appIds = userApplications.map((a) => a.id);
       if (appIds.length > 0) {
         const { data: appEvents } = await supabase
@@ -177,7 +201,7 @@ export async function GET(request: NextRequest) {
           .select('id, application_id, organization_id, event_type, from_status, to_status, metadata, created_at')
           .in('application_id', appIds.slice(0, 100))
           .order('created_at', { ascending: false })
-          .limit(50);
+          .limit(limit);
 
         const appMap = Object.fromEntries(userApplications.map((a) => [a.id, a]));
 
@@ -186,34 +210,27 @@ export async function GET(request: NextRequest) {
           const jobTitle = matchedApp?.job_title || 'Position';
           const compName = matchedApp?.company_name || 'Company';
 
-          // Avoid duplicating identical created/updated timestamps
-          const isDupe = activityItems.some(
-            (item) => item.metadata?.applicationId === ev.application_id && item.occurredAt === ev.created_at
-          );
-
-          if (!isDupe) {
-            activityItems.push({
-              id: `ev-${ev.id}`,
-              category: 'application',
-              eventType: ev.event_type,
-              title: `Lifecycle: ${jobTitle} (${compName})`,
-              description: ev.from_status && ev.to_status
-                ? `Transitioned from ${ev.from_status} to ${ev.to_status}`
-                : `Application event: ${ev.event_type.replace(/_/g, ' ')}`,
-              status: ev.to_status || matchedApp?.status || null,
-              occurredAt: ev.created_at,
-              organizationId: ev.organization_id,
-              metadata: {
-                applicationId: ev.application_id,
-                ...ev.metadata,
-              },
-            });
-          }
+          activityItems.push({
+            id: `ev-${ev.id}`,
+            category: 'application',
+            eventType: ev.event_type,
+            title: `Lifecycle: ${jobTitle} (${compName})`,
+            description: ev.from_status && ev.to_status
+              ? `Transitioned from ${ev.from_status} to ${ev.to_status}`
+              : `Application event: ${ev.event_type.replace(/_/g, ' ')}`,
+            status: ev.to_status || matchedApp?.status || null,
+            occurredAt: ev.created_at,
+            organizationId: ev.organization_id,
+            metadata: {
+              applicationId: ev.application_id,
+              ...ev.metadata,
+            },
+          });
         }
       }
     }
 
-    // 3. Fetch Verifications for Worker
+    // 2.3 Fetch Verifications for Worker (Authoritative Submission & Review Records)
     if (category === 'all' || category === 'verification') {
       let verifQuery = supabase
         .from('application_verifications')
@@ -245,7 +262,7 @@ export async function GET(request: NextRequest) {
         const compName = app?.company_name || 'Company';
         const jobTitle = app?.job_title || 'Position';
 
-        // Verification submitted
+        // Authoritative verification submission
         activityItems.push({
           id: `verif-sub-${v.id}`,
           category: 'verification',
@@ -261,7 +278,7 @@ export async function GET(request: NextRequest) {
           },
         });
 
-        // Verification reviewed
+        // Authoritative verification review
         if (v.reviewed_at && v.status !== 'pending') {
           const isApproved = v.status === 'verified';
           activityItems.push({
@@ -284,7 +301,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Fetch Sync Events for Worker Applications
+    // 2.4 Fetch Sync Events for Worker Applications
     if (category === 'all' || category === 'sync') {
       const appIds = userApplications.map((a) => a.id);
       if (appIds.length > 0) {

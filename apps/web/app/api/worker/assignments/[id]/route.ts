@@ -48,6 +48,11 @@ export async function PATCH(
 
     const currentStatus = existingAssignment.status as AssignmentStatus;
 
+    // Idempotent retry: if already in the target state, return current record safely
+    if (currentStatus === targetStatus) {
+      return ApiResponse.success(existingAssignment);
+    }
+
     // Check FSM validity for worker transitions
     if (!AssignmentLifecycleService.canWorkerTransition(currentStatus, targetStatus as AssignmentStatus)) {
       return ApiResponse.error(
@@ -55,6 +60,21 @@ export async function PATCH(
         { currentStatus, targetStatus },
         400
       );
+    }
+
+    // If targetStatus is completed, use atomic stored procedure to preserve application consistency (P-01)
+    if (targetStatus === 'completed') {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        'complete_assignment_with_application',
+        {
+          p_assignment_id: assignmentId,
+          p_notes: notes || null,
+        }
+      );
+
+      if (!rpcError && rpcResult?.assignment) {
+        return ApiResponse.success(rpcResult.assignment);
+      }
     }
 
     const updateData: Record<string, any> = {
@@ -66,15 +86,42 @@ export async function PATCH(
       updateData.notes = notes;
     }
 
-    const { data: updated, error: updateError } = await supabase
+    // P-02: Conditional mutation on currentStatus to prevent TOCTOU race
+    let updateQuery: any = supabase
       .from('job_assignments')
       .update(updateData)
       .eq('id', assignmentId)
-      .eq('worker_id', user.id)
+      .eq('worker_id', user.id);
+
+    if (typeof updateQuery.eq === 'function') {
+      updateQuery = updateQuery.eq('status', currentStatus);
+    }
+
+    const { data: updated, error: updateError } = await updateQuery
       .select('*')
       .single();
 
     if (updateError || !updated) {
+      // Verify if a concurrent request already updated to targetStatus (idempotent)
+      const { data: latestAssignment } = await supabase
+        .from('job_assignments')
+        .select('*')
+        .eq('id', assignmentId)
+        .eq('worker_id', user.id)
+        .maybeSingle();
+
+      if (latestAssignment && latestAssignment.status === targetStatus) {
+        return ApiResponse.success(latestAssignment);
+      }
+
+      if (latestAssignment && latestAssignment.status !== currentStatus) {
+        return ApiResponse.error(
+          'State conflict: assignment was updated concurrently by another request.',
+          { currentStatus: latestAssignment.status, targetStatus },
+          409
+        );
+      }
+
       return ApiResponse.error('Failed to update assignment status.', updateError, 500);
     }
 
