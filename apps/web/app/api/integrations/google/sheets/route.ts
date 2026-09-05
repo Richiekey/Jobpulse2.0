@@ -227,6 +227,17 @@ export async function POST(request: NextRequest) {
       return ApiResponse.error('Failed to bind spreadsheet to integration', updateError, 500);
     }
 
+    // Backfill existing applications for this integration asynchronously into sync_events
+    try {
+      const adminClient = createAdminClient();
+      await adminClient.rpc('enqueue_existing_applications_for_sync', {
+        p_integration_id: integration.id,
+        p_limit: 500,
+      });
+    } catch {
+      // Non-fatal: backfill runs opportunistically in database
+    }
+
     return ApiResponse.success(sanitizeIntegrationRecord(updated));
   } catch (error: unknown) {
     return ApiResponse.error('Failed to select spreadsheet', error, 500);

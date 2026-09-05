@@ -57,14 +57,35 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Re-enqueue event
+      // Validate current event status: Only failed or dead_letter can be retried
+      if (!['failed', 'dead_letter'].includes(event.status)) {
+        return ApiResponse.error(
+          `Cannot retry sync event with status '${event.status}'. Only failed or dead_letter events can be retried.`,
+          { currentStatus: event.status },
+          400
+        );
+      }
+
+      // Enforce manual replay limit to prevent indefinite bypass of retry policy
+      const currentManualRetries = event.manual_retry_count || 0;
+      if (currentManualRetries >= 5) {
+        return ApiResponse.error(
+          'Manual retry limit reached for this event (maximum 5 manual replays permitted).',
+          { manualRetryCount: currentManualRetries },
+          400
+        );
+      }
+
+      // Re-enqueue event preserving automatic attempts history
       const { error: updateError } = await adminClient
         .from('sync_events')
         .update({
           status: 'pending',
+          claim_token: null,
+          processing_started_at: null,
           next_retry_at: new Date().toISOString(),
-          attempts: 0,
           last_error: null,
+          manual_retry_count: currentManualRetries + 1,
           updated_at: new Date().toISOString(),
         })
         .eq('id', eventId);
@@ -84,13 +105,15 @@ export async function POST(request: NextRequest) {
         .from('sync_events')
         .update({
           status: 'pending',
+          claim_token: null,
+          processing_started_at: null,
           next_retry_at: new Date().toISOString(),
-          attempts: 0,
           last_error: null,
           updated_at: new Date().toISOString(),
         })
         .eq('organization_id', organizationId)
         .in('status', ['failed', 'dead_letter'])
+        .lt('manual_retry_count', 5)
         .select('id');
 
       if (updateError) {
@@ -104,14 +127,16 @@ export async function POST(request: NextRequest) {
         .from('sync_events')
         .update({
           status: 'pending',
+          claim_token: null,
+          processing_started_at: null,
           next_retry_at: new Date().toISOString(),
-          attempts: 0,
           last_error: null,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id)
         .is('organization_id', null)
         .in('status', ['failed', 'dead_letter'])
+        .lt('manual_retry_count', 5)
         .select('id');
 
       if (updateError) {

@@ -6,6 +6,7 @@ import {
   calculateSyncRetryDelaySeconds,
   syncApplicationToGoogleSheet,
   refreshGoogleAccessToken,
+  isGoogleApiRetryableError,
   type SyncEventPayload,
 } from '@jobpulse/domain';
 
@@ -25,6 +26,7 @@ export interface ClaimedSyncEvent {
   attempts: number;
   max_attempts: number;
   payload: SyncEventPayload;
+  claim_token: string;
 }
 
 export class SyncRunner {
@@ -33,9 +35,24 @@ export class SyncRunner {
   private supabase: any;
 
   constructor(options: SyncRunnerOptions = {}) {
-    this.batchSize = options.batchSize || 10;
+    // Bound batch size: minimum 1, maximum 100
+    this.batchSize = Math.max(1, Math.min(options.batchSize || 10, 100));
     this.fetchFn = options.fetchFn || fetch;
     this.supabase = options.supabaseClient || supabase;
+  }
+
+  /**
+   * Recovers any stale sync events stuck in processing beyond the lease duration.
+   */
+  public async recoverStaleLeases(leaseSeconds = 300): Promise<number> {
+    const { data, error } = await this.supabase.rpc('recover_stale_sync_events', {
+      p_lease_seconds: leaseSeconds,
+    });
+    if (error) {
+      logger.error('SyncRunner: Failed to recover stale sync events:', { error: error.message });
+      return 0;
+    }
+    return Number(data) || 0;
   }
 
   /**
@@ -69,11 +86,15 @@ export class SyncRunner {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.error(`SyncRunner: Error processing sync event ${event.id}:`, { error: errorMsg });
 
-        const retryDelay = calculateSyncRetryDelaySeconds(event.attempts);
+        const isRetryable = isGoogleApiRetryableError(err);
+        const retryDelay = isRetryable ? calculateSyncRetryDelaySeconds(event.attempts) : 0;
+
         await this.supabase.rpc('fail_sync_event', {
           p_event_id: event.id,
+          p_claim_token: event.claim_token,
           p_error_message: errorMsg,
           p_retry_delay_seconds: retryDelay,
+          p_is_non_retryable: !isRetryable,
         });
       }
     }
@@ -163,10 +184,11 @@ export class SyncRunner {
       this.fetchFn
     );
 
-    // 7. Complete sync event atomically in database
+    // 7. Complete sync event atomically in database with claim fencing
     const rowIdStr = syncResult.rowIndex ? `row_${syncResult.rowIndex}` : null;
     const { error: completeError } = await this.supabase.rpc('complete_sync_event', {
       p_event_id: event.id,
+      p_claim_token: event.claim_token,
       p_external_row_id: rowIdStr,
     });
 

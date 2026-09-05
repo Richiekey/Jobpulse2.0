@@ -62,6 +62,7 @@ describe('Batch O — Application Sync Engine Web API Suite', () => {
         filters: {} as Record<string, any>,
         inFilters: {} as Record<string, any[]>,
         nullFilters: [] as string[],
+        ltFilters: {} as Record<string, number>,
         limitVal: 50,
       };
 
@@ -133,6 +134,10 @@ describe('Batch O — Application Sync Engine Web API Suite', () => {
               state.inFilters[col] = vals;
               return updateChain;
             }),
+            lt: vi.fn((col: string, val: number) => {
+              state.ltFilters[col] = val;
+              return updateChain;
+            }),
             select: vi.fn(async () => {
               const matched = mockDbSyncEvents.filter((e) => {
                 for (const [k, v] of Object.entries(state.filters)) {
@@ -143,6 +148,9 @@ describe('Batch O — Application Sync Engine Web API Suite', () => {
                 }
                 for (const [k, vals] of Object.entries(state.inFilters)) {
                   if (!(vals as any[]).includes(e[k])) return false;
+                }
+                for (const [k, maxVal] of Object.entries(state.ltFilters)) {
+                  if ((e[k] ?? 0) >= (maxVal as number)) return false;
                 }
                 return true;
               });
@@ -165,6 +173,9 @@ describe('Batch O — Application Sync Engine Web API Suite', () => {
               }
               for (const [k, vals] of Object.entries(state.inFilters)) {
                 if (!(vals as any[]).includes(e[k])) return false;
+              }
+              for (const [k, maxVal] of Object.entries(state.ltFilters)) {
+                if ((e[k] ?? 0) >= (maxVal as number)) return false;
               }
               return true;
             });
@@ -376,7 +387,8 @@ describe('Batch O — Application Sync Engine Web API Suite', () => {
       // Verify event was updated
       const updated = mockDbSyncEvents.find((e) => e.id === eventId);
       expect(updated.status).toBe('pending');
-      expect(updated.attempts).toBe(0);
+      expect(updated.attempts).toBe(3); // Invariant 9: manual retry preserves automatic attempt history
+      expect(updated.manual_retry_count).toBe(1);
       expect(updated.last_error).toBeNull();
     });
 

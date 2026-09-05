@@ -174,8 +174,9 @@
 | `/api/applications/[id]/verify` | POST | Worker (upload), Admin (review) | M |
 | `/api/integrations/google/connect` | GET (initiate OAuth) | Authenticated | N |
 | `/api/integrations/google/callback` | GET (OAuth callback) | System | N |
-| `/api/integrations/google/sheets` | GET (list sheets) | Authenticated | N |
-| `/api/sync/status` | GET | Admin | O |
+| `/api/integrations/google/sheets` | GET (list sheets), POST (bind sheet) | Authenticated (personal) / Org Admin (org) | N |
+| `/api/sync/status` | GET | Worker (own sync status) / Org Member (org sync status) | O |
+| `/api/sync/retry` | POST | Worker (own failed events) / Org Admin (org failed events) | O |
 | `/api/admin/workers` | GET, POST, PATCH | Admin | Q |
 | `/api/admin/assignments` | GET, POST, PATCH | Admin | Q |
 | `/api/admin/verifications` | GET, PATCH | Admin | Q |
@@ -192,7 +193,7 @@
 | `job_assignments` | Worker sees own; admin manages org | `worker_id` or org admin | K |
 | `application_events` | Worker sees own app events | `application.user_id` | L |
 | `application_verifications` | Worker uploads own; admin reviews org | `worker_id` or org admin | M |
-| `sync_events` | Admin-only visibility | org admin check | O |
+| `sync_events` | Worker & Org Isolation | `auth.uid() = user_id OR is_org_admin(org_id, auth.uid())` | O |
 
 ---
 
@@ -331,11 +332,33 @@ Batch R (Operational Intelligence)
 
 ### Batch O — Application Sync Engine
 
-**New table**: `sync_events`
-**New enum**: `sync_event_status_enum`
-**Reuses**: `claim_next_pending_scrape_run()` pattern, `exponentialBackoff()`, `ScraperRunner` daemon pattern
-**Extends**: Worker daemon with sync poll loop
-**Key invariant**: Google Sheets failure never causes application data loss
+**Status**: Implemented & Hardened (Migrations 0037 & 0038)
+**Primary Invariant**: Google Sheets failure never causes application data loss.
+
+#### Architecture & Queue State Machine
+Replication to Google Sheets is performed asynchronously via the durable `public.sync_events` database queue. Applications are committed transactionally to PostgreSQL first; changes enqueue sync events that are processed by the worker daemon.
+
+**Queue State Machine Transitions**:
+- `pending → processing`: Claimed by worker via `claim_next_pending_sync_events` using PostgreSQL `FOR UPDATE SKIP LOCKED`. Issues `claim_token` and records `processing_started_at`.
+- `failed → processing`: Retried after backoff interval elapses.
+- `processing → synced`: Successfully replicated to Google Sheet via `complete_sync_event(p_event_id, p_claim_token, p_external_row_id)`.
+- `processing → failed`: Transient failure (HTTP 429/5xx, timeouts) via `fail_sync_event(..., p_is_non_retryable = false)`.
+- `processing → dead_letter`: Permanent failure (HTTP 400/401/403/404) or `attempts >= max_attempts` via `fail_sync_event(..., p_is_non_retryable = true)`.
+- `dead_letter → pending`: Operator/admin manual replay via `POST /api/sync/retry`.
+
+#### Hardened Concurrency & Remediation Invariants
+1. **Fencing & Stale-Worker Protection**: `complete_sync_event` and `fail_sync_event` require a matching `claim_token UUID` and `status = 'processing'`. Stale worker completions/failures after a lease expiry are rejected by the database.
+2. **`processing → pending` Race Elimination**: When an application is updated while its sync event is in `processing`, the trigger updates `pending_payload` without mutating `status`. Upon completion of the in-flight execution, `complete_sync_event` detects `pending_payload`, records the row ID from the first write, and re-enqueues the event as `pending` with the updated payload. Stale payloads never overwrite newer application states.
+3. **Processing Lease Recovery**: Stale processing events older than 5 minutes (`processing_started_at < NOW() - 300s`) are safely recovered by `recover_stale_sync_events`, returning them to retryable status without losing attempt counts.
+4. **Existing Application Backfill**: When a user or organization binds a spreadsheet in `POST /api/integrations/google/sheets`, `enqueue_existing_applications_for_sync(integration_id, limit)` identifies all pre-existing applications and enqueues them for background synchronization idempotently and boundedly.
+5. **Integration Ownership Immutability**: Each sync event is permanently bound to the `integration_id` snapshot captured at enqueue. Changing or reconnecting integrations does not mutate pending events.
+6. **Error Classification**:
+   - *Retryable*: HTTP 429, 500, 502, 503, 504, `ETIMEDOUT`, `ECONNRESET`, network failures.
+   - *Non-Retryable*: HTTP 400 (malformed), 401 (invalid/revoked token), 403 (insufficient permissions), 404 (spreadsheet not found). Non-retryable errors immediately transition to `dead_letter`.
+7. **Authorization Model**:
+   - `GET /api/sync/status`: Authenticated workers can view their own personal sync counts and recent events; organization members can view their organization's sync events (`?organizationId=...`). Non-members receive 403.
+   - `POST /api/sync/retry`: Workers can retry their own failed/dead_letter events; Organization Admins can batch retry organization events. Replaying `pending`, `processing`, or `synced` events is rejected with 400. Manual replay preserves automatic retry history and enforces a maximum of 5 manual replays.
+8. **Known Scalability Constraint**: Google Sheets Column-A lookup (`values/Sheet!A:A`) provides reliable O(N) row deduplication for individual and SMB volumes (<10,000 rows). For enterprise scales exceeding Google Sheets limits, bulk batch sync or direct database export should be scheduled.
 
 ### Batch P — Worker Command Center
 

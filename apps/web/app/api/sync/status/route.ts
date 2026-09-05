@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
+import { toSyncEventDto } from '@jobpulse/domain';
 
 export async function GET(request: NextRequest) {
   try {
@@ -51,9 +52,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Narrow response to explicit DTO fields only
     return ApiResponse.success({
       counts,
-      recentEvents: allEvents.slice(0, 20),
+      recentEvents: allEvents.slice(0, 20).map(toSyncEventDto),
     });
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred while fetching sync status.', err, 500);
