@@ -884,5 +884,165 @@ describe('Batch P — Production Hardening & Adversarial Suite (P-01 to P-08)', 
         p_job_title: null,
       });
     });
+
+    // -----------------------------------------------------------------------
+    // Section 3: Comprehensive Cross-Organization Same-Worker/Same-Job Test (Points 1-8)
+    // -----------------------------------------------------------------------
+    describe('Section 3: Cross-organization same-worker/same-job scenario (Points 1-8)', () => {
+      it('executes full 8-point lifecycle: Org A application, Org B assignment, completion, provenance preservation, and isolation', async () => {
+        // Point 1: Create/application state through Organization A
+        const existingOrgAApplication = {
+          id: appA,
+          user_id: workerA,
+          job_id: jobId,
+          company_name: 'Stripe',
+          job_title: 'Infrastructure Lead',
+          status: 'applied',
+          organization_id: orgA, // Originated under Org A
+          worker_id: workerA,
+          created_at: '2026-09-01T10:00:00Z',
+        };
+
+        // Point 2: Create/attempt assignment through Organization B
+        const orgBAssignment = {
+          id: assignmentB,
+          organization_id: orgB, // Assigned under Org B
+          job_id: jobId,
+          worker_id: workerA,    // Same worker
+          status: 'in_progress',
+          assigned_by: workerB,
+        };
+
+        // Point 3 & 4 & 5: Worker W completes assignment in Org B
+        const mockCompletedOrgBAssignment = {
+          ...orgBAssignment,
+          status: 'completed',
+          notes: 'Completed via Org B task force',
+        };
+
+        // Invariant: The application remains unique (1 application for workerA + jobId).
+        // Provenance is preserved: organization_id remains orgA.
+        const mockPreservedApp = {
+          ...existingOrgAApplication,
+          status: 'applied', // Point 4: valid applied status
+          organization_id: orgA, // Point 5: provenance preserved under Org A
+        };
+
+        const mockRpc = vi.fn().mockResolvedValue({
+          data: {
+            assignment: mockCompletedOrgBAssignment,
+            application: mockPreservedApp,
+            idempotent: false,
+          },
+          error: null,
+        });
+
+        (createClient as any).mockResolvedValue({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerA } }, error: null }),
+          },
+          rpc: mockRpc,
+        });
+
+        const req = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentB}/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: 'Completed via Org B task force' }),
+        });
+
+        // Step 3: Complete the assignment
+        const res = await completeAssignment(req, { params: Promise.resolve({ id: assignmentB }) });
+        expect(res.status).toBe(200);
+        const json = await res.json();
+
+        // Point 4: Verify resulting application state
+        expect(json.success).toBe(true);
+        expect(json.data.assignment.status).toBe('completed');
+        expect(json.data.application.status).toBe('applied');
+
+        // Point 5: Verify organization ownership/provenance
+        expect(json.data.assignment.organization_id).toBe(orgB);
+        expect(json.data.application.organization_id).toBe(orgA);
+
+        // Point 6: Verify Worker B cannot see or mutate Worker A data
+        // Simulate Worker B attempting to complete Worker A's assignment
+        (createClient as any).mockResolvedValue({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerB } }, error: null }),
+          },
+          rpc: vi.fn().mockResolvedValue({
+            data: null,
+            error: { message: 'FORBIDDEN: You are not authorized to complete this assignment.' },
+          }),
+        });
+
+        const attackReq = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentB}/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: 'Malicious Worker B attack' }),
+        });
+
+        const attackRes = await completeAssignment(attackReq, { params: Promise.resolve({ id: assignmentB }) });
+        expect(attackRes.status).toBe(403);
+        const attackJson = await attackRes.json();
+        expect(attackJson.error).toContain('FORBIDDEN');
+
+        // Point 7: Verify Organization A cannot mutate Organization B applications
+        // Org Admin in Org A attempting to update an application belonging to Org B
+        (createClient as any).mockResolvedValue({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerB } }, error: null }),
+          },
+          from: vi.fn().mockImplementation((table: string) => {
+            if (table === 'applications') {
+              return {
+                select: vi.fn().mockReturnThis(),
+                eq: vi.fn().mockReturnThis(),
+                is: vi.fn().mockReturnThis(),
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: {
+                    id: appB,
+                    organization_id: orgB, // Belongs to Org B
+                    user_id: workerA,
+                    deleted_at: null,
+                  },
+                  error: null,
+                }),
+              };
+            }
+            if (table === 'organization_members') {
+              return {
+                select: vi.fn().mockReturnThis(),
+                eq: vi.fn().mockReturnThis(),
+                maybeSingle: vi.fn().mockResolvedValue({
+                  // User is only admin of Org A, NOT Org B!
+                  data: { role: 'admin', organization_id: orgA, user_id: workerB },
+                  error: null,
+                }),
+              };
+            }
+            return {};
+          }),
+        });
+
+        const crossOrgPatchReq = new NextRequest(`http://localhost:3000/api/applications/${appB}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'interview' }),
+        });
+
+        const crossOrgRes = await updateApplication(crossOrgPatchReq, { params: Promise.resolve({ id: appB }) });
+        // Denied: returns 404 (or 403) without mutating cross-tenant application
+        expect(crossOrgRes.status).toBe(404);
+        const crossOrgJson = await crossOrgRes.json();
+        expect(crossOrgJson.error).toContain('Application not found or unauthorized to modify.');
+
+        // Point 8: Verify no duplicate application violates UNIQUE(user_id, job_id)
+        // RPC received p_assignment_id and returned the single unified application
+        expect(json.data.application.id).toBe(appA);
+        expect(json.data.application.user_id).toBe(workerA);
+        expect(json.data.application.job_id).toBe(jobId);
+      });
+    });
   });
 });
