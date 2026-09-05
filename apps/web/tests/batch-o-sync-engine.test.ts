@@ -248,7 +248,31 @@ describe('Batch O — Application Sync Engine Web API Suite', () => {
     // Admin client (service_role)
     (createAdminClient as any).mockReturnValue({
       from: (table: string) => createQueryChain(table, true),
-      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+      rpc: vi.fn(async (fnName: string, args: any) => {
+        if (fnName === 'retry_sync_events_bulk') {
+          const { p_user_id, p_organization_id, p_max_manual_retries = 5 } = args || {};
+          const eligible = mockDbSyncEvents.filter((e) => {
+            if (p_organization_id) {
+              if (e.organization_id !== p_organization_id) return false;
+            } else {
+              if (e.user_id !== p_user_id || e.organization_id !== null) return false;
+            }
+            if (!['failed', 'dead_letter'].includes(e.status)) return false;
+            if ((e.manual_retry_count ?? 0) >= p_max_manual_retries) return false;
+            return true;
+          });
+          for (const ev of eligible) {
+            ev.status = 'pending';
+            ev.claim_token = null;
+            ev.processing_started_at = null;
+            ev.next_retry_at = new Date().toISOString();
+            ev.last_error = null;
+            ev.manual_retry_count = (ev.manual_retry_count ?? 0) + 1;
+          }
+          return { data: eligible.length, error: null };
+        }
+        return { data: null, error: null };
+      }),
     });
   };
 

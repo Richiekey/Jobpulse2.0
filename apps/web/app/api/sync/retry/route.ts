@@ -76,8 +76,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Re-enqueue event preserving automatic attempts history
-      const { error: updateError } = await adminClient
+      // Re-enqueue event preserving automatic attempts history atomically guarding current status (O-16)
+      const { data: updatedRows, error: updateError } = await adminClient
         .from('sync_events')
         .update({
           status: 'pending',
@@ -88,10 +88,20 @@ export async function POST(request: NextRequest) {
           manual_retry_count: currentManualRetries + 1,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', eventId);
+        .eq('id', eventId)
+        .in('status', ['failed', 'dead_letter'])
+        .select('id');
 
       if (updateError) {
         return ApiResponse.error('Failed to retry sync event.', updateError, 500);
+      }
+
+      if (!updatedRows || updatedRows.length === 0) {
+        return ApiResponse.error(
+          'Sync event state changed concurrently (event is no longer in a retryable state).',
+          { eventId },
+          409
+        );
       }
 
       return ApiResponse.success({ retriedCount: 1 });
@@ -101,49 +111,36 @@ export async function POST(request: NextRequest) {
         return orgCheck.errorResponse;
       }
 
-      const { data: updated, error: updateError } = await adminClient
-        .from('sync_events')
-        .update({
-          status: 'pending',
-          claim_token: null,
-          processing_started_at: null,
-          next_retry_at: new Date().toISOString(),
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('organization_id', organizationId)
-        .in('status', ['failed', 'dead_letter'])
-        .lt('manual_retry_count', 5)
-        .select('id');
+      const { data: retriedCount, error: updateError } = await adminClient.rpc(
+        'retry_sync_events_bulk',
+        {
+          p_user_id: user.id,
+          p_organization_id: organizationId,
+          p_max_manual_retries: 5,
+        }
+      );
 
       if (updateError) {
         return ApiResponse.error('Failed to retry organization sync events.', updateError, 500);
       }
 
-      return ApiResponse.success({ retriedCount: updated?.length || 0 });
+      return ApiResponse.success({ retriedCount: retriedCount ?? 0 });
     } else {
-      // Personal retry: retry all caller's own failed/dead_letter events
-      const { data: updated, error: updateError } = await adminClient
-        .from('sync_events')
-        .update({
-          status: 'pending',
-          claim_token: null,
-          processing_started_at: null,
-          next_retry_at: new Date().toISOString(),
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id)
-        .is('organization_id', null)
-        .in('status', ['failed', 'dead_letter'])
-        .lt('manual_retry_count', 5)
-        .select('id');
+      // Personal retry: retry all caller's own failed/dead_letter events atomically incrementing counter (O-17)
+      const { data: retriedCount, error: updateError } = await adminClient.rpc(
+        'retry_sync_events_bulk',
+        {
+          p_user_id: user.id,
+          p_organization_id: null,
+          p_max_manual_retries: 5,
+        }
+      );
 
       if (updateError) {
         return ApiResponse.error('Failed to retry sync events.', updateError, 500);
       }
 
-      return ApiResponse.success({ retriedCount: updated?.length || 0 });
+      return ApiResponse.success({ retriedCount: retriedCount ?? 0 });
     }
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred during sync retry.', err, 500);

@@ -59,6 +59,69 @@ export function isGoogleApiRetryableError(error: unknown): boolean {
     return [429, 500, 502, 503, 504].includes(error);
   }
 
+  // 1. Structured status & error object inspection (O-21 priority)
+  if (error && typeof error === 'object') {
+    const errObj = error as Record<string, any>;
+    const statusCode =
+      typeof errObj.status === 'number'
+        ? errObj.status
+        : typeof errObj.statusCode === 'number'
+        ? errObj.statusCode
+        : typeof errObj.response?.status === 'number'
+        ? errObj.response.status
+        : typeof errObj.code === 'number'
+        ? errObj.code
+        : null;
+
+    if (statusCode !== null) {
+      if ([429, 500, 502, 503, 504].includes(statusCode)) {
+        return true;
+      }
+      if ([400, 401, 403, 404].includes(statusCode)) {
+        return false;
+      }
+    }
+
+    // Google API error reason inspection (e.g. rateLimitExceeded, authError, notFound)
+    const googleReason =
+      errObj.errors?.[0]?.reason ||
+      errObj.error?.errors?.[0]?.reason ||
+      errObj.error?.status;
+    if (typeof googleReason === 'string') {
+      if (
+        ['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded', 'RESOURCE_EXHAUSTED'].includes(
+          googleReason
+        )
+      ) {
+        return true;
+      }
+      if (
+        [
+          'authError',
+          'PERMISSION_DENIED',
+          'UNAUTHENTICATED',
+          'NOT_FOUND',
+          'INVALID_ARGUMENT',
+        ].includes(googleReason)
+      ) {
+        return false;
+      }
+    }
+
+    // Node.js network primitives & system codes
+    const sysCode = errObj.code || errObj.cause?.code;
+    if (typeof sysCode === 'string') {
+      if (
+        ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN'].includes(
+          sysCode
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Fallback message regex matching
   const msg = error instanceof Error ? error.message : String(error);
 
   // Explicit non-retryable error patterns

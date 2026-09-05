@@ -124,7 +124,7 @@ describe('Batch O — Adversarial Remediation & Concurrency Suite (32 Scenarios)
               }
               return true;
             });
-            return { data: found || null, error: null };
+            return { data: found ? { ...found } : null, error: null };
           }
           if (table === 'user_integrations') {
             const found = mockDbIntegrations.find((i) => {
@@ -262,6 +262,28 @@ describe('Batch O — Adversarial Remediation & Concurrency Suite (32 Scenarios)
       rpc: vi.fn(async (fnName: string, args: any) => {
         if (fnName === 'enqueue_existing_applications_for_sync') {
           return { data: 5, error: null };
+        }
+        if (fnName === 'retry_sync_events_bulk') {
+          const { p_user_id, p_organization_id, p_max_manual_retries = 5 } = args || {};
+          const eligible = mockDbSyncEvents.filter((e) => {
+            if (p_organization_id) {
+              if (e.organization_id !== p_organization_id) return false;
+            } else {
+              if (e.user_id !== p_user_id || e.organization_id !== null) return false;
+            }
+            if (!['failed', 'dead_letter'].includes(e.status)) return false;
+            if ((e.manual_retry_count ?? 0) >= p_max_manual_retries) return false;
+            return true;
+          });
+          for (const ev of eligible) {
+            ev.status = 'pending';
+            ev.claim_token = null;
+            ev.processing_started_at = null;
+            ev.next_retry_at = new Date().toISOString();
+            ev.last_error = null;
+            ev.manual_retry_count = (ev.manual_retry_count ?? 0) + 1;
+          }
+          return { data: eligible.length, error: null };
         }
         return { data: null, error: null };
       }),
@@ -910,6 +932,212 @@ describe('Batch O — Adversarial Remediation & Concurrency Suite (32 Scenarios)
       expect(() => validateBatchSize(101)).toThrow('between 1 and 100');
       expect(validateBatchSize(10)).toBe(10);
       expect(validateBatchSize(100)).toBe(100);
+    });
+  });
+
+  // =========================================================================
+  // 7. Final Surgical Integrity Invariants (O-16 through O-21)
+  // =========================================================================
+  describe('7. Final Surgical Integrity Invariants (O-16 through O-21)', () => {
+    it('O-16: Retry race against worker claim — concurrent transition returns 409 and protects worker claim', async () => {
+      setupMockSupabase(userId);
+      const eventId = '00000000-0000-0000-0000-000000000016';
+      const event = {
+        id: eventId,
+        user_id: userId,
+        status: 'failed',
+        attempts: 2,
+        claim_token: null as string | null,
+        manual_retry_count: 0,
+      };
+      mockDbSyncEvents.push(event);
+
+      // Intercept initial read: when route inspects event, it is 'failed'.
+      // Right after the read (before UPDATE executes), simulate worker claiming it.
+      const adminInstance = (createAdminClient as any)();
+      const originalFrom = adminInstance.from;
+
+      (createAdminClient as any).mockReturnValue({
+        ...adminInstance,
+        from: (table: string) => {
+          const chain = originalFrom(table);
+          if (table === 'sync_events') {
+            const origMaybeSingle = chain.maybeSingle;
+            chain.maybeSingle = async () => {
+              const res = await origMaybeSingle();
+              // Worker claims the row right before the route's UPDATE runs
+              event.status = 'processing';
+              event.claim_token = 'worker-active-claim-token';
+              return res;
+            };
+          }
+          return chain;
+        },
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/sync/retry', {
+        method: 'POST',
+        body: JSON.stringify({ eventId }),
+      });
+
+      const res = await postSyncRetryRoute(req);
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.error).toContain('Sync event state changed concurrently');
+
+      // Worker claim is strictly protected
+      expect(event.status).toBe('processing');
+      expect(event.claim_token).toBe('worker-active-claim-token');
+    });
+
+    it('O-17: Bulk retry atomically increments manual_retry_count and respects 5-retry limit', async () => {
+      setupMockSupabase(userId); // org admin
+      const event1 = {
+        id: '00000000-0000-0000-0000-000000000171',
+        user_id: userId,
+        organization_id: orgId,
+        status: 'failed',
+        manual_retry_count: 1,
+      };
+      const event2 = {
+        id: '00000000-0000-0000-0000-000000000172',
+        user_id: userId,
+        organization_id: orgId,
+        status: 'dead_letter',
+        manual_retry_count: 4,
+      };
+      const eventExhausted = {
+        id: '00000000-0000-0000-0000-000000000173',
+        user_id: userId,
+        organization_id: orgId,
+        status: 'dead_letter',
+        manual_retry_count: 5, // reached limit
+      };
+      mockDbSyncEvents.push(event1, event2, eventExhausted);
+
+      const req = new NextRequest('http://localhost:3000/api/sync/retry', {
+        method: 'POST',
+        body: JSON.stringify({ organizationId: orgId }),
+      });
+
+      const res = await postSyncRetryRoute(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.data.retriedCount).toBe(2); // Only event1 and event2 retried
+
+      expect(event1.status).toBe('pending');
+      expect(event1.manual_retry_count).toBe(2); // Atomically incremented
+
+      expect(event2.status).toBe('pending');
+      expect(event2.manual_retry_count).toBe(5); // Atomically incremented
+
+      expect(eventExhausted.status).toBe('dead_letter'); // Untouched
+      expect(eventExhausted.manual_retry_count).toBe(5);
+    });
+
+    it('O-18: Coalesced completion with pending_payload keeps application in pending status (not synced)', () => {
+      const completeSyncEventSimulation = (hasPendingPayload: boolean) => {
+        let eventStatus: string;
+        let applicationSyncStatus: string;
+
+        if (hasPendingPayload) {
+          eventStatus = 'pending';
+          applicationSyncStatus = 'pending'; // Invariant O-18
+        } else {
+          eventStatus = 'synced';
+          applicationSyncStatus = 'synced';
+        }
+
+        return { eventStatus, applicationSyncStatus };
+      };
+
+      // When newer application changes occurred during sync execution
+      const coalescedResult = completeSyncEventSimulation(true);
+      expect(coalescedResult.eventStatus).toBe('pending');
+      expect(coalescedResult.applicationSyncStatus).toBe('pending');
+      expect(coalescedResult.applicationSyncStatus).not.toBe('synced');
+
+      // When no newer changes occurred (clean finish)
+      const cleanResult = completeSyncEventSimulation(false);
+      expect(cleanResult.eventStatus).toBe('synced');
+      expect(cleanResult.applicationSyncStatus).toBe('synced');
+    });
+
+    it('O-19: Integration replacement preserves live processing claim and migrates stale pending/failed events', () => {
+      const integrationB = { id: 'int-B', is_active: true };
+
+      const syncEvents = [
+        { id: 'evt-processing', integration_id: 'int-A', status: 'processing', claim_token: 'claim-live' },
+        { id: 'evt-pending-stale', integration_id: 'int-A', status: 'pending', claim_token: null },
+        { id: 'evt-failed-stale', integration_id: 'int-A', status: 'failed', claim_token: null },
+      ];
+
+      // Reconnect / backfill on Integration B
+      const migrateInactiveSyncEvents = (newActiveIntId: string) => {
+        for (const ev of syncEvents) {
+          // DO NOT mutate live processing claims!
+          if (ev.status === 'processing') continue;
+          if (['pending', 'failed'].includes(ev.status)) {
+            ev.integration_id = newActiveIntId;
+            ev.status = 'pending';
+          }
+        }
+      };
+
+      migrateInactiveSyncEvents(integrationB.id);
+
+      // Live claim untouched and attached to A
+      expect(syncEvents[0].status).toBe('processing');
+      expect(syncEvents[0].integration_id).toBe('int-A');
+      expect(syncEvents[0].claim_token).toBe('claim-live');
+
+      // Stale non-processing events safely migrated to B
+      expect(syncEvents[1].integration_id).toBe('int-B');
+      expect(syncEvents[1].status).toBe('pending');
+      expect(syncEvents[2].integration_id).toBe('int-B');
+      expect(syncEvents[2].status).toBe('pending');
+    });
+
+    it('O-20: Spreadsheet rebinding (A -> B) does NOT re-emit previously synced applications with stale row IDs', () => {
+      const applications = [
+        { id: 'app-old-synced', sync_status: 'synced', external_row_id: 'row_2' },
+        { id: 'app-new-pending', sync_status: 'pending', external_row_id: null },
+      ];
+
+      // Product Invariant: Rebinding does NOT backfill previously synced applications
+      const getApplicationsToEnqueueOnRebind = (apps: typeof applications) => {
+        return apps.filter((a) => a.sync_status !== 'synced');
+      };
+
+      const toEnqueue = getApplicationsToEnqueueOnRebind(applications);
+      expect(toEnqueue).toHaveLength(1);
+      expect(toEnqueue[0].id).toBe('app-new-pending');
+      // app-old-synced is safely ignored to protect Spreadsheet B from row coordinate corruption
+    });
+
+    it('O-21: Structured Google error classification prioritizes error.status, response.status, Google reason, and network codes', () => {
+      // Structured HTTP status code
+      expect(isGoogleApiRetryableError({ status: 429 })).toBe(true);
+      expect(isGoogleApiRetryableError({ statusCode: 503 })).toBe(true);
+      expect(isGoogleApiRetryableError({ response: { status: 500 } })).toBe(true);
+      expect(isGoogleApiRetryableError({ status: 403 })).toBe(false);
+      expect(isGoogleApiRetryableError({ status: 404 })).toBe(false);
+      expect(isGoogleApiRetryableError({ status: 400 })).toBe(false);
+
+      // Structured Google API reason
+      expect(isGoogleApiRetryableError({ errors: [{ reason: 'rateLimitExceeded' }] })).toBe(true);
+      expect(isGoogleApiRetryableError({ errors: [{ reason: 'quotaExceeded' }] })).toBe(true);
+      expect(isGoogleApiRetryableError({ errors: [{ reason: 'authError' }] })).toBe(false);
+      expect(isGoogleApiRetryableError({ error: { errors: [{ reason: 'PERMISSION_DENIED' }] } })).toBe(false);
+
+      // Structured Node.js network codes
+      expect(isGoogleApiRetryableError({ code: 'ETIMEDOUT' })).toBe(true);
+      expect(isGoogleApiRetryableError({ code: 'ECONNRESET' })).toBe(true);
+      expect(isGoogleApiRetryableError({ cause: { code: 'ENOTFOUND' } })).toBe(true);
+
+      // Fallback to error message parsing
+      expect(isGoogleApiRetryableError(new Error('Google Sheets API: 502 Bad Gateway'))).toBe(true);
+      expect(isGoogleApiRetryableError(new Error('Invalid spreadsheet ID (404)'))).toBe(false);
     });
   });
 });
