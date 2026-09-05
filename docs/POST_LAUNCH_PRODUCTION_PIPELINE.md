@@ -356,11 +356,13 @@ Comprehensive multi-tenant workforce and operational command center uniting 5 op
 * **Application & Verification Review Queue (`VerificationReviewQueue` & `GET /api/admin/verifications`)**: Multi-tenant review queue with authorized signed storage URL screenshot viewer (`createSignedUrl` with 1h expiration, zero raw storage path leakage), and one-click approve/reject actions with reviewer feedback notes.
 * **Sync Engine Monitoring & Retry Controls (`SyncEngineObservatory`)**: Observability into external syncs (`sync_events`), status counts (pending, processing, synced, failed, dead-letter), failure diagnostics modal with raw payload inspector, single-event replay, and bulk retry controls.
 * **Source Health & Platform Observatory (`Source & Platform Observatory`)**: Deep operational observatory consolidating scrape telemetry, crawl run inspection, ATS source onboarding wizard, and global scrape triggers.
-* **Testing & Build Certification**:
+* **Testing & Build Certification (Certified - Commit `ea7369a`)**:
   - `tests/admin-verifications-api.test.ts`: 5/5 unit tests passed.
-  - `tests/batch-q-command-center.test.ts`: 7/7 integration tests passed.
-  - Workspace test suite: 36 test files, 392 tests passed (100% pass rate).
-  - Next.js production build: 50/50 routes compiled and statically/dynamically generated with zero errors.
+  - `tests/batch-q-command-center.test.ts`: 13/13 integration tests passed.
+  - `tests/batch-q-authenticated-rls-boundary.test.ts`: 5/5 genuine PostgREST integration tests passed against dedicated non-production instance (`wvyrivmvpcrhwinzmcyy`).
+  - Workspace test suite: 37 test files, 403 tests passed (100% pass rate).
+  - TypeScript typecheck: 0 errors across 9 packages.
+  - Next.js production build: 42/42 routes compiled and statically/dynamically generated with zero errors.
 
 ---
 
