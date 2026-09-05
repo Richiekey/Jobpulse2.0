@@ -1,451 +1,458 @@
 # JobPulse 2.0 — Post-Launch Production Pipeline
 
-## Batches K–R: Workforce Operations, Application Tracking & Automation
+## Batches K–Y: Workforce Operations, Application Tracking, Automation, Intelligence, UX/UI System & Production Maturity
 
 ---
 
-## Architecture Assessment
+# 0. Pipeline Objective
 
-> This document captures the finalized K–R roadmap, grounded in a comprehensive audit
-> of the existing A–J architecture. No K–R implementation is included — this is the
-> locked production pipeline for systematic post-launch execution.
+Batches A–J established the production job ingestion, ATS resolution, salary extraction, taxonomy classification, and search discovery foundation (561/561 tests passing, 24 database migrations deployed).
 
----
+Batches K–R subsequently extended JobPulse 2.0 from a job aggregation platform into a **workforce / job-search operating system**.
 
-## 1. Current Architecture Inventory
+Now, the production roadmap has expanded into the **Maturity Layer (Batches S–Y)**, establishing:
 
-### 1.1 Database Tables (20 tables)
+* **S — AI Layer & Provider Architecture**
+* **T — Implementation Sequence & Gates**
+* **U — Product UX/UI System & Experience Integrity**
+* **V — Production Reliability & Observability**
+* **W — Security Operations & Disaster Recovery**
+* **X — Performance, Capacity & Cost Engineering**
+* **Y — Production Acceptance & Launch Certification**
 
-| Table | Purpose | K–R Relevance |
-|---|---|---|
-| `jobs` | Job listings with lifecycle states | Core — job assignment, application target |
-| `companies` | Company profiles | Core — employer context |
-| `company_sources` | Company ↔ source mapping | Unaffected |
-| `sources` | ATS source definitions | Unaffected |
-| `job_sources` | Job ↔ source mapping | Unaffected |
-| `applications` | **Application tracking** | **Directly reusable for Batch L** |
-| `profiles` | User profiles (id, email, full_name, avatar_url, role) | **Extend for Batch K worker profiles** |
-| `user_integrations` | Integration configs (provider, config JSONB) | **Directly reusable for Batch N** |
-| `user_preferences` | User filter preferences | Extend for worker preferences |
-| `saved_jobs` | Saved/bookmarked jobs | Unaffected |
-| `hidden_jobs` | Hidden/dismissed jobs | Unaffected |
-| `outbound_clicks` | Apply click tracking | **Reusable for Batch L Apply action** |
-| `job_alerts` | Alert definitions | Unaffected |
-| `job_alert_deliveries` | Alert delivery records | Unaffected |
-| `job_alert_delivered_jobs` | Alert ↔ job delivery tracking | Unaffected |
-| `scrape_runs` | Scraping execution records | Unaffected |
-| `scrape_run_sources` | Per-source scrape results | Unaffected |
-| `scrape_locks` | Distributed scrape locking | Unaffected |
-| `raw_job_payloads` | Raw ingested payloads | Unaffected |
-| `ats_platforms` | ATS platform definitions | Unaffected |
+The complete post-launch architecture combines:
 
-### 1.2 Existing Enums
+* workforce management & multi-tenant organization isolation (Batch K — Deployed)
+* application tracking & CRM lifecycle (Batch L — Deployed)
+* application screenshot verification & private storage (Batch M — Deployed)
+* Google Sheets OAuth integration & durable synchronization (Batches N, O — Deployed & Hardened)
+* worker command center (`/worker/*`) (Batch P)
+* employer/admin command center (`/admin/*`) (Batch Q)
+* operational intelligence & system metrics (Batch R)
+* strictly-grounded AI provider layer with cost & token accounting (Batch S)
+* disciplined implementation gates & sequence controls (Batch T)
+* coherent, operationally truthful UX/UI design system (Batch U)
+* production-grade observability & proactive alerting (Batch V)
+* operational security, privilege fencing & disaster recovery (Batch W)
+* database/crawler performance profiling & capacity engineering (Batch X)
+* formal multi-dimensional production acceptance certification (Batch Y)
 
-| Enum | Values | K–R Relevance |
-|---|---|---|
-| `application_status_enum` | saved, applied, screening, interview, offer, rejected, withdrawn, archived | **Directly matches Batch L lifecycle** |
-| `sync_status_enum` | pending, synced, failed | **Directly matches Batch O sync states** |
-| `job_status_enum` | active, suspect, stale, expired, removed | Unaffected |
+### The Guiding Architecture
 
-### 1.3 Existing RPCs/Functions (application-relevant)
-
-| Function | Purpose | K–R Relevance |
-|---|---|---|
-| `is_admin()` | Checks admin role via profiles | **Extend for K4 org-level roles** |
-| `handle_new_user()` | Auto-creates profile on auth signup | **Extend for K2 worker onboarding** |
-| `ingest_job_transaction()` | Atomic job upsert | Unaffected |
-| `claim_next_pending_scrape_run()` | Queue-based work claiming | **Pattern reusable for O sync queue** |
-| `try_acquire_scrape_lock()` | Distributed locking | **Pattern reusable for O idempotency** |
-| `verify_worker_access()` | Worker token authorization | Unaffected |
-| `get_admin_system_metrics()` | System metrics | **Extend for R operational metrics** |
-| `onboard_company_and_source()` | Atomic onboarding | Unaffected |
-| `reconcile_company_source_job_lifecycle()` | Job lifecycle state machine | Unaffected |
-| `claim_undelivered_alert_jobs()` | Alert claim pattern | **Pattern reusable for O sync claims** |
-| `mark_alert_jobs_delivered()` | Delivery confirmation | **Pattern reusable for O sync confirmation** |
-| `prevent_role_escalation()` | Trigger preventing privilege escalation | **Essential for K4 permissions** |
-
-### 1.4 Existing API Routes
-
-| Route | Methods | Auth | K–R Relevance |
-|---|---|---|---|
-| `/api/jobs/feed` | GET | Public (anon) | Unaffected |
-| `/api/jobs/[id]` | GET | Public (anon) | Unaffected |
-| `/api/jobs/[id]/apply` | POST | Authenticated | **Batch L Apply action** |
-| `/api/applications` | GET, POST | Authenticated | **Directly reusable for Batch L** |
-| `/api/applications/[id]` | GET, PATCH, DELETE | Authenticated | **Directly reusable for Batch L** |
-| `/api/saved` | GET, POST, DELETE | Authenticated | Unaffected |
-| `/api/companies` | GET | Public | Unaffected |
-| `/api/alerts` | GET, POST | Authenticated | Unaffected |
-| `/api/alerts/[id]` | GET, PATCH, DELETE | Authenticated | Unaffected |
-| `/api/alerts/deliveries` | GET | Authenticated | Unaffected |
-| `/api/salaries/benchmarks` | GET | Public | Unaffected |
-| `/api/admin/metrics` | GET | Admin | **Extend for Q/R metrics** |
-| `/api/admin/sources` | GET, POST | Admin | Unaffected |
-| `/api/admin/sources/detect` | POST | Admin | Unaffected |
-| `/api/admin/sources/onboard` | POST | Admin | Unaffected |
-| `/api/admin/sources/validate` | POST | Admin | Unaffected |
-| `/api/admin/scrape/trigger` | POST | Admin | Unaffected |
-| `/api/health` | GET | Public | Unaffected |
-| `/api/ready` | GET | Public | Unaffected |
-
-### 1.5 Authentication Architecture
-
-| Component | Current State | K–R Impact |
-|---|---|---|
-| Supabase Auth | Active (email/password, OAuth-ready) | Foundation for K2 worker auth |
-| `handle_new_user()` trigger | Creates profile row on signup | Extend for org/worker association |
-| `AuthGuard.requireAuthenticatedUser()` | Validates Supabase session | Reusable as-is |
-| `AuthGuard.requireAdmin()` | Checks `profiles.role = 'admin'` | **Must extend for K4 org-level roles** |
-| `prevent_role_escalation()` | Database trigger on profiles | **Must extend for new roles** |
-| `profiles` table | id, email, full_name, avatar_url, role | **Must extend for K3 worker profiles** |
-
-### 1.6 Storage Infrastructure
-
-| Component | Current State | K–R Impact |
-|---|---|---|
-| Supabase Storage | **No buckets exist** | **Must create for M screenshots** |
-
-### 1.7 Worker Infrastructure
-
-| Component | Current State | K–R Impact |
-|---|---|---|
-| `ScraperRunner` | Polling daemon with queue-based execution | **Pattern reusable for O sync worker** |
-| `GracefulShutdownManager` | Signal handling + task tracking | Reusable for sync worker |
-| `claim_next_pending_scrape_run()` | PostgreSQL advisory-lock queue | **Pattern for O sync queue** |
-| `pipeline.ts` | Multi-stage ingestion pipeline | Pattern for sync pipeline |
-| Exponential backoff (`@jobpulse/shared`) | Bounded retry with jitter | **Directly reusable for O retry** |
-
-### 1.8 Existing Constraints (Application Deduplication)
-
-| Constraint | Definition | K–R Impact |
-|---|---|---|
-| `uq_user_job_application` | UNIQUE(user_id, job_id) | **Directly implements L3 idempotency** |
-
----
-
-## 2. Gap Analysis: What Must Be Introduced
-
-### 2.1 New Tables Required
-
-| Batch | Table | Purpose | Notes |
-|---|---|---|---|
-| K | `organizations` | Org boundary | New entity |
-| K | `organization_members` | User ↔ org membership with role | New entity |
-| K | `worker_profiles` | Extended profile data (resume, education, etc.) | Separated from `profiles` |
-| K | `job_assignments` | Admin assigns jobs to workers | New entity |
-| L | `application_events` | Application lifecycle event log | New entity (audit trail) |
-| M | `application_verifications` | Screenshot evidence records | New entity |
-| N | *(none — extend `user_integrations`)* | Google OAuth tokens | Extend existing `config` JSONB |
-| O | `sync_events` | Durable sync queue | New entity (mirrors `scrape_runs` pattern) |
-
-### 2.2 Table Extensions Required
-
-| Table | New Columns | Batch |
-|---|---|---|
-| `profiles` | `organization_id` (FK) | K |
-| `applications` | `worker_id`, `assigned_by`, `verification_status` | K/L/M |
-| `user_integrations` | `organization_id`, `encrypted_refresh_token` | N |
-
-### 2.3 New Enums Required
-
-| Enum | Values | Batch |
-|---|---|---|
-| `org_role_enum` | owner, admin, worker | K |
-| `assignment_status_enum` | assigned, in_progress, completed, skipped | K |
-| `verification_status_enum` | pending, verified, rejected | M |
-| `sync_event_status_enum` | pending, processing, synced, failed, dead_letter | O |
-
-### 2.4 New Storage Buckets Required
-
-| Bucket | Purpose | Access Policy | Batch |
-|---|---|---|---|
-| `verification-screenshots` | Application evidence images | Worker can upload own; admin can read org | M |
-| `resumes` | Worker resume/CV storage | Worker can upload own; admin can read org | K (or P) |
-
-### 2.5 New API Routes Required
-
-| Route | Methods | Auth | Batch |
-|---|---|---|---|
-| `/api/organizations` | GET, POST | Admin/Owner | K |
-| `/api/organizations/members` | GET, POST, PATCH, DELETE | Admin/Owner | K |
-| `/api/workers/me` | GET, PATCH | Worker | K |
-| `/api/workers/me/profile` | GET, PUT | Worker | K |
-| `/api/assignments` | GET, POST, PATCH | Admin (manage), Worker (view own) | K |
-| `/api/applications/[id]/verify` | POST | Worker (upload), Admin (review) | M |
-| `/api/integrations/google/connect` | GET (initiate OAuth) | Authenticated | N |
-| `/api/integrations/google/callback` | GET (OAuth callback) | System | N |
-| `/api/integrations/google/sheets` | GET (list sheets), POST (bind sheet) | Authenticated (personal) / Org Admin (org) | N |
-| `/api/sync/status` | GET | Worker (own sync status) / Org Member (org sync status) | O |
-| `/api/sync/retry` | POST | Worker (own failed events) / Org Admin (org failed events) | O |
-| `/api/admin/workers` | GET, POST, PATCH | Admin | Q |
-| `/api/admin/assignments` | GET, POST, PATCH | Admin | Q |
-| `/api/admin/verifications` | GET, PATCH | Admin | Q |
-| `/api/admin/sync` | GET | Admin | Q |
-| `/api/admin/analytics` | GET | Admin | R |
-
-### 2.6 New RLS Policies Required
-
-| Table | Policy | Logic | Batch |
-|---|---|---|---|
-| `organizations` | Org members can view own org | `user_id IN org_members` | K |
-| `organization_members` | Members see own org members | `organization_id` match | K |
-| `worker_profiles` | Worker sees own; admin sees org | `user_id` or org admin | K |
-| `job_assignments` | Worker sees own; admin manages org | `worker_id` or org admin | K |
-| `application_events` | Worker sees own app events | `application.user_id` | L |
-| `application_verifications` | Worker uploads own; admin reviews org | `worker_id` or org admin | M |
-| `sync_events` | Worker & Org Isolation | `auth.uid() = user_id OR is_org_admin(org_id, auth.uid())` | O |
-
----
-
-## 3. Reusability Matrix
-
-### What Can Be Reused Directly
-
-| Existing Asset | Reused By | Confidence |
-|---|---|---|
-| `applications` table + schema | L (application workflow) | ✅ High — schema already matches |
-| `application_status_enum` | L (lifecycle states) | ✅ High — exact match |
-| `sync_status_enum` | O (sync states) | ✅ High — pending/synced/failed |
-| `uq_user_job_application` constraint | L3 (duplicate protection) | ✅ High — idempotency built-in |
-| `user_integrations` table | N (Google OAuth) | ✅ High — provider + config JSONB |
-| `outbound_clicks` table | L1 (Apply tracking) | ✅ High — already tracks clicks |
-| `AuthGuard` class | All batches | ✅ High — extend with role checks |
-| `claim_next_pending_scrape_run()` pattern | O (sync queue) | ✅ High — proven queue pattern |
-| `exponentialBackoff()` from `@jobpulse/shared` | O (retry logic) | ✅ High — already tested |
-| `ScraperRunner` daemon pattern | O (sync worker) | ✅ High — proven daemon loop |
-| `prevent_role_escalation()` trigger | K4 (permission enforcement) | ⚡ Extend — add new roles |
-| `handle_new_user()` trigger | K2 (worker onboarding) | ⚡ Extend — add org association |
-| `get_admin_system_metrics()` RPC | R (operational metrics) | ⚡ Extend — add workforce metrics |
-
-### What Must Be Built New
-
-| Component | Batch | Notes |
-|---|---|---|
-| Organization entity + membership | K | No existing multi-tenant concept |
-| Worker profile (extended fields) | K | `profiles` only has name/email/avatar |
-| Job assignment system | K | No existing assignment concept |
-| Application event log | L | No existing event sourcing for applications |
-| Screenshot upload + verification | M | No storage buckets exist |
-| Google OAuth flow | N | `user_integrations` exists but no OAuth implementation |
-| Sync event queue + worker | O | New — but mirrors existing scrape queue pattern |
-| Worker command center UI | P | New pages |
-| Employer/admin command center UI | Q | Extends existing admin page |
-| Analytics/reporting layer | R | Extends existing metrics RPC |
-
----
-
-## 4. Architectural Risks
-
-### Risk 1: Multi-Tenancy Retrofit
-
-**Risk**: The current architecture is single-tenant (one admin, users are independent). Adding organizations requires careful retrofitting of `profiles`, `applications`, `user_integrations`, and all RLS policies.
-
-**Mitigation**: K must be designed as a clean additive layer — `organization_id` columns should be nullable initially to preserve backward compatibility with existing single-user flows.
-
-### Risk 2: Worker Profile vs Auth Profile
-
-**Risk**: `profiles` is tightly coupled to `auth.users` via the `handle_new_user()` trigger and the PK is `auth.uid()`. Worker profiles (resume, education, etc.) should NOT live in this table — it conflates identity with application data.
-
-**Mitigation**: Create a separate `worker_profiles` table with a FK to `profiles.id`. The `profiles` table remains the auth-identity record; `worker_profiles` holds application-specific data.
-
-### Risk 3: OAuth Token Security
-
-**Risk**: Google OAuth refresh tokens are highly sensitive. The existing `user_integrations.config` is a plain JSONB column. Storing refresh tokens in plaintext JSONB is a security concern.
-
-**Mitigation**: Options:
-1. Use Supabase Vault (if available on the plan) for encrypted secret storage
-2. Encrypt tokens at the application layer before storing in JSONB
-3. Store tokens server-side only, never expose via RLS SELECT policies
-
-**Decision**: ❓ OPEN — requires plan-level investigation.
-
-### Risk 4: Sync Worker Deployment
-
-**Risk**: The existing worker runs on a dedicated host for scraping. The Google Sheets sync worker needs similar infrastructure. Running two workers increases operational complexity.
-
-**Mitigation**: Extend the existing worker daemon with a second poll loop for sync events, rather than deploying a separate process. The existing `GracefulShutdownManager` already supports multiple concurrent tasks.
-
-### Risk 5: Application Model Extension
-
-**Risk**: The existing `applications` table uses `user_id` as the owner. In a workforce context, the worker is the applicant, but the admin manages assignments. Adding `worker_id` alongside `user_id` could create confusion.
-
-**Mitigation**: In the K–R model, `user_id` becomes the worker's auth ID (workers ARE users). The `assigned_by` column tracks the admin who assigned the job. No column rename is needed — the semantic shift is: `user_id` = the worker who applied.
-
----
-
-## 5. Batch Dependency Graph
-
-```
-Batch A–J (COMPLETE — Production Foundation)
+```text
+DISCOVERY
     ↓
-Batch K (Worker & Organization Architecture)
+INGESTION
     ↓
-Batch L (Application Workflow)
-    ↓ ↘
-Batch M    Batch N
-(Screenshots)  (Google Sheets)
-    ↓ ↙
-Batch O (Application Sync Engine)
+NORMALIZATION
     ↓
-Batch P (Worker Command Center)
+VALIDATION
     ↓
-Batch Q (Employer Command Center)
+DEDUPLICATION
     ↓
-Batch R (Operational Intelligence)
+ENRICHMENT
+    ↓
+QUALITY SCORING
+    ↓
+LIFECYCLE
+    ↓
+PUBLICATION
+    ↓
+SEARCH
+    ↓
+ASSIGNMENT
+    ↓
+APPLICATION
+    ↓
+VERIFICATION
+    ↓
+SYNC
+    ↓
+ANALYTICS & AI
+```
+
+### Cross-Cutting Infrastructure
+
+```text
+OBSERVABILITY (Batch V)
+SECURITY & AUDIT (Batch W)
+DATA QUALITY & HEALTH (Batch R)
+AI & PROVIDER ROUTING (Batch S)
+PERFORMANCE & CAPACITY (Batch X)
+EXPERIENCE INTEGRITY (Batch U)
+CERTIFICATION GATES (Batches T, Y)
 ```
 
 ---
 
-## 6. Finalized Batch Specifications
+# 1. Architectural Principles (Feature Harvest)
 
-### Batch K — Worker & Organization Architecture
+## 1.1 One Source of Truth
+Every important domain concept has one canonical implementation:
+* jobs, companies, ATS platforms, taxonomy, locations, lifecycle, publication, deduplication, source health, applications, user identity, organization membership.
+* Competing implementations across frontend, backend, workers, and admin are strictly prohibited.
 
-**New tables**: `organizations`, `organization_members`, `worker_profiles`, `job_assignments`
-**Modified tables**: `profiles` (add `organization_id`), `applications` (add `assigned_by`)
-**New enum**: `org_role_enum`, `assignment_status_enum`
-**New RLS**: Organization isolation policies on all new tables
-**New APIs**: `/api/organizations/*`, `/api/workers/*`, `/api/assignments`
-**Extend**: `handle_new_user()`, `prevent_role_escalation()`, `AuthGuard`
-**New auth role**: `worker` (in addition to existing `user` and `admin`)
+## 1.2 Operational Truthfulness
+The system must never claim something happened when it did not:
+```text
+crawl dispatched   ≠   crawl completed
+jobs exist         ≠   source is healthy
+active             ≠   published
+sampled metric     ≠   exact metric
+```
+Every operational state shown in the UI derives from an authoritative source.
 
-### Batch L — Application Workflow
+## 1.3 Durable Asynchronous Operations
+All asynchronous operations must survive process restart, worker crash, deployment, network failure, API timeout, and provider outage via durable database-backed queues and transactional state.
 
-**Reuses**: `applications` table (as-is), `application_status_enum`, `uq_user_job_application`, `outbound_clicks`
-**New table**: `application_events`
-**New API behavior**: Separate Apply (opens URL, records click) from Mark Applied (creates application)
-**Key invariant**: Mark Applied is idempotent via existing UNIQUE constraint
+## 1.4 Idempotency
+All mutations must be safe to retry: applications, assignments, sync events, Google Sheets writes, verification uploads, enrichment, and crawl runs.
 
-### Batch M — Screenshot Verification
-
-**New table**: `application_verifications`
-**New enum**: `verification_status_enum`
-**New storage bucket**: `verification-screenshots`
-**New RLS**: Storage policies + table RLS for org isolation
-**New APIs**: `/api/applications/[id]/verify`
-
-### Batch N — Google Sheets Integration
-
-**Reuses**: `user_integrations` table
-**New APIs**: `/api/integrations/google/*`
-**Security concern**: OAuth token encryption (❓ OPEN)
-**No new tables** — extend `user_integrations.config` JSONB
-
-### Batch O — Application Sync Engine
-
-**Status**: Implemented & Hardened (Migrations 0037 & 0038)
-**Primary Invariant**: Google Sheets failure never causes application data loss.
-
-#### Architecture & Queue State Machine
-Replication to Google Sheets is performed asynchronously via the durable `public.sync_events` database queue. Applications are committed transactionally to PostgreSQL first; changes enqueue sync events that are processed by the worker daemon.
-
-**Queue State Machine Transitions**:
-- `pending → processing`: Claimed by worker via `claim_next_pending_sync_events` using PostgreSQL `FOR UPDATE SKIP LOCKED`. Issues `claim_token` and records `processing_started_at`.
-- `failed → processing`: Retried after backoff interval elapses.
-- `processing → synced`: Successfully replicated to Google Sheet via `complete_sync_event(p_event_id, p_claim_token, p_external_row_id)`.
-- `processing → failed`: Transient failure (HTTP 429/5xx, timeouts) via `fail_sync_event(..., p_is_non_retryable = false)`.
-- `processing → dead_letter`: Permanent failure (HTTP 400/401/403/404) or `attempts >= max_attempts` via `fail_sync_event(..., p_is_non_retryable = true)`.
-- `dead_letter → pending`: Operator/admin manual replay via `POST /api/sync/retry`.
-
-#### Hardened Concurrency & Remediation Invariants
-1. **Fencing & Stale-Worker Protection**: `complete_sync_event` and `fail_sync_event` require a matching `claim_token UUID` and `status = 'processing'`. Stale worker completions/failures after a lease expiry are rejected by the database with a fencing violation.
-2. **`processing → pending` Race Elimination & Application Sync Status (O-18)**: When an application is updated while its sync event is in `processing`, the trigger updates `pending_payload` without mutating `status`. Upon completion of the in-flight execution, `complete_sync_event` detects `pending_payload`, records the row ID from the first write, and re-enqueues the event as `pending` with the updated payload. Crucially, while `pending_payload` exists, the application's `sync_status` remains/returns to `pending` (not `synced`), ensuring applications never falsely report `synced` while a newer snapshot awaits replication.
-3. **Processing Lease Recovery**: Stale processing events older than 5 minutes (`processing_started_at < NOW() - 300s`) are safely recovered by `recover_stale_sync_events`, returning them to retryable status without losing attempt counts.
-4. **Existing Application Backfill & Stale Integration Migration (O-19)**: When a user or organization binds a spreadsheet in `POST /api/integrations/google/sheets`, `enqueue_existing_applications_for_sync(integration_id, limit)` identifies all pre-existing applications and enqueues them for background synchronization idempotently and boundedly. Furthermore, any stale `pending` or `failed` events bound to previous inactive integrations are migrated to the new active integration without mutating in-flight `processing` claims.
-5. **Spreadsheet Rebinding Invariant (O-20)**: Rebinding an integration from Spreadsheet A to Spreadsheet B does **not** automatically backfill previously `synced` applications. Each synced application retains its historical sync record and external row coordinate corresponding to the spreadsheet it was written to. Only pending, failed, or newly created/modified applications synchronize to the new spreadsheet, protecting the new sheet against row coordinate corruption and avoiding rate-limit exhaustion.
-6. **Retry TOCTOU Race & Atomic Status Guarding (O-16)**: The single-event retry endpoint `/api/sync/retry` atomically requires `status IN ('failed', 'dead_letter')` in its database update. If a worker claims the event concurrently between read and update, the update matches 0 rows, preserves the worker's active claim, and safely returns `409 Conflict`.
-7. **Bulk Retry Counter Enforcement (O-17)**: Bulk organization and personal retries execute via `retry_sync_events_bulk` RPC. Every manually replayed event atomically increments `manual_retry_count = manual_retry_count + 1` up to the strict limit of 5 manual replays, preventing indefinite bypass of the dead-letter policy.
-8. **Structured Error Classification (O-21)**: Google API errors are classified by inspecting structured HTTP status codes (`error.status`, `response.status`), Google API reasons (`rateLimitExceeded`, `authError`, `PERMISSION_DENIED`), and Node.js network primitives (`ETIMEDOUT`, `ECONNRESET`) before falling back to regex message matching:
-   - *Retryable*: HTTP 429, 500, 502, 503, 504, `ETIMEDOUT`, `ECONNRESET`, `rateLimitExceeded`, `quotaExceeded`.
-   - *Non-Retryable*: HTTP 400 (malformed), 401 (invalid/revoked token), 403 (insufficient permissions), 404 (spreadsheet not found), `authError`, `PERMISSION_DENIED`. Non-retryable errors immediately transition to `dead_letter`.
-9. **Authorization Model**:
-   - `GET /api/sync/status`: Authenticated workers can view their own personal sync counts and recent events; organization members can view their organization's sync events (`?organizationId=...`). Non-members receive 403.
-   - `POST /api/sync/retry`: Workers can retry their own failed/dead_letter events; Organization Admins can batch retry organization events. Replaying `pending`, `processing`, or `synced` events is rejected with 400.
-10. **Known Scalability Constraint**: Google Sheets Column-A lookup (`values/Sheet!A:A`) provides reliable O(N) row deduplication for individual and SMB volumes (<10,000 rows). For enterprise scales exceeding Google Sheets limits, bulk batch sync or direct database export should be scheduled.
-
-### Batch P — Worker Command Center
-
-**New UI pages**: `/worker/jobs`, `/worker/applications`, `/worker/profile`, `/worker/activity`, `/worker/integrations`
-**Reuses**: Existing component patterns from homepage/admin
-**No new tables** — consumes K–O APIs
-
-### Batch Q — Employer Command Center
-
-**Extends**: Existing `/admin` page
-**New UI sections**: Worker management, assignment management, verification review, sync monitoring
-**Reuses**: Existing admin API patterns
-**New APIs**: `/api/admin/workers`, `/api/admin/assignments`, `/api/admin/verifications`
-
-### Batch R — Operational Intelligence
-
-**Extends**: `get_admin_system_metrics()` RPC
-**New APIs**: `/api/admin/analytics`
-**Key principle**: Metrics derive from authoritative data, no duplicated counting logic
-**No new tables** — aggregate queries on existing K–Q tables
+## 1.5 Provenance
+Every job, application, and automation action must be traceable to its origin:
+> Where did this data come from, when was it observed, and what process changed it?
 
 ---
 
-## 7. Open Questions
+# 2. Current Architecture Inventory
 
-| ID | Question | Impact | Status |
-|---|---|---|---|
-| Q1 | Which Supabase plan features are available? (Vault, Edge Functions, etc.) | N — OAuth token encryption strategy | ❓ OPEN |
-| Q2 | Should organizations support multiple admins from launch, or start with single-owner? | K — complexity vs. MVP | ❓ OPEN |
-| Q3 | Should the sync worker be a separate process or integrated into the existing scraper daemon? | O — deployment topology | ⚡ PROVISIONAL: Integrated |
-| Q4 | Should worker profiles support multiple resumes/CVs? | K3 — schema design | ❓ OPEN |
-| Q5 | What Google Sheets column mapping should be used for synced applications? | O — sync payload design | ❓ OPEN |
-| Q6 | Should screenshots be stored with expiring signed URLs or permanent storage? | M — storage cost vs. auditability | ❓ OPEN |
-
----
-
-## 8. Execution Protocol
-
-```
-OBSERVE LIVE SYSTEM (current)
-        ↓
-BATCH K — Schema + RLS + API + Tests
-        ↓
-BATCH L — Workflow + Integration Tests
-        ↓
-BATCH M + N — Parallel (independent)
-        ↓
-BATCH O — Sync Engine + Worker Extension
-        ↓
-BATCH P — Worker UI
-        ↓
-BATCH Q — Admin UI Extension
-        ↓
-BATCH R — Analytics Layer
-```
-
-Each batch follows the mandatory gate:
-
-```
-┌─────────────────────────────┐
-│        BATCH GATE           │
-├─────────────────────────────┤
-│ Typecheck        ✅         │
-│ Tests            ✅         │
-│ Lint             ✅         │
-│ Production Build ✅         │
-│ Database         ✅         │
-│ RLS/Security     ✅         │
-│ Integration      ✅         │
-│ Regression       ✅         │
-└─────────────────────────────┘
-```
+### 2.1 Database State (39 Migrations Deployed, Production Healthy)
+* **Core Entities**: `jobs`, `companies`, `company_sources`, `sources`, `job_sources`, `raw_job_payloads`, `ats_platforms`
+* **User & Application Entities**: `profiles`, `applications`, `user_preferences`, `user_integrations`, `saved_jobs`, `hidden_jobs`, `outbound_clicks`, `job_alerts`, `job_alert_deliveries`, `job_alert_delivered_jobs`
+* **Worker & Ingestion Entities**: `scrape_runs`, `scrape_run_sources`, `scrape_locks`, `job_functions`
+* **Workforce & Sync Entities (Batches K–O Deployed)**:
+  * `organizations`: Tenant boundary for multi-user operations
+  * `organization_members`: Org roles (`owner`, `admin`, `worker`)
+  * `worker_profiles`: Structured worker resumes, skills, experience, availability
+  * `job_assignments`: Dispatching jobs to workers with deadlines and tracking
+  * `application_events`: Immutable event-sourced application lifecycle audit trail
+  * `application_verifications`: Proof-of-application screenshot verification records
+  * `sync_events`: Durable queue for Google Sheets sync with Postgres `SKIP LOCKED`
+* **Storage Buckets**:
+  * `verification-screenshots` (Private, signed URL access)
+* **Key RPCs Deployed**:
+  * `claim_next_pending_sync_events`: Queue consumer claiming with fencing token
+  * `complete_sync_event`: Safe completion with `pending_payload` coalescing
+  * `fail_sync_event`: Structured error recording and exponential backoff
+  * `retry_sync_events_bulk`: Org/personal bulk retry with atomic counter increment
+  * `recover_stale_sync_leases`: Automatic recovery of dead worker leases
+  * `enqueue_existing_applications_for_sync`: Inactive integration backfill without race conditions
+  * `is_admin`, `is_org_admin`, `get_user_org_ids`: RLS security functions
 
 ---
 
-## 9. Cross-Batch Engineering Rules
+# 3. Cross-Cutting Data Models
 
-1. **Don't break existing architecture** — reuse domain services, lifecycle, Supabase patterns, RPCs, auth, storage, worker, observability, validation
-2. **Database first** — Schema → Constraints → RLS → Domain → API → Worker → UI → Tests
-3. **Security is mandatory** — worker data, org isolation, resumes, screenshots, OAuth, Sheets, applications
-4. **Everything asynchronous must be durable** — survive restart, crash, network failure, API timeout, outage, deployment
-5. **Idempotency everywhere** — applications, sync events, Sheets writes, screenshot uploads, assignments
+## 3.1 Canonical Job Identity
+Jobs distinguish fields across:
+* `job_id`, `company_id`
+* `canonical_title`, `display_title`, `description`, `description_html`
+* `locations[]`, `remote_type`, `employment_type`, `seniority`, `department`, `role_category`, `skills[]`
+* `salary_min`, `salary_max`, `salary_currency`, `salary_interval`
+* `source_id`, `source_job_id`, `discovery_url`, `canonical_job_url`, `application_url`, `application_provider`
+* `posted_at`, `updated_at`, `first_seen_at`, `last_seen_at`, `last_verified_at`, `expires_at`
+* `quality_score`, `lifecycle_state`, `publication_state`
+* `raw_payload_hash`, `metadata_hash`
+
+Field completeness is classified into: `KNOWN`, `UNKNOWN`, `UNRESOLVED`.
 
 ---
 
+# 4. Company Intelligence Layer
+
+The `companies` entity provides canonical employer identity:
+* `id`, `name`, `normalized_name`, `slug`, `domain`, `website`, `careers_url`, `logo_url`, `industry`, `company_size`, `description`, `verified`, `status` (`active`, `inactive`, `pending_verification`), `created_at`, `updated_at`.
+* All jobs reference this canonical company identity.
+
+---
+
+# 5. Canonical Taxonomy
+
+Authoritative taxonomy table `job_functions` (deployed in Batch J):
+* Covers functions, sub-functions, roles, skills, seniority, employment types, workplace/remote types, locations.
+* Powers ingestion normalization, search facets, quality scoring, and worker matching.
+* Taxonomy configuration persists to the database with public read and admin write RLS.
+
+---
+
+# 6. Job Lifecycle
+
+Formalized states:
+```text
+ACTIVE ──> AGING ──> STALE ──> EXPIRED ──> ARCHIVED
+  ▲                               │
+  └───────── (re-observed) ───────┘
+```
+Tracked timestamps: `first_seen_at`, `last_seen_at`, `posted_at`, `updated_at`, `last_verified_at`, `expires_at`.
+Observed jobs return to `ACTIVE` upon successful complete scrape crawl.
+
+---
+
+# 7. Job Quality Scoring
+
+Formula: `quality_score: 0–100` based on:
+1. Freshness (posted date vs now)
+2. Description completeness & HTML structure
+3. Location precision (country, region, city vs unspecified)
+4. Application URL quality (direct ATS vs aggregator)
+5. ATS platform resolution confidence
+6. Company verification status
+7. Salary information presence & validity
+8. Remote / workplace type resolution
+9. Source reliability & crawl health
+
+---
+
+# 8. Direct Application Intelligence
+
+Every job strictly separates:
+* `discovery_url`: Where the job was found (e.g. aggregator, index, Jobright).
+* `canonical_job_url`: The permanent public landing page on company domain.
+* `application_url`: The direct ATS application form.
+* `application_provider`: The underlying ATS engine (`greenhouse`, `lever`, `workday`, `ashby`, etc.).
+* `is_direct_apply`: Boolean flag indicating no intermediate interstitial.
+
+---
+
+# 9. Source Health & Ingestion Observatory (Batch R Preview)
+
+Each crawl run records:
+* `run_id`, `source_id`, `company_id`, `started_at`, `completed_at`, `duration_ms`, `status` (`running`, `completed`, `failed`, `cancelled`).
+* Telemetry: `jobs_discovered`, `jobs_accepted`, `jobs_rejected`, `jobs_inserted`, `jobs_updated`, `jobs_failed`.
+* Admin monitors: dispatch succeeded vs crawl succeeded.
+
+---
+
+# 10. Jobright Discovery Pipeline
+
+Preserved model:
+```text
+GitHub Discovery ──> Jobright Extraction ──> ATS & Canonical URL Resolution ──> Direct Application Resolution ──> Normalization ──> Deduplication ──> Publication
+```
+Jobright is treated as a Discovery/Enrichment source with full provenance tracking.
+
+---
+
+# 11. Batch K — Worker & Organization Architecture
+
+### Status: COMPLETE, HARDENED & DEPLOYED (Migrations 0030–0032)
+
+### Objective
+Multi-tenant workforce management without breaking single-user functionality.
+
+### Tables Deployed
+* `organizations`: Tenant boundary for organizations.
+* `organization_members`: User membership with `org_role_enum` (`owner`, `admin`, `worker`).
+* `worker_profiles`: Professional profile, resume/CV (`cv_url`, `resumes` JSONB), skills, experience, education, availability.
+* `job_assignments`: Admin dispatches jobs to workers with status (`assigned`, `in_progress`, `completed`, `skipped`), deadlines, and notes.
+
+### Security
+Strict Row Level Security (RLS) and server `AuthGuard`:
+* Worker can access only their own worker data, assignments, and applications.
+* Admin can access and manage their organization.
+* Zero cross-organization leakage.
+
+---
+
+# 12. Batch L — Application Workflow & CRM
+
+### Status: COMPLETE, HARDENED & DEPLOYED (Migration 0033)
+
+### Objective
+Unified CRM application tracking with event sourcing.
+
+### Workflow Separation
+* `APPLY`: Opens direct application URL and records `outbound_clicks`.
+* `MARK APPLIED`: Upserts `applications` record and records immutable `application_events`.
+* Duplicate protection: Enforced via `UNIQUE(user_id, job_id)`.
+
+### Lifecycle States
+```text
+SAVED ──> APPLIED ──> SCREENING ──> INTERVIEW ──> OFFER
+                         │              │          │
+                         ▼              ▼          ▼
+                      REJECTED      WITHDRAWN   ARCHIVED
+```
+
+---
+
+# 13. Batch M — Screenshot Verification
+
+### Status: COMPLETE, HARDENED & DEPLOYED (Migration 0034)
+
+### Objective
+Provide proof-of-application verification.
+
+### Architecture
+* Table: `application_verifications` (`id`, `application_id`, `worker_id`, `organization_id`, `screenshot_url`, `status: pending | verified | rejected`, `reviewed_by`, `reviewed_at`, `notes`).
+* Storage Bucket: Private `verification-screenshots` bucket accessed via authenticated signed URLs.
+
+---
+
+# 14. Batch N — Google Sheets Integration
+
+### Status: COMPLETE, HARDENED & DEPLOYED (Migration 0035)
+
+### Objective
+OAuth integration with user Google Sheets.
+
+### Architecture
+* Reuses `user_integrations` (`provider: 'google_sheets'`).
+* Secure token handling: Application-layer AES-256-GCM encryption with IV and authentication tag.
+* OAuth flow: `/api/integrations/google/connect`, `/api/integrations/google/callback`, `/api/integrations/google/sheets`.
+
+---
+
+# 15. Batch O — Durable Application Sync Engine
+
+### Status: COMPLETE, HARDENED & DEPLOYED (Migrations 0036–0039)
+
+### Objective
+Reliable, asynchronous replication of applications to Google Sheets with hardened concurrency controls, fencing, lease recovery, and structured error handling.
+
+### Architecture & Hardened Invariants
+* **Queue Table**: `sync_events` (`id`, `organization_id`, `application_id`, `status: pending | processing | synced | failed | dead_letter`, `attempts`, `last_error`, `payload`, `claim_token`, `claimed_at`, `lease_expires_at`, `pending_payload`, `manual_retry_count`).
+* **Postgres SKIP LOCKED Claiming**: Atomic queue claiming using `claim_next_pending_sync_events` with worker claim-fencing UUIDs.
+* **Lease Recovery**: `recover_stale_sync_leases` automatically reclaims events abandoned by dead workers with exponential backoff jitter.
+* **Pending Payload Coalescing**: Intermediate application edits during in-flight worker claims are coalesced into `pending_payload` without resetting status to `pending`, eliminating state races.
+* **Surgical Integrity Pass (O-16 through O-21)**:
+  * **O-16 (Atomic Retry TOCTOU)**: Single retry route (`/api/sync/retry`) atomically updates only events with `status IN ('failed', 'dead_letter') AND claim_token IS NULL`.
+  * **O-17 (Bulk Retry Limit)**: `retry_sync_events_bulk` atomically increments `manual_retry_count = manual_retry_count + 1` and enforces `manual_retry_count < 5`.
+  * **O-18 (Status Invariant on Pending Payload)**: When worker completes and a coalesced `pending_payload` exists, `complete_sync_event` leaves the application status at `pending`, triggering immediate follow-up sync.
+  * **O-19 (Inactive Integration Backfill)**: `enqueue_existing_applications_for_sync` safely enqueues without mutating claimed in-flight events.
+  * **O-20 (Spreadsheet Rebinding Invariant)**: Rebinding a new spreadsheet does not backfill previously synced applications, preventing row coordinate corruption and silent duplicates.
+  * **O-21 (Structured Google API Classification)**: Error classifier maps errors to `transient_quota`, `transient_network`, `permanent_auth`, `permanent_not_found`, or `permanent_schema`.
+* **Testing**: 38/38 adversarial tests passing in `tests/batch-o-adversarial-remediation.test.ts`, 13/13 sync engine tests passing.
+
+---
+
+# 16. Batch P — Worker Command Center
+
+### Objective
+Dedicated operating environment for workers.
+
+### Routes
+* `/worker/jobs`: Assigned jobs with priority, deadline, direct apply link.
+* `/worker/applications`: Application tracker with status, verification upload, sync status.
+* `/worker/profile`: CV, education, skills, availability management.
+* `/worker/activity`: Real-time chronological activity log.
+
+---
+
+# 17. Batch Q — Employer / Admin Command Center
+
+### Objective
+Comprehensive workforce and operational command center.
+
+### Extended Admin Sections
+* Workers Management
+* Job Assignment Dispatcher
+* Application & Verification Review Queue
+* Sync Engine Monitoring & Retry Controls
+* Source Health & Data Quality Observatory
+
+---
+
+# 18. Batch R — Operational Intelligence
+
+### Objective
+Authoritative system and workforce analytics.
+
+### Telemetry Modules
+1. Workforce Metrics: Active workers, completion rates, verification rates.
+2. Job Metrics: Active, new 24h/7d, stale, expired, quality distribution.
+3. Source Health Metrics: Success rate, crawl duration, failures, yield.
+4. Data Quality Metrics: Missing fields, ATS resolution rate, salary coverage.
+
+---
+
+# 19. Batch S — AI Layer & Provider Architecture
+
+### Objective
+Establish the architectural foundation for AI functionality as an **infrastructure capability**, rather than scattering direct model-provider calls throughout the application.
+
+### Guiding Principles
+* **Strict Grounding Rule**: Inputs are strictly restricted to verified worker profile, authentic job description, and explicit user preferences. **Zero hallucination** of qualifications, experience, or history.
+* **Deterministic Application Boundaries**: AI features must never bypass database validation, organization boundaries, or RLS.
+* **Provider Agnosticism**: Unified provider interface enables switching models without rewriting product features.
+
+### Core Architecture Components
+1. **Provider & Model Abstraction**:
+   * Abstract interface: `generateText()`, `generateStructured<T>()`, `embed()`.
+   * Providers supported: Google Gemini, Anthropic Claude, OpenAI, Local Mock/Fallback.
+2. **Capability-Based Routing**:
+   * Maps tasks to optimal provider/model tiers:
+     * `cv_tailoring`: High-reasoning tier
+     * `cover_letter`: High-reasoning tier
+     * `screening_questions`: Low-latency tier
+     * `job_summary`: Fast tier
+     * `taxonomy_classification`: Structured extraction tier
+3. **Multi-Provider Fallback Chain**:
+   * `Primary (e.g. Gemini 1.5 Pro) ──> Secondary (e.g. Claude 3.5 Sonnet) ──> Tertiary (e.g. GPT-4o-mini) ──> Graceful Degraded Error`
+   * Integrated circuit breaker prevents retry loops during provider outages.
+4. **Token, Latency & Cost Accounting**:
+   * Every AI request records: `provider`, `model`, `input_tokens`, `output_tokens`, `latency_ms`, `estimated_cost_usd`, `user_id`, `organization_id`, `operation_type`.
+   * Enables operational cost attribution and per-tenant usage caps.
+5. **Structured Outputs with Schema Enforcement**:
+   * All generative calls parse outputs against Zod schemas.
+   * Parse errors trigger automatic single-turn retry with corrective schema feedback.
+6. **Credential Security**:
+   * Provider API keys are encrypted at rest using AES-256-GCM / Supabase Vault and managed strictly server-side. Zero client exposure.
+
+---
+
+# 20. Batch T — Implementation Sequence & Gates
+
+### Objective
+Establish a formal **process and engineering-control governance layer** to ensure that production changes occur sequentially, deterministically, and with auditable evidence before closure.
+
+### Strategic Roadmap Sequence
+```text
+K — Schema + RLS + Worker Architecture (COMPLETE & DEPLOYED)
+        ↓
+L — Application Workflow, CRM & Events (COMPLETE & DEPLOYED)
+        ↓
+M + N — Screenshot Verification + Google Sheets OAuth (COMPLETE & DEPLOYED)
+        ↓
+O — Durable Application Sync Engine (COMPLETE & DEPLOYED)
+        ↓
+P — Worker Command Center
+        ↓
+Q — Admin Command Center
+        ↓
+R — Operational Intelligence
+        ↓
+S — AI Layer & Provider Architecture
+        ↓
+T — Implementation Sequence & Gates Governance
+        ↓
+U — Product UX/UI System & Experience Integrity
+        ↓
+V — Production Reliability & Observability
+        ↓
+W — Security Operations & Disaster Recovery
+        ↓
+X — Performance, Capacity & Cost Engineering
+        ↓
+Y — Production Acceptance & Launch Certification
+```
+
+### Strict Sequencing Rule
+> **S → T → U → V → W → X → Y**
+> Do NOT skip ahead or combine unrelated batches. Unfinished architectural changes must not accumulate.
+
+### Mandatory 8-Step Batch Gate Checklist
+Every production batch must satisfy all 8 gates before closure:
+* [x] **1. Typecheck**: TypeScript compiler succeeds across all 8 packages (`pnpm tsc --noEmit`).
+* [x] **2. Unit Tests**: Package-level unit tests pass with 100% success rate (`pnpm vitest run`).
+* [x] **3. Integration Tests**: End-to-end integration and adversarial tests pass.
+* [x] **4. Production Build**: Next.js production build succeeds without warnings (`pnpm build`).
+* [x] **5. Migration Safety**: Database migrations are idempotent, forward-compatible, reversible, and verified against production schema.
+* [x] **6. Security & RLS**: Row Level Security and negative authorization tests verify zero cross-tenant leakage.
+* [x] **7. Observability**: Telemetry, structured logs, and metrics are instrumented.
+* [x] **8. Verification Evidence**: Auditable execution report with terminal output proves all criteria are met.
+
+---
 # JobPulse 2.0 — Batch U
 
 ## Product UX/UI System & Experience Integrity
@@ -1827,3 +1834,315 @@ After Gemini reports completion, the implementation will be reviewed against:
 **Gemini's completion report is evidence, not proof.**
 
 Batch U should only be marked closed after independent verification confirms that the UX/UI system is actually implemented and functioning in production.
+
+
+---
+
+# JobPulse 2.0 — Batch V
+
+## Production Reliability & Observability
+
+**Status:** Planned
+**Batch:** V
+**Type:** Production Infrastructure & Operational Observability
+**Primary objective:** Transform JobPulse 2.0 into an observable, self-monitoring system where failures are visible, diagnosable, attributable, and recoverable before users report them.
+
+---
+
+# 1. Executive Objective
+
+Batch V addresses the operational reality of running a multi-tenant workforce and job-intelligence platform in production.
+
+As JobPulse processes thousands of jobs, manages multiple tenant organizations, synchronizes with external Google Sheets APIs, and invokes external AI models, silent failures are unacceptable.
+
+Batch V answers the fundamental operational question:
+> **Can we know that JobPulse is unhealthy before users report it?**
+
+---
+
+# 2. Application Observability Matrix
+
+Telemetry is instrumented across all critical subsystems:
+
+| Subsystem | Tracked Telemetry | Success Metrics | Failure Indicators |
+|---|---|---|---|
+| **Ingestion & Crawling** | Sources discovered, processed, rejected; crawl duration; payload size | `success_rate >= 98%`, crawl latency < 45s | Empty crawl, HTTP 429, schema drift |
+| **Durable Sync Queue** | Queue depth, claim latency, processing duration, retry attempts | `sync_events` processed < 5s from claim | Stalled leases, dead-letter count > 0 |
+| **Worker Operations** | Active workers, assignment completion time, verification submission | Verification turnaround < 24h | Stuck assignments, upload errors |
+| **Authentication & Orgs** | Sign-ins, org switches, token refreshes, membership checks | Auth latency < 200ms | Auth failures > 5%, RLS denial spikes |
+| **Google Integrations** | Token refreshes, API quotas, sheet writes, append latency | API response < 1200ms | 401 unrecoverable, 429 quota exhaustion |
+| **AI Layer (Batch S)** | Requests, prompt/completion tokens, latency, provider fallbacks | 99th percentile latency < 4s | Fallback exhaustion, schema validation fail |
+| **Database & RPCs** | Query latency, lock wait duration, active pool connections | Connection pool < 70% | Lock timeouts, slow queries > 500ms |
+
+---
+
+# 3. Structured Failure Attribution
+
+Every operational failure must generate a structured event answering 8 canonical questions:
+1. **What failed?** (Exact error code, message, and exception stack).
+2. **Where did it fail?** (File, function, route, worker service).
+3. **Which operation caused it?** (`ingest_crawl`, `sync_event`, `verify_application`, `ai_completion`).
+4. **Who was involved?** (`organization_id`, `user_id`, `worker_id`, `source_id`, `job_id`).
+5. **Was it transient or permanent?** (Network timeout vs invalid schema).
+6. **Was a retry attempted?** (Attempt number, backoff delay).
+7. **Did the retry succeed?** (Outcome of retry sequence).
+8. **What final state was persisted?** (`failed`, `dead_letter`, `stale`, `rolled_back`).
+
+---
+
+# 4. Correlation & Structured Logging
+
+* **Request Correlation IDs**: Every inbound API request and scheduled job receives an `x-correlation-id` (or `x-request-id`). This correlation ID propagates to:
+  * Database transaction metadata
+  * Background worker queues
+  * Outbound HTTP calls to Google and AI providers
+  * Error logs and exception captures
+* **Safe Logging Standards**:
+  * Logs must NEVER contain OAuth tokens, refresh tokens, passwords, encryption keys, or raw PII.
+  * Sanitizers strip sensitive headers (`Authorization`, `Cookie`) and JSON keys (`access_token`, `refresh_token`, `token`, `secret`).
+
+---
+
+# 5. Proactive Alerting & Health Indicators
+
+1. **Synthetic Health Check (`/api/health`)**:
+   * Evaluates database connectivity, queue depth, external provider connectivity, and storage access.
+2. **Automated Operational Alerts**:
+   * **Stalled Sync Queue Alert**: `sync_events` pending for > 15 minutes.
+   * **Dead-Letter Threshold Alert**: Any event transitioning to `dead_letter`.
+   * **Crawl Anomaly Alert**: Zero jobs accepted from an active source over 2 consecutive runs.
+   * **AI Error Spike Alert**: Provider failure rate > 5% in a 10-minute window.
+   * **Stale Lease Alert**: Stale worker leases exceeding 3 consecutive recovery cycles.
+
+---
+
+# JobPulse 2.0 — Batch W
+
+## Security Operations & Disaster Recovery
+
+**Status:** Planned
+**Batch:** W
+**Type:** Production Security Governance & Business Continuity
+**Primary objective:** Harden JobPulse 2.0 against security threats, privilege escalation, tenant leakage, and establish verified disaster recovery capabilities.
+
+---
+
+# 1. Executive Objective
+
+Batch W transforms security from static configuration into an active **operational discipline**.
+
+It answers two non-negotiable questions:
+1. **Can any tenant, worker, or unauthorized user access or modify data belonging to another organization?**
+2. **If production catastrophic failure occurs right now, can we restore the system to full operational status with zero data loss?**
+
+---
+
+# 2. Operational Security & Privilege Boundaries
+
+### 2.1 Multi-Tenant Isolation Audit
+* **RLS Invariant**: Every query touching tenant data (`applications`, `sync_events`, `job_assignments`, `application_verifications`, `worker_profiles`) must enforce `organization_id` isolation.
+* **Negative Authorization Suite**: Adversarial tests verify:
+  * Worker A cannot view Worker B's assignments or verifications.
+  * Org Admin X cannot view Org Y's sync events or worker profiles.
+  * Unauthenticated users cannot invoke private RPCs or access internal storage.
+  * Service role key is restricted strictly to backend worker services and never exposed in client bundles.
+
+### 2.2 Credential & Secret Management
+* **Zero Secrets in Code**: Environment audits ensure all secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET`, `AI_PROVIDER_KEYS`, `ENCRYPTION_KEY`) reside in secure environment managers.
+* **Zero-Downtime Secret Rotation**:
+  * Documented rotation runbooks for Google OAuth client secrets, database credentials, and AES-256-GCM application encryption keys.
+  * Dual-key decryption support during rotation windows to ensure uninterrupted service.
+
+---
+
+# 3. Disaster Recovery & Business Continuity
+
+### 3.1 Backup Architecture
+* **Point-in-Time Recovery (PITR)**: Supabase continuous WAL archiving enabled with 7-day retention.
+* **Daily Logical Backups**: Automated off-site pg_dump snapshots encrypted and stored in secondary cloud storage.
+
+### 3.2 Restoration Runbooks & Drills
+* **Verified Restoration**: A backup that has never been restored is not a backup.
+* Rehearsed restoration drill runbook:
+  1. Spin up staging database target.
+  2. Restore latest logical snapshot.
+  3. Replay WAL logs to target recovery timestamp.
+  4. Verify data integrity across `jobs`, `applications`, `sync_events`, and `profiles`.
+  5. Validate RLS policies and role grants on restored instance.
+
+### 3.3 Incident Response Protocol
+* Classification:
+  * **SEV-1 (Critical)**: Data loss risk, active security exploit, complete sync outage, or cross-tenant leakage. Response SLA < 15 minutes.
+  * **SEV-2 (High)**: Ingestion pipeline failure, AI provider degradation, partial worker dispatch outage. Response SLA < 1 hour.
+  * **SEV-3 (Moderate)**: Non-blocking UI defect, individual source parse failure. Response SLA < 4 hours.
+* Post-Mortem Requirement: Every SEV-1 and SEV-2 requires a blameless post-mortem document covering Root Cause Analysis (RCA), timeline, impact, and preventive remediation items.
+
+---
+
+# JobPulse 2.0 — Batch X
+
+## Performance, Capacity & Cost Engineering
+
+**Status:** Planned
+**Batch:** X
+**Type:** Efficiency, Scalability & Financial Sustainability
+**Primary objective:** Make JobPulse 2.0 technically performant, horizontally scalable, and economically sustainable under real-world load.
+
+---
+
+# 1. Executive Objective
+
+Batch X ensures that system growth does not lead to database degradation, latency spikes, or runaway infrastructure costs.
+
+The core principle:
+> **Predictable performance at predictable cost.**
+
+---
+
+# 2. Database Performance Engineering
+
+* **Query Profiling**: Continuous monitoring of `pg_stat_statements` to detect slow queries (> 200ms).
+* **Index Audit & Optimization**:
+  * Partial indexes on active queue records (`WHERE status = 'pending'`).
+  * GIN indexes for JSONB payloads and full-text search on jobs.
+  * Composite indexes on high-frequency tenant queries (`organization_id, status, created_at`).
+* **Connection Pooling**: Supabase Supavisor / PgBouncer configuration optimized for transaction-mode pooling to prevent connection exhaustion.
+* **Query Amplification Prevention**: Eliminate N+1 query patterns in dashboard and worker feeds through targeted batching.
+
+---
+
+# 3. Ingestion & Queue Capacity
+
+* **Crawl Throughput**: Schedule-aware crawling distributes source crawls across time windows to avoid CPU and network spikes.
+* **Queue Concurrency Limits**:
+  * Bounded worker concurrency per organization to prevent noisy-neighbor starvation.
+  * Exponential backoff with jitter to eliminate thundering-herd issues on external API recovery.
+* **Payload Truncation & Archiving**: Archive historical sync events (> 90 days) to secondary tables to maintain lean active table sizes.
+
+---
+
+# 4. AI Unit Economics & Cost Control
+
+* **Cost Attribution**: Real-time tracking of AI costs per organization, per user, and per task type.
+* **Token Budgeting**: Strict max-token limits on prompt and completion payloads.
+* **Semantic Caching**: Cache idempotent AI responses (e.g. standard job summaries, taxonomy classifications) to avoid duplicate provider invocations.
+* **Financial Circuit Breaker**: Automatic throttling if daily tenant or system-wide AI spend exceeds pre-configured budget thresholds.
+
+---
+
+# 5. Capacity Degradation Boundaries
+
+Explicit operational limits established and tested:
+* Maximum active sources: 1,000 concurrent sources.
+* Maximum daily crawl volume: 50,000 jobs/day.
+* Maximum sync queue throughput: 100 events/second.
+* Maximum tenant organizations: 500 concurrent organizations.
+* Performance SLA: 95% of API requests complete under 250ms; 99% under 1000ms.
+
+---
+
+# JobPulse 2.0 — Batch Y
+
+## Production Acceptance & Launch Certification
+
+**Status:** Planned
+**Batch:** Y
+**Type:** Production Acceptance, Golden Verification & Formal Certification
+**Primary objective:** Evaluate JobPulse 2.0 as a complete, unified production system and certify it against rigorous operational criteria.
+
+---
+
+# 1. Executive Objective
+
+Batch Y is the **final certification layer**.
+
+Here, JobPulse stops being evaluated feature-by-feature and is evaluated as a **complete production system**.
+
+It produces the formal production certification and sign-off demonstrating that the platform can withstand real users, real organizations, real production failures, and real operational load.
+
+---
+
+# 2. Multi-Dimensional Acceptance Criteria
+
+JobPulse 2.0 is certified for production launch only when all 8 dimensions pass:
+
+| Dimension | Certification Criteria | Verification Method |
+|---|---|---|
+| **1. Functional Integrity** | Discovery, ingestion, assignment, application, verification, sync, and AI workflows execute end-to-end without errors. | Automated End-to-End Golden Test Suite |
+| **2. Data Integrity** | Zero orphan records, zero schema corruption, consistent foreign key constraints, verified spreadsheet cell mapping. | Database Integrity Audit Script |
+| **3. Security & Isolation** | 100% pass on negative authorization tests; zero cross-tenant leakage; all secrets encrypted; least-privilege RLS enforced. | Adversarial Penetration Test Suite |
+| **4. Operational Reliability** | Automatic recovery from worker crashes, sync stalls, API rate limits, and network partitions with zero data loss. | Chaos & Failure Injection Testing |
+| **5. Observability Coverage** | Every request correlated; structured JSON logs; health check endpoint operational; alerts fire on simulated failures. | Telemetry & Alert Validation Drill |
+| **6. Performance SLAs** | P95 latency < 250ms on core APIs; crawler throughput meets daily target; database connection pool stable under load. | Load & Stress Testing (k6 / Artillery) |
+| **7. Cost & Capacity** | AI token spend attributed and capped; crawler memory within bounds; DB growth rate predictable. | Financial & Resource Consumption Audit |
+| **8. Disaster Recovery** | Database snapshot restored to isolated environment with data completeness verified; recovery runbook validated. | Dry-Run Restoration Drill |
+
+---
+
+# 3. End-to-End Golden Verification Workflow
+
+The golden verification script executes the canonical end-to-end lifecycle:
+1. **Ingestion**: Worker crawls a live test source, normalizes jobs, extracts salary, resolves ATS, and inserts canonical job records.
+2. **Search**: Public search discovers and filters the newly ingested job.
+3. **Dispatch**: Admin assigns the job to a test worker in Organization A.
+4. **Application**: Worker views assignment in `/worker/jobs`, applies, marks as applied, generating an application and audit event.
+5. **Verification**: Worker uploads application confirmation screenshot; admin reviews and approves in `/admin/verifications`.
+6. **Durable Sync**: Event enqueues in `sync_events`, worker claims via `SKIP LOCKED`, writes row to connected Google Sheet, and marks synced.
+7. **Adversarial Interruption**: Injected network failure verifies retry with exponential backoff and claim lease recovery.
+8. **AI Assistance**: Grounded CV tailoring generates tailored bullets strictly conforming to the verified worker profile and job description.
+9. **Isolation Check**: Organization B attempts to view or modify Organization A's records and receives hard 404/403 RLS denial.
+
+---
+
+# 4. Production Launch Gate & Formal Sign-off
+
+Launch certification requires explicit approval across all 8 dimensions:
+
+```text
+[ ] Dimension 1: Functional Integrity Verified
+[ ] Dimension 2: Data Integrity Verified
+[ ] Dimension 3: Security & Tenant Isolation Verified
+[ ] Dimension 4: Reliability & Chaos Recovery Verified
+[ ] Dimension 5: Observability & Alerting Verified
+[ ] Dimension 6: Performance & Capacity Verified
+[ ] Dimension 7: AI Cost & Resource Budgets Verified
+[ ] Dimension 8: Disaster Recovery Drill Verified
+```
+
+Only when all checkboxes are marked with verified evidence will JobPulse 2.0 be formally certified for full-scale production launch.
+
+---
+
+# 21. Production Engineering Rules & Workflow Standards
+
+## 21.1 Database-First Rule
+For every change that affects persisted state:
+```text
+Database/schema ──> Migration ──> RLS ──> Backend ──> Integration ──> Frontend
+```
+Never build frontend abstractions around database structures that have not been finalized and migrated.
+
+## 21.2 Security Invariants
+Never weaken security boundaries to accelerate development:
+* Authentication requirements are inviolable.
+* Organization isolation is non-negotiable.
+* RLS must be active on every tenant table.
+* Secrets and private keys are never committed or exposed client-side.
+* Client-provided IDs and states are never trusted without server-side validation.
+
+## 21.3 Production Mindset
+Treat the live production database and application as real production infrastructure:
+* No test data in production tables.
+* No bypassing RLS to debug.
+* No silent behavioral changes.
+* No marking work complete without verifiable evidence.
+
+## 21.4 7-Phase Execution Framework
+Every production task must follow this sequence:
+1. **Reconnaissance**: Read repository structure, existing migrations, backend services, and active tests.
+2. **Gap Analysis**: Identify existing capabilities, missing elements, and architectural risks.
+3. **Implementation Plan**: Break work into atomic steps with explicit file and migration targets.
+4. **Implementation**: Smallest production-safe surgical change satisfying requirements.
+5. **Verification**: Run typecheck, unit tests, integration tests, migrations, and build.
+6. **Adversarial Review**: Attempt to break the implementation (race conditions, auth bypass, failure modes).
+7. **Closure**: Record evidence, what changed, test results, and update pipeline documentation.
