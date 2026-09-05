@@ -596,13 +596,34 @@ describe('Batch L Adversarial & Integrity Verification Suite', () => {
           }),
         },
         from: vi.fn(() => ({
-          update: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          is: vi.fn().mockReturnThis(),
-          select: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: mockUpdated,
-            error: null,
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              is: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: {
+                    id: appId,
+                    user_id: ownerId,
+                    organization_id: null,
+                    deleted_at: null,
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              is: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: mockUpdated,
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
           }),
         })),
       });
@@ -634,6 +655,20 @@ describe('Batch L Adversarial & Integrity Verification Suite', () => {
           }),
         },
         from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              is: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null, // is('deleted_at', null) matched nothing because application is soft-deleted
+                  error: null,
+                }),
+                single: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'Row not found' },
+                }),
+              }),
+            }),
+          }),
           update: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               is: vi.fn().mockReturnValue({

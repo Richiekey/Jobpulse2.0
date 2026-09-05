@@ -83,8 +83,11 @@ describe.runIf(isDedicatedTestConfigured)(
       });
       if (userBErr) throw new Error(`[SETUP_FAILURE] Admin B user creation failed: ${userBErr.message}`);
 
-      // 2. Sign in to obtain genuine session JWTs
-      const { data: sessionA, error: signInAErr } = await anonClient.auth.signInWithPassword({
+      // 2. Sign in with isolated auth clients to obtain genuine session JWTs
+      const authClientA = createClient(testUrl!, testAnonKey!, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const { data: sessionA, error: signInAErr } = await authClientA.auth.signInWithPassword({
         email: workerEmail,
         password: testPassword,
       });
@@ -92,7 +95,10 @@ describe.runIf(isDedicatedTestConfigured)(
         throw new Error(`[SETUP_FAILURE] Worker A sign-in failed: ${signInAErr?.message}`);
       }
 
-      const { data: sessionB, error: signInBErr } = await anonClient.auth.signInWithPassword({
+      const authClientB = createClient(testUrl!, testAnonKey!, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const { data: sessionB, error: signInBErr } = await authClientB.auth.signInWithPassword({
         email: adminEmail,
         password: testPassword,
       });
@@ -246,6 +252,7 @@ describe.runIf(isDedicatedTestConfigured)(
           .eq('id', appAId);
 
         // RLS prevents Admin B from seeing applications belonging to Org A
+        expect(error).toBeNull();
         expect(data).toHaveLength(0);
       });
 
@@ -256,6 +263,7 @@ describe.runIf(isDedicatedTestConfigured)(
           .eq('id', appAId)
           .select();
 
+        expect(error).toBeNull();
         expect(data).toHaveLength(0);
       });
     });

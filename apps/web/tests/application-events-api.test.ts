@@ -344,13 +344,34 @@ describe('Application Events & CRM API (Batch L)', () => {
         from: vi.fn((table: string) => {
           if (table === 'applications') {
             return {
-              update: vi.fn().mockReturnThis(),
-              eq: vi.fn().mockReturnThis(),
-              is: vi.fn().mockReturnThis(),
-              select: vi.fn().mockReturnThis(),
-              single: vi.fn().mockResolvedValue({
-                data: mockUpdated,
-                error: null,
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  is: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: {
+                        id: appId,
+                        user_id: 'different_user_id',
+                        organization_id: orgId,
+                        deleted_at: null,
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+              update: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  is: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockReturnValue({
+                      select: vi.fn().mockReturnValue({
+                        single: vi.fn().mockResolvedValue({
+                          data: mockUpdated,
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
               }),
             };
           }
@@ -394,6 +415,25 @@ describe('Application Events & CRM API (Batch L)', () => {
           }),
         },
         from: vi.fn((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  is: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: {
+                        id: appId,
+                        user_id: 'different_user_id', // caller is NOT owner
+                        organization_id: orgId,
+                        deleted_at: null,
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }
           if (table === 'organization_members') {
             return {
               select: vi.fn().mockReturnThis(),

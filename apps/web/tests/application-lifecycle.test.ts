@@ -72,10 +72,19 @@ describe('Application Lifecycle & State Machine (S20/S21, P1)', () => {
 
     const mockSupabase = {
       from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
         update: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
         is: vi.fn().mockReturnThis(),
-        select: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: {
+            id: '00000000-0000-0000-0000-000000000001',
+            user_id: 'usr_1',
+            organization_id: null,
+            deleted_at: null,
+          },
+          error: null,
+        }),
         single: vi.fn().mockResolvedValue({ data: mockUpdated, error: null }),
       }),
     };
