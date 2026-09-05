@@ -62,7 +62,7 @@ export async function PATCH(
       );
     }
 
-    // If targetStatus is completed, use atomic stored procedure to preserve application consistency (P-01)
+    // If targetStatus is completed, use atomic stored procedure to preserve application consistency (P-01, P-H01)
     if (targetStatus === 'completed') {
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         'complete_assignment_with_application',
@@ -72,9 +72,34 @@ export async function PATCH(
         }
       );
 
-      if (!rpcError && rpcResult?.assignment) {
-        return ApiResponse.success(rpcResult.assignment);
+      if (rpcError) {
+        const msg = rpcError.message || '';
+        if (msg.includes('UNAUTHORIZED')) {
+          return ApiResponse.error(msg, rpcError, 401);
+        }
+        if (msg.includes('FORBIDDEN')) {
+          return ApiResponse.error(msg, rpcError, 403);
+        }
+        if (msg.includes('NOT_FOUND')) {
+          return ApiResponse.error(msg, rpcError, 404);
+        }
+        if (msg.includes('CONFLICT')) {
+          return ApiResponse.error(msg, rpcError, 409);
+        }
+
+        console.error(`[COMPLETE_ASSIGNMENT_RPC_FAILURE] Worker: ${user.id}, Assignment: ${assignmentId}`, rpcError);
+        return ApiResponse.error(
+          `Failed to complete assignment atomically: ${msg || 'Internal transaction error'}`,
+          rpcError,
+          500
+        );
       }
+
+      if (!rpcResult || !rpcResult.assignment) {
+        return ApiResponse.error('Atomic completion returned empty response.', null, 500);
+      }
+
+      return ApiResponse.success(rpcResult.assignment);
     }
 
     const updateData: Record<string, any> = {

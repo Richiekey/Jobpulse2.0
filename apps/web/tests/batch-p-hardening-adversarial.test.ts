@@ -521,4 +521,368 @@ describe('Batch P — Production Hardening & Adversarial Suite (P-01 to P-08)', 
       expect(json.data.hasMore).toBe(false);
     });
   });
+
+  // =========================================================================
+  // 6. P-H01 to P-H04: Final Production Hardening & Tenancy Verification
+  // =========================================================================
+  describe('P-H01 to P-H04: Final Production Hardening & Tenancy Suite', () => {
+    // -----------------------------------------------------------------------
+    // Test A: Success — Atomically complete assignment & log application
+    // -----------------------------------------------------------------------
+    it('Test A (Success): Valid worker completes assigned job atomically', async () => {
+      const mockCompletedAssignment = {
+        id: assignmentA,
+        organization_id: orgA,
+        job_id: jobId,
+        worker_id: workerA,
+        status: 'completed',
+        notes: 'Submitted via company portal',
+      };
+      const mockApplication = {
+        id: appA,
+        user_id: workerA,
+        job_id: jobId,
+        company_name: 'Tech Corp',
+        job_title: 'Staff Architect',
+        status: 'applied',
+        organization_id: orgA,
+      };
+
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: {
+          assignment: mockCompletedAssignment,
+          application: mockApplication,
+          idempotent: false,
+        },
+        error: null,
+      });
+
+      const mockFrom = vi.fn();
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerA } }, error: null }),
+        },
+        rpc: mockRpc,
+        from: mockFrom,
+      });
+
+      const req = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notes: 'Submitted via company portal',
+          companyName: 'Tech Corp',
+          jobTitle: 'Staff Architect',
+        }),
+      });
+
+      const res = await completeAssignment(req, { params: Promise.resolve({ id: assignmentA }) });
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(json.success).toBe(true);
+      expect(json.data.assignment.status).toBe('completed');
+      expect(json.data.application.status).toBe('applied');
+      expect(json.data.idempotent).toBe(false);
+
+      // Verify authoritative single-transaction call
+      expect(mockRpc).toHaveBeenCalledWith('complete_assignment_with_application', {
+        p_assignment_id: assignmentA,
+        p_notes: 'Submitted via company portal',
+        p_company_name: 'Tech Corp',
+        p_job_title: 'Staff Architect',
+      });
+
+      // Crucial: No separate non-atomic table mutations were executed
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // Test B: Transaction Failure — No partial mutation & no unsafe fallback (P-H01)
+    // -----------------------------------------------------------------------
+    it('Test B (Transaction Failure): RPC failure returns 500 without performing non-atomic fallback', async () => {
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Transaction deadlock or serialized isolation failure' },
+      });
+
+      const mockFrom = vi.fn();
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerA } }, error: null }),
+        },
+        rpc: mockRpc,
+        from: mockFrom,
+      });
+
+      const req = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notes: 'Failing transaction test',
+        }),
+      });
+
+      const res = await completeAssignment(req, { params: Promise.resolve({ id: assignmentA }) });
+      expect(res.status).toBe(500);
+      const json = await res.json();
+
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Failed to complete assignment atomically');
+
+      // CRITICAL P-H01 INVARIANT:
+      // The API MUST NOT fall back to manually mutating job_assignments or applications
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it('Test B (PATCH route): PATCH with completed status refuses non-atomic fallback on RPC failure', async () => {
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Database constraint violation during application upsert' },
+      });
+
+      const mockFrom = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: { id: assignmentA, worker_id: workerA, status: 'in_progress' },
+          error: null,
+        }),
+        update: vi.fn(), // Should NEVER be called for status: 'completed'
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerA } }, error: null }),
+        },
+        rpc: mockRpc,
+        from: mockFrom,
+      });
+
+      const req = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'completed',
+          notes: 'PATCH attempt that fails RPC',
+        }),
+      });
+
+      const res = await updateAssignmentStatus(req, { params: Promise.resolve({ id: assignmentA }) });
+      expect(res.status).toBe(500);
+      const json = await res.json();
+
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('Failed to complete assignment atomically');
+
+      // Verify that update was never called on job_assignments table
+      const fromResult = mockFrom('job_assignments');
+      expect(fromResult.update).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // Test C: Retry Idempotency — Re-running completion returns idempotent result
+    // -----------------------------------------------------------------------
+    it('Test C (Retry Idempotency): Repeating completion request returns idempotent state without duplicate records', async () => {
+      const mockCompletedAssignment = {
+        id: assignmentA,
+        organization_id: orgA,
+        job_id: jobId,
+        worker_id: workerA,
+        status: 'completed',
+        notes: 'Original note',
+      };
+      const mockExistingApplication = {
+        id: appA,
+        user_id: workerA,
+        job_id: jobId,
+        status: 'applied',
+        organization_id: orgA,
+      };
+
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: {
+          assignment: mockCompletedAssignment,
+          application: mockExistingApplication,
+          idempotent: true,
+        },
+        error: null,
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerA } }, error: null }),
+        },
+        rpc: mockRpc,
+      });
+
+      const req = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: 'Retried completion' }),
+      });
+
+      const res = await completeAssignment(req, { params: Promise.resolve({ id: assignmentA }) });
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(json.success).toBe(true);
+      expect(json.data.idempotent).toBe(true);
+      expect(json.data.assignment.status).toBe('completed');
+    });
+
+    // -----------------------------------------------------------------------
+    // Test D: Concurrency — Concurrent completion attempts resolve safely
+    // -----------------------------------------------------------------------
+    it('Test D (Concurrent Completion): Race condition resolves with one primary mutation and one idempotent response', async () => {
+      const mockCompletedAssignment = {
+        id: assignmentA,
+        organization_id: orgA,
+        job_id: jobId,
+        worker_id: workerA,
+        status: 'completed',
+      };
+      const mockApplication = {
+        id: appA,
+        user_id: workerA,
+        job_id: jobId,
+        status: 'applied',
+        organization_id: orgA,
+      };
+
+      // In Postgres, the first transaction acquires FOR UPDATE and commits idempotent: false.
+      // The second transaction acquires the lock next, observes status = 'completed', and commits idempotent: true.
+      let callCount = 0;
+      const mockRpc = vi.fn().mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          data: {
+            assignment: mockCompletedAssignment,
+            application: mockApplication,
+            idempotent: callCount > 1,
+          },
+          error: null,
+        });
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerA } }, error: null }),
+        },
+        rpc: mockRpc,
+      });
+
+      const req1 = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: 'Thread 1' }),
+      });
+      const req2 = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: 'Thread 2' }),
+      });
+
+      const [res1, res2] = await Promise.all([
+        completeAssignment(req1, { params: Promise.resolve({ id: assignmentA }) }),
+        completeAssignment(req2, { params: Promise.resolve({ id: assignmentA }) }),
+      ]);
+
+      expect(res1.status).toBe(200);
+      expect(res2.status).toBe(200);
+
+      const json1 = await res1.json();
+      const json2 = await res2.json();
+
+      expect(json1.data.assignment.status).toBe('completed');
+      expect(json2.data.assignment.status).toBe('completed');
+
+      // Exactly one was the primary completion and the other was acknowledged idempotently
+      const idempotentResults = [json1.data.idempotent, json2.data.idempotent];
+      expect(idempotentResults).toContain(false);
+      expect(idempotentResults).toContain(true);
+    });
+
+    // -----------------------------------------------------------------------
+    // P-H02: Anonymous Access Rejection
+    // -----------------------------------------------------------------------
+    it('P-H02 (Anonymous Access): Rejects unauthenticated caller with 401 at the API layer', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('Unauthorized') }),
+        },
+      });
+
+      const req = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: 'Anon attack' }),
+      });
+
+      const res = await completeAssignment(req, { params: Promise.resolve({ id: assignmentA }) });
+      expect(res.status).toBe(401);
+      const json = await res.json();
+      expect(json.success).toBe(false);
+    });
+
+    // -----------------------------------------------------------------------
+    // P-H03: Application Tenancy Invariant — Multi-Org Conflict Behavior
+    // -----------------------------------------------------------------------
+    it('P-H03 (Application Tenancy): Respects global candidate (user, job) uniqueness while attributing or preserving organization provenance', async () => {
+      // Invariant: Candidate applications represent 1:1 job application records for a real-world position.
+      // If Worker A was assigned Job X under Org A, the application is associated with Org A.
+      // If Worker A previously applied under Org B, Org B provenance is preserved.
+      const mockCompletedAssignment = {
+        id: assignmentA,
+        organization_id: orgA,
+        job_id: jobId,
+        worker_id: workerA,
+        status: 'completed',
+      };
+      const mockPreservedApplication = {
+        id: appA,
+        user_id: workerA,
+        job_id: jobId,
+        status: 'applied',
+        organization_id: orgB, // Preserved pre-existing Org B provenance
+      };
+
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: {
+          assignment: mockCompletedAssignment,
+          application: mockPreservedApplication,
+          idempotent: false,
+        },
+        error: null,
+      });
+
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: workerA } }, error: null }),
+        },
+        rpc: mockRpc,
+      });
+
+      const req = new NextRequest(`http://localhost:3000/api/worker/assignments/${assignmentA}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: 'Cross-org resolution check' }),
+      });
+
+      const res = await completeAssignment(req, { params: Promise.resolve({ id: assignmentA }) });
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(json.data.assignment.organization_id).toBe(orgA);
+      expect(json.data.application.organization_id).toBe(orgB);
+      expect(mockRpc).toHaveBeenCalledWith('complete_assignment_with_application', {
+        p_assignment_id: assignmentA,
+        p_notes: 'Cross-org resolution check',
+        p_company_name: null,
+        p_job_title: null,
+      });
+    });
+  });
 });
