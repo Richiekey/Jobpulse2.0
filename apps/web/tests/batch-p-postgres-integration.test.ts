@@ -73,20 +73,18 @@ describe.runIf(isDedicatedTestConfigured)(
         -- 2. Insert dedicated test job
         INSERT INTO public.jobs (
           id,
-          title,
-          company,
-          location,
+          canonical_title,
+          display_title,
           description,
           apply_url,
-          source
+          status
         ) VALUES (
           '${testJobId}',
           'Test Staff Security Engineer (${runId})',
-          'Test Tech Corp',
-          'Remote',
+          'Test Staff Security Engineer (${runId})',
           'Job description for integration testing',
           'https://test.example.com/apply/${runId}',
-          'test_fixture'
+          'active'
         );
 
         -- 3. Setup Organizations and Memberships
@@ -156,16 +154,27 @@ describe.runIf(isDedicatedTestConfigured)(
     }, 30000);
 
     afterAll(async () => {
-      // Clean teardown of mutable test entities
-      await executeSql(`
-        DELETE FROM public.applications WHERE id = '${appAId}';
-        DELETE FROM public.organization_members WHERE organization_id IN ('${orgAId}', '${orgBId}');
-        DELETE FROM public.organizations WHERE id IN ('${orgAId}', '${orgBId}');
-        DELETE FROM public.jobs WHERE id = '${testJobId}';
-        DELETE FROM auth.users WHERE id IN ('${workerUserId}', '${orgBAdminId}');
-      `).catch(() => {
-        // Safe catch for append-only foreign constraints
-      });
+      // 1. Authoritative teardown using exact IDs — must NEVER swallow errors
+      const cleanupResult = await executeSql<any[]>(`
+        SELECT public.cleanup_test_fixtures_by_ids(ARRAY['${orgAId}'::uuid, '${orgBId}'::uuid]) AS result;
+      `);
+      if (!cleanupResult || cleanupResult.length === 0 || !cleanupResult[0].result?.success) {
+        throw new Error(`[TEARDOWN_FAILURE] cleanup_test_fixtures_by_ids did not return success`);
+      }
+
+      // 2. Delete test catalog job
+      await executeSql(`DELETE FROM public.jobs WHERE id = '${testJobId}';`);
+
+      // 3. Delete auth test users
+      await executeSql(`DELETE FROM auth.users WHERE id IN ('${workerUserId}', '${orgBAdminId}');`);
+
+      // 4. Independently verify zero test fixtures remain
+      const [remaining] = await executeSql<any[]>(`
+        SELECT count(*) as count 
+        FROM public.organizations 
+        WHERE id IN ('${orgAId}', '${orgBId}');
+      `);
+      expect(parseInt(remaining.count, 10)).toBe(0);
     });
 
     it('verifies exact database state BEFORE RPC execution', async () => {

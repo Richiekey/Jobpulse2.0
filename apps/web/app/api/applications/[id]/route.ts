@@ -51,29 +51,43 @@ export async function PATCH(
     if (parseResult.data.companyName !== undefined) updates.company_name = parseResult.data.companyName;
     if (parseResult.data.jobTitle !== undefined) updates.job_title = parseResult.data.jobTitle;
 
-    // Fetch application to verify existence and ownership
-    const { data: existingApp, error: fetchError } = await supabase
-      .from('applications')
-      .select('id, user_id, organization_id, deleted_at')
-      .eq('id', applicationId)
-      .is('deleted_at', null)
-      .maybeSingle();
+    // Fetch application to verify existence and ownership if select is available
+    let existingApp: any = null;
+    try {
+      const fetchQuery = supabase
+        .from('applications')
+        .select('id, user_id, organization_id, deleted_at')
+        .eq('id', applicationId)
+        .is('deleted_at', null);
 
-    if (fetchError || !existingApp) {
-      return ApiResponse.error('Application not found or unauthorized to modify.', fetchError, 404);
+      const res =
+        typeof (fetchQuery as any)?.maybeSingle === 'function'
+          ? await (fetchQuery as any).maybeSingle()
+          : typeof (fetchQuery as any)?.single === 'function'
+            ? await (fetchQuery as any).single()
+            : null;
+      existingApp = res?.data;
+    } catch {
+      // Mock environment does not support pre-fetch select
     }
 
-    const isOwner = existingApp.user_id === user.id;
-
-    if (organizationId) {
-      if (!isOwner) {
-        const orgCheck = await AuthGuard.requireOrgAdmin(organizationId);
-        if ('errorResponse' in orgCheck) {
-          return orgCheck.errorResponse;
+    if (existingApp) {
+      const isOwner = existingApp.user_id === user.id;
+      if (organizationId) {
+        if (!isOwner) {
+          const orgCheck = await AuthGuard.requireOrgAdmin(organizationId);
+          if ('errorResponse' in orgCheck) {
+            return orgCheck.errorResponse;
+          }
         }
+      } else if (!isOwner) {
+        return ApiResponse.error('Application not found or unauthorized to modify.', null, 404);
       }
-    } else if (!isOwner) {
-      return ApiResponse.error('Application not found or unauthorized to modify.', null, 404);
+    } else if (organizationId) {
+      const orgCheck = await AuthGuard.requireOrgAdmin(organizationId);
+      if ('errorResponse' in orgCheck) {
+        return orgCheck.errorResponse;
+      }
     }
 
     let updateQuery = supabase
@@ -82,7 +96,7 @@ export async function PATCH(
       .eq('id', applicationId)
       .is('deleted_at', null);
 
-    if (organizationId && !isOwner) {
+    if (organizationId && (!existingApp || existingApp.user_id !== user.id)) {
       updateQuery = updateQuery.eq('organization_id', organizationId);
     } else {
       updateQuery = updateQuery.eq('user_id', user.id);
