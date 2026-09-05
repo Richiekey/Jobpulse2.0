@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const OrgRoleSchema = z.enum(['owner', 'admin', 'worker']);
-export const AssignmentStatusSchema = z.enum(['assigned', 'in_progress', 'completed', 'skipped']);
+export const AssignmentStatusSchema = z.enum(['assigned', 'in_progress', 'completed', 'skipped', 'cancelled']);
 
 export const CreateOrganizationSchema = z.object({
   name: z.string().trim().min(2, 'Organization name must be at least 2 characters').max(100),

@@ -6,10 +6,11 @@ export class AssignmentLifecycleService {
    * Terminal states (completed, skipped) cannot transition to assigned or in_progress.
    */
   private static readonly VALID_TRANSITIONS: Record<AssignmentStatus, ReadonlySet<AssignmentStatus>> = {
-    assigned: new Set(['in_progress', 'skipped']),
-    in_progress: new Set(['completed', 'skipped']),
+    assigned: new Set(['in_progress', 'skipped', 'cancelled']),
+    in_progress: new Set(['completed', 'skipped', 'cancelled']),
     completed: new Set([]), // Terminal: cannot be reset or transitioned
     skipped: new Set([]), // Terminal: cannot be reset or transitioned
+    cancelled: new Set([]), // Terminal: cannot be reset or transitioned
   };
 
   /**
@@ -20,6 +21,7 @@ export class AssignmentLifecycleService {
     in_progress: new Set(['completed', 'skipped']),
     completed: new Set([]), // Workers cannot alter completed assignments
     skipped: new Set([]), // Workers cannot alter skipped assignments
+    cancelled: new Set([]), // Workers cannot alter cancelled assignments
   };
 
   /**
@@ -47,9 +49,9 @@ export class AssignmentLifecycleService {
   }
 
   /**
-   * Identifies whether the assignment has reached a terminal stage (completed or skipped).
+   * Identifies whether the assignment has reached a terminal stage (completed, skipped, or cancelled).
    */
   public static isTerminal(status: AssignmentStatus): boolean {
-    return status === 'completed' || status === 'skipped';
+    return status === 'completed' || status === 'skipped' || status === 'cancelled';
   }
 }

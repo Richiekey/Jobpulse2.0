@@ -115,7 +115,7 @@ export class AuthGuard {
 
     const { user, supabase } = authResult;
 
-    // Check membership in the specified organization
+    // 1. Check direct membership in the specified organization
     const { data: member, error: memberError } = await supabase
       .from('organization_members')
       .select('id, organization_id, user_id, role')
@@ -137,25 +137,33 @@ export class AuthGuard {
       };
     }
 
-    // Check if user is platform super-admin (delegated bypass)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    // 2. Fallback: Check if user is platform super-admin (platform-wide delegated access)
+    try {
+      const profileQuery = supabase.from('profiles');
+      if (typeof profileQuery?.select === 'function') {
+        const selectQuery = profileQuery.select('id, role, email');
+        if (typeof selectQuery?.eq === 'function') {
+          const { data: profile } = await selectQuery
+            .eq('id', user.id)
+            .maybeSingle();
 
-    if (profile && (profile as any).role === 'admin') {
-      return {
-        user,
-        supabase,
-        organizationId,
-        membership: {
-          id: `superadmin_${user.id}`,
-          organizationId,
-          userId: user.id,
-          role: 'owner',
-        },
-      };
+          if (profile && (profile as any).role === 'admin') {
+            return {
+              user,
+              supabase,
+              organizationId,
+              membership: {
+                id: `superadmin_${user.id}`,
+                organizationId,
+                userId: user.id,
+                role: 'owner',
+              },
+            };
+          }
+        }
+      }
+    } catch {
+      // Fall through to forbidden error
     }
 
     return {

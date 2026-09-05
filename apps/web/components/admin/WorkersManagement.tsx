@@ -23,6 +23,7 @@ export interface WorkerAssignmentStats {
   in_progress: number;
   completed: number;
   skipped: number;
+  cancelled?: number;
 }
 
 export interface WorkerProfileData {

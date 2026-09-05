@@ -12,7 +12,53 @@ export async function GET() {
 
     const { user, supabase } = authResult;
 
-    // Fetch organizations that the user belongs to along with their role
+    // Check if user is platform super-admin (platform-wide organization discovery)
+    let isPlatformAdmin = false;
+    try {
+      const profileQuery = supabase.from('profiles');
+      if (typeof profileQuery?.select === 'function') {
+        const selectQuery = profileQuery.select('id, role');
+        if (typeof selectQuery?.eq === 'function') {
+          const { data: profile } = await selectQuery
+            .eq('id', user.id)
+            .maybeSingle();
+          isPlatformAdmin = Boolean(profile && (profile as any).role === 'admin');
+        }
+      }
+    } catch {
+      // Fall through to standard direct organization membership discovery
+    }
+
+    if (isPlatformAdmin) {
+      const { data: allOrgs, error: orgsError } = await supabase
+        .from('organizations')
+        .select('id, name, slug, domain, logo_url, created_at')
+        .order('name', { ascending: true });
+
+      if (orgsError) {
+        return ApiResponse.error('Failed to retrieve organizations.', orgsError, 500);
+      }
+
+      const { data: memberships } = await supabase
+        .from('organization_members')
+        .select('organization_id, role, created_at')
+        .eq('user_id', user.id);
+
+      const membershipMap = new Map((memberships || []).map((m: any) => [m.organization_id, m]));
+
+      const orgs = (allOrgs || []).map((org: any) => {
+        const m = membershipMap.get(org.id);
+        return {
+          ...org,
+          membershipRole: m ? m.role : 'owner',
+          joinedAt: m ? m.created_at : org.created_at,
+        };
+      });
+
+      return ApiResponse.success(orgs);
+    }
+
+    // Standard organization member discovery: strictly scoped to direct memberships
     const { data: memberships, error: memberError } = await supabase
       .from('organization_members')
       .select('role, created_at, organizations (id, name, slug, domain, logo_url, created_at)')

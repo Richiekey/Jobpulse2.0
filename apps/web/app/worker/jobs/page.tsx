@@ -29,7 +29,7 @@ interface AssignmentItem {
   jobId: string;
   workerId: string;
   assignedBy: string;
-  status: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+  status: 'assigned' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
   deadlineAt: string | null;
   notes: string | null;
   assignedAt: string;

@@ -701,7 +701,7 @@ export interface Database {
           job_id: string;
           worker_id: string;
           assigned_by: string;
-          status: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+          status: 'assigned' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
           deadline_at: string | null;
           notes: string | null;
           created_at: string;
@@ -713,7 +713,7 @@ export interface Database {
           job_id: string;
           worker_id: string;
           assigned_by: string;
-          status?: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+          status?: 'assigned' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
           deadline_at?: string | null;
           notes?: string | null;
           created_at?: string;
@@ -725,7 +725,7 @@ export interface Database {
           job_id?: string;
           worker_id?: string;
           assigned_by?: string;
-          status?: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+          status?: 'assigned' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
           deadline_at?: string | null;
           notes?: string | null;
           created_at?: string;
@@ -942,7 +942,7 @@ export interface Database {
     };
     Enums: {
       application_status_enum: 'saved' | 'applied' | 'screening' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'archived';
-      assignment_status_enum: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+      assignment_status_enum: 'assigned' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
       employment_type_enum: 'full_time' | 'part_time' | 'contract' | 'internship' | 'temporary' | 'other';
       health_status_enum: 'healthy' | 'degraded' | 'failing' | 'disabled';
       job_status_enum: 'active' | 'suspect' | 'stale' | 'expired' | 'removed';

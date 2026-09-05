@@ -154,30 +154,24 @@ describe('Admin Verifications Review Queue API (Batch Q)', () => {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === 'profiles') {
           return {
-            select: vi.fn().mockImplementation((cols: string) => {
-              if (cols === 'role') {
-                return {
-                  eq: vi.fn().mockReturnValue({
-                    maybeSingle: vi.fn().mockResolvedValue({
-                      data: { role: 'user' },
-                      error: null,
-                    }),
-                  }),
-                };
-              }
-              return {
-                in: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      id: workerId,
-                      email: 'worker@acme.com',
-                      full_name: 'Alice Worker',
-                      avatar_url: 'https://avatar.png',
-                    },
-                  ],
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: adminId, role: 'user' },
                   error: null,
                 }),
-              };
+              }),
+              in: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: workerId,
+                    email: 'worker@acme.com',
+                    full_name: 'Alice Worker',
+                    avatar_url: 'https://avatar.png',
+                  },
+                ],
+                error: null,
+              }),
             }),
           };
         }

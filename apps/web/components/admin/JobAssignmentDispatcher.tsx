@@ -25,7 +25,7 @@ export interface AdminAssignmentItem {
   jobId: string;
   workerId: string;
   assignedBy: string;
-  status: 'assigned' | 'in_progress' | 'completed' | 'skipped';
+  status: 'assigned' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
   deadlineAt: string | null;
   notes: string | null;
   assignedAt: string;
@@ -428,6 +428,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
               <option value="in_progress">In Progress</option>
               <option value="completed">Completed</option>
               <option value="skipped">Skipped</option>
+              <option value="cancelled">Cancelled</option>
             </select>
 
             {/* Worker Filter */}
@@ -639,6 +640,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                                 ? 'rgba(245, 158, 11, 0.15)'
                                 : a.status === 'assigned'
                                 ? 'rgba(99, 102, 241, 0.15)'
+                                : a.status === 'cancelled'
+                                ? 'rgba(239, 68, 68, 0.15)'
                                 : 'rgba(156, 163, 175, 0.15)',
                             color:
                               a.status === 'completed'
@@ -647,6 +650,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                                 ? '#fbbf24'
                                 : a.status === 'assigned'
                                 ? '#818cf8'
+                                : a.status === 'cancelled'
+                                ? '#f87171'
                                 : '#9ca3af',
                           }}
                         >
@@ -654,6 +659,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                             <CheckCircle2 size={12} />
                           ) : a.status === 'in_progress' ? (
                             <Clock size={12} />
+                          ) : a.status === 'cancelled' ? (
+                            <XCircle size={12} />
                           ) : (
                             <Briefcase size={12} />
                           )}
@@ -694,22 +701,26 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
 
                       {/* Cancel Action */}
                       <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        <button
-                          onClick={() => {
-                            setCancellingAssignment(a);
-                            setCancelError(null);
-                          }}
-                          className="btn btn-secondary"
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '0.75rem',
-                            color: '#ef4444',
-                            borderColor: 'rgba(239, 68, 68, 0.3)',
-                          }}
-                          title="Cancel Assignment"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {a.status !== 'completed' && a.status !== 'skipped' && a.status !== 'cancelled' ? (
+                          <button
+                            onClick={() => {
+                              setCancellingAssignment(a);
+                              setCancelError(null);
+                            }}
+                            className="btn btn-secondary"
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '0.75rem',
+                              color: '#ef4444',
+                              borderColor: 'rgba(239, 68, 68, 0.3)',
+                            }}
+                            title="Cancel Assignment"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>
+                        )}
                       </td>
                     </tr>
                   );

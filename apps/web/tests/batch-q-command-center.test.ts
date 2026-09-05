@@ -32,12 +32,29 @@ import { createAdminClient } from '../lib/supabase/admin';
 
 describe('Batch Q — Employer & Admin Command Center Integration Suite', () => {
   const orgId = '11111111-1111-1111-1111-111111111111';
+  const otherOrgId = '99999999-9999-9999-9999-999999999999';
   const adminId = 'admin_user_01';
+  const superAdminId = 'super_admin_user_01';
   const workerId = '22222222-2222-2222-2222-222222222222';
   const jobId = '33333333-3333-3333-3333-333333333333';
   const appId = '44444444-4444-4444-4444-444444444444';
   const verifId = '55555555-5555-5555-5555-555555555555';
   const eventId = '66666666-6666-6666-6666-666666666666';
+
+  const createQueryBuilder = (data: any = null) => {
+    const builder: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data, error: null }),
+      then: (resolve: any) => resolve({ data, error: null }),
+    };
+    return builder;
+  };
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -53,6 +70,9 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }),
         },
         from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
           if (table === 'organization_members') {
             return {
               select: vi.fn().mockReturnThis(),
@@ -84,7 +104,7 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
                       }),
                   };
                 }
-                return {} as any;
+                return createQueryBuilder();
               }),
             };
           }
@@ -121,7 +141,7 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
               }),
             };
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
       });
 
@@ -142,6 +162,113 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
       expect(worker.assignmentStats.in_progress).toBe(1);
       expect(worker.assignmentStats.completed).toBe(1);
     });
+
+    it('allows platform superadmin to access workforce roster without direct organization membership (Q-H01)', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: superAdminId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: superAdminId, role: 'admin' });
+          }
+          if (table === 'organization_members') {
+            const b: any = {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              then: (resolve: any) =>
+                resolve({
+                  data: [
+                    {
+                      id: 'm_worker',
+                      user_id: workerId,
+                      role: 'worker',
+                      created_at: '2026-09-01T00:00:00Z',
+                      profiles: {
+                        email: 'worker@acme.com',
+                        full_name: 'Jane Worker',
+                        avatar_url: null,
+                      },
+                    },
+                  ],
+                  error: null,
+                }),
+            };
+            return b;
+          }
+          if (table === 'worker_profiles') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: [],
+                  error: null,
+                }),
+              }),
+            };
+          }
+          if (table === 'job_assignments') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: [],
+                  error: null,
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      const req = new NextRequest(`http://localhost/api/admin/workers?organizationId=${orgId}`);
+      const res = await getAdminWorkers(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(json.data).toHaveLength(1);
+    });
+
+    it('rejects worker trying to access admin workers endpoint with 403 Forbidden', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: workerId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: workerId, role: 'user' });
+          }
+          if (table === 'organization_members') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { id: 'm_worker', organization_id: orgId, user_id: workerId, role: 'worker' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      const req = new NextRequest(`http://localhost/api/admin/workers?organizationId=${orgId}`);
+      const res = await getAdminWorkers(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(403);
+      expect(json.error).toContain('Forbidden');
+    });
   });
 
   describe('Pillar 2: Job Assignment Dispatcher Integration', () => {
@@ -154,6 +281,9 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }),
         },
         from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
           if (table === 'organization_members') {
             return {
               select: vi.fn().mockReturnThis(),
@@ -206,7 +336,7 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
               }),
             };
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
       });
 
@@ -230,7 +360,7 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
       expect(json.data.notes).toBe('High priority lead for Stripe backend');
     });
 
-    it('cancels an active assignment when requested by organization administrator', async () => {
+    it('cancels an active assignment non-destructively via status update to cancelled (Q-H02)', async () => {
       (createClient as any).mockResolvedValue({
         auth: {
           getUser: vi.fn().mockResolvedValue({
@@ -239,6 +369,9 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }),
         },
         from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
           if (table === 'organization_members') {
             return {
               select: vi.fn().mockReturnThis(),
@@ -254,19 +387,46 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }
           if (table === 'job_assignments') {
             return {
-              delete: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   eq: vi.fn().mockReturnValue({
-                    select: vi.fn().mockResolvedValue({
-                      data: [{ id: 'asgn_new_123' }],
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: {
+                        id: 'asgn_new_123',
+                        status: 'assigned',
+                        organization_id: orgId,
+                        worker_id: workerId,
+                        job_id: jobId,
+                        notes: 'Initial dispatch notes',
+                      },
                       error: null,
+                    }),
+                  }),
+                }),
+              }),
+              update: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    select: vi.fn().mockReturnValue({
+                      single: vi.fn().mockResolvedValue({
+                        data: {
+                          id: 'asgn_new_123',
+                          status: 'cancelled',
+                          organization_id: orgId,
+                          worker_id: workerId,
+                          job_id: jobId,
+                          notes: 'Initial dispatch notes',
+                          updated_at: '2026-09-05T12:00:00Z',
+                        },
+                        error: null,
+                      }),
                     }),
                   }),
                 }),
               }),
             };
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
       });
 
@@ -279,6 +439,124 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
       expect(res.status).toBe(200);
       expect(json.success).toBe(true);
       expect(json.data.cancelled).toBe(true);
+      expect(json.data.assignment.status).toBe('cancelled');
+      expect(json.data.assignment.id).toBe('asgn_new_123');
+    });
+
+    it('rejects cancelling an assignment that has reached completed terminal state (Q-H02)', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: adminId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
+          if (table === 'organization_members') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { id: 'm_admin', organization_id: orgId, user_id: adminId, role: 'admin' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'job_assignments') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: {
+                        id: 'asgn_completed',
+                        status: 'completed',
+                        organization_id: orgId,
+                        worker_id: workerId,
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      const req = new NextRequest(
+        `http://localhost/api/admin/assignments?assignmentId=asgn_completed&organizationId=${orgId}`
+      );
+      const res = await cancelAssignment(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.error).toContain('Cannot cancel a completed assignment');
+    });
+
+    it('safely rejects repeated cancellation with already cancelled error (Q-H02 idempotent guard)', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: adminId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
+          if (table === 'organization_members') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { id: 'm_admin', organization_id: orgId, user_id: adminId, role: 'admin' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'job_assignments') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: {
+                        id: 'asgn_cancelled',
+                        status: 'cancelled',
+                        organization_id: orgId,
+                        worker_id: workerId,
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      const req = new NextRequest(
+        `http://localhost/api/admin/assignments?assignmentId=asgn_cancelled&organizationId=${orgId}`
+      );
+      const res = await cancelAssignment(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.error).toContain('Assignment is already cancelled');
     });
   });
 
@@ -303,6 +581,9 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }),
         },
         from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
           if (table === 'applications') {
             return {
               select: vi.fn().mockReturnValue({
@@ -343,7 +624,7 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
               }),
             };
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
         rpc: mockRpc,
       });
@@ -390,6 +671,9 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }),
         },
         from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
           if (table === 'applications') {
             return {
               select: vi.fn().mockReturnValue({
@@ -430,7 +714,7 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
               }),
             };
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
         rpc: mockRpc,
       });
@@ -439,8 +723,8 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
         method: 'PATCH',
         body: JSON.stringify({
           status: 'rejected',
-          reviewerNotes: 'Screenshot does not show confirmation email header',
           verificationId: verifId,
+          reviewerNotes: 'Screenshot does not show confirmation email header',
         }),
       });
 
@@ -468,13 +752,16 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }),
         },
         from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
           if (table === 'organization_members') {
             return {
               select: vi.fn().mockReturnThis(),
               eq: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   maybeSingle: vi.fn().mockResolvedValue({
-                    data: { id: 'm_admin', role: 'admin' },
+                    data: { id: 'm_admin', organization_id: orgId, user_id: adminId, role: 'admin' },
                     error: null,
                   }),
                 }),
@@ -522,7 +809,7 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
               }),
             };
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
       });
 
@@ -570,10 +857,13 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
           }),
         },
         from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
           if (table === 'organization_members') {
             return mockOrgMembers;
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
       });
 
@@ -599,19 +889,9 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
             };
           }
           if (table === 'organization_members') {
-            return {
-              select: vi.fn().mockReturnThis(),
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  maybeSingle: vi.fn().mockResolvedValue({
-                    data: { role: 'admin' },
-                    error: null,
-                  }),
-                }),
-              }),
-            };
+            return mockOrgMembers;
           }
-          return {} as any;
+          return createQueryBuilder();
         }),
       });
 
@@ -627,6 +907,130 @@ describe('Batch Q — Employer & Admin Command Center Integration Suite', () => 
       expect(json.success).toBe(true);
       expect(json.data.retriedCount).toBe(1);
       expect(mockUpdate).toHaveBeenCalled();
+    });
+
+    it('rejects manual retry on non-retryable sync event status (Q-H04)', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: adminId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
+          if (table === 'organization_members') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'admin' }, error: null }),
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      (createAdminClient as any).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'sync_events') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: {
+                      id: eventId,
+                      organization_id: orgId,
+                      user_id: workerId,
+                      status: 'synced', // non-retryable
+                      manual_retry_count: 0,
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      const req = new NextRequest('http://localhost/api/sync/retry', {
+        method: 'POST',
+        body: JSON.stringify({ eventId }),
+      });
+
+      const res = await retrySync(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.error).toContain("Cannot retry sync event with status 'synced'");
+    });
+
+    it('rejects manual retry when manual replay limit (5) has been reached (Q-H04)', async () => {
+      (createClient as any).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: adminId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return createQueryBuilder({ id: adminId, role: 'user' });
+          }
+          if (table === 'organization_members') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'admin' }, error: null }),
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      (createAdminClient as any).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'sync_events') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: {
+                      id: eventId,
+                      organization_id: orgId,
+                      user_id: workerId,
+                      status: 'failed',
+                      manual_retry_count: 5, // Limit reached
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return createQueryBuilder();
+        }),
+      });
+
+      const req = new NextRequest('http://localhost/api/sync/retry', {
+        method: 'POST',
+        body: JSON.stringify({ eventId }),
+      });
+
+      const res = await retrySync(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.error).toContain('Manual retry limit reached');
     });
   });
 });

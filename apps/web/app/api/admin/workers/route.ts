@@ -57,9 +57,9 @@ export async function GET(request: NextRequest) {
       .select('worker_id, status')
       .eq('organization_id', organizationId);
 
-    const statsMap = new Map<string, { total: number; assigned: number; in_progress: number; completed: number; skipped: number }>();
+    const statsMap = new Map<string, { total: number; assigned: number; in_progress: number; completed: number; skipped: number; cancelled: number }>();
     for (const a of assignments || []) {
-      const stats = statsMap.get(a.worker_id) || { total: 0, assigned: 0, in_progress: 0, completed: 0, skipped: 0 };
+      const stats = statsMap.get(a.worker_id) || { total: 0, assigned: 0, in_progress: 0, completed: 0, skipped: 0, cancelled: 0 };
       stats.total += 1;
       if (a.status in stats) {
         (stats as any)[a.status] += 1;
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     const workers = (members || []).map((m: any) => {
       const wp = profileMap.get(m.user_id);
-      const stats = statsMap.get(m.user_id) || { total: 0, assigned: 0, in_progress: 0, completed: 0, skipped: 0 };
+      const stats = statsMap.get(m.user_id) || { total: 0, assigned: 0, in_progress: 0, completed: 0, skipped: 0, cancelled: 0 };
 
       return {
         memberId: m.id,

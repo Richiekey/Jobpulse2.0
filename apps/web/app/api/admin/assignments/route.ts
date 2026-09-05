@@ -248,22 +248,52 @@ export async function DELETE(request: NextRequest) {
 
     const { supabase } = authResult;
 
-    const { data: deleted, error: deleteError } = await supabase
+    // Fetch existing assignment to verify existence and enforce lifecycle invariants
+    const { data: existingAssignment, error: findError } = await supabase
       .from('job_assignments')
-      .delete()
+      .select('id, status, organization_id, worker_id, job_id, notes')
       .eq('id', assignmentId)
       .eq('organization_id', organizationId)
-      .select('id');
+      .maybeSingle();
 
-    if (deleteError) {
-      return ApiResponse.error('Failed to cancel job assignment.', deleteError, 500);
+    if (findError) {
+      return ApiResponse.error('Database query error while verifying assignment.', findError, 500);
     }
 
-    if (!deleted || deleted.length === 0) {
+    if (!existingAssignment) {
       return ApiResponse.error('Assignment not found in this organization.', null, 404);
     }
 
-    return ApiResponse.success({ cancelled: true, assignmentId });
+    // Terminal state invariants (Q-H02)
+    if (existingAssignment.status === 'completed') {
+      return ApiResponse.error('Cannot cancel a completed assignment: terminal state reached.', null, 400);
+    }
+
+    if (existingAssignment.status === 'skipped') {
+      return ApiResponse.error('Cannot cancel a skipped assignment: terminal state reached.', null, 400);
+    }
+
+    if (existingAssignment.status === 'cancelled') {
+      return ApiResponse.error('Assignment is already cancelled.', null, 400);
+    }
+
+    // Non-destructive transition to 'cancelled': preserves row, timestamps, notes, and triggers audit event
+    const { data: updated, error: updateError } = await supabase
+      .from('job_assignments')
+      .update({
+        status: 'cancelled',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', assignmentId)
+      .eq('organization_id', organizationId)
+      .select('*')
+      .single();
+
+    if (updateError) {
+      return ApiResponse.error('Failed to cancel job assignment.', updateError, 500);
+    }
+
+    return ApiResponse.success({ cancelled: true, assignment: updated });
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred while cancelling assignment.', err, 500);
   }
