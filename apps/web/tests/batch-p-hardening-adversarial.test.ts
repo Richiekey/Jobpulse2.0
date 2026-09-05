@@ -852,7 +852,8 @@ describe('Batch P — Production Hardening & Adversarial Suite (P-01 to P-08)', 
       const mockRpc = vi.fn().mockResolvedValue({
         data: {
           assignment: mockCompletedAssignment,
-          application: mockPreservedApplication,
+          application: null, // Foreign Org B application is not leaked in Org A operation
+          cross_organization_application: true,
           idempotent: false,
         },
         error: null,
@@ -876,7 +877,9 @@ describe('Batch P — Production Hardening & Adversarial Suite (P-01 to P-08)', 
       const json = await res.json();
 
       expect(json.data.assignment.organization_id).toBe(orgA);
-      expect(json.data.application.organization_id).toBe(orgB);
+      // Foreign Org B application is not exposed to Org A
+      expect(json.data.application).toBeNull();
+      expect(json.data.cross_organization_application).toBe(true);
       expect(mockRpc).toHaveBeenCalledWith('complete_assignment_with_application', {
         p_assignment_id: assignmentA,
         p_notes: 'Cross-org resolution check',
@@ -931,7 +934,8 @@ describe('Batch P — Production Hardening & Adversarial Suite (P-01 to P-08)', 
         const mockRpc = vi.fn().mockResolvedValue({
           data: {
             assignment: mockCompletedOrgBAssignment,
-            application: mockPreservedApp,
+            application: null, // Foreign Org A application is NOT leaked to Org B operation
+            cross_organization_application: true,
             idempotent: false,
           },
           error: null,
@@ -955,14 +959,14 @@ describe('Batch P — Production Hardening & Adversarial Suite (P-01 to P-08)', 
         expect(res.status).toBe(200);
         const json = await res.json();
 
-        // Point 4: Verify resulting application state
+        // Point 4: Verify assignment completed under Org B
         expect(json.success).toBe(true);
         expect(json.data.assignment.status).toBe('completed');
-        expect(json.data.application.status).toBe('applied');
-
-        // Point 5: Verify organization ownership/provenance
         expect(json.data.assignment.organization_id).toBe(orgB);
-        expect(json.data.application.organization_id).toBe(orgA);
+
+        // Point 5: Verify foreign Org A application is protected from leakage
+        expect(json.data.application).toBeNull();
+        expect(json.data.cross_organization_application).toBe(true);
 
         // Point 6: Verify Worker B cannot see or mutate Worker A data
         // Simulate Worker B attempting to complete Worker A's assignment
@@ -1038,10 +1042,9 @@ describe('Batch P — Production Hardening & Adversarial Suite (P-01 to P-08)', 
         expect(crossOrgJson.error).toContain('Application not found or unauthorized to modify.');
 
         // Point 8: Verify no duplicate application violates UNIQUE(user_id, job_id)
-        // RPC received p_assignment_id and returned the single unified application
-        expect(json.data.application.id).toBe(appA);
-        expect(json.data.application.user_id).toBe(workerA);
-        expect(json.data.application.job_id).toBe(jobId);
+        // In this cross-org case, RPC safely suppressed cross-tenant application leakage
+        expect(json.data.application).toBeNull();
+        expect(json.data.cross_organization_application).toBe(true);
       });
     });
   });
