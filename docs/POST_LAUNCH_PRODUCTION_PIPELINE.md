@@ -347,14 +347,20 @@ Dedicated operating environment for workers.
 # 17. Batch Q — Employer / Admin Command Center
 
 ### Objective
-Comprehensive workforce and operational command center.
+Comprehensive multi-tenant workforce and operational command center uniting 5 operational pillars with strict tenant boundary enforcement and zero raw private storage exposure.
 
-### Extended Admin Sections
-* Workers Management
-* Job Assignment Dispatcher
-* Application & Verification Review Queue
-* Sync Engine Monitoring & Retry Controls
-* Source Health & Data Quality Observatory
+### Extended Admin Sections & Delivered Deliverables
+* **Multi-Tenant Organization Selector (`AdminOrgSelector`)**: Header organization switcher supporting multi-org employers and platform superadmins, updating URL query parameters with active tenant persistence.
+* **Workers Management (`WorkersManagement`)**: Organization workforce roster, profile inspection drawer (skills, experience, CV preview, availability, notes), workload metrics (Assigned, In-Progress, Completed, Skipped), member role modifier dialog, and member removal safeguard.
+* **Job Assignment Dispatcher (`JobAssignmentDispatcher`)**: Interactive dispatch modal (worker selector, searchable catalog job picker with UUID direct entry, deadline picker, operational instructions), assignment queue table with status filters, and assignment cancellation controls.
+* **Application & Verification Review Queue (`VerificationReviewQueue` & `GET /api/admin/verifications`)**: Multi-tenant review queue with authorized signed storage URL screenshot viewer (`createSignedUrl` with 1h expiration, zero raw storage path leakage), and one-click approve/reject actions with reviewer feedback notes.
+* **Sync Engine Monitoring & Retry Controls (`SyncEngineObservatory`)**: Observability into external syncs (`sync_events`), status counts (pending, processing, synced, failed, dead-letter), failure diagnostics modal with raw payload inspector, single-event replay, and bulk retry controls.
+* **Source Health & Platform Observatory (`Source & Platform Observatory`)**: Deep operational observatory consolidating scrape telemetry, crawl run inspection, ATS source onboarding wizard, and global scrape triggers.
+* **Testing & Build Certification**:
+  - `tests/admin-verifications-api.test.ts`: 5/5 unit tests passed.
+  - `tests/batch-q-command-center.test.ts`: 7/7 integration tests passed.
+  - Workspace test suite: 36 test files, 392 tests passed (100% pass rate).
+  - Next.js production build: 50/50 routes compiled and statically/dynamically generated with zero errors.
 
 ---
 

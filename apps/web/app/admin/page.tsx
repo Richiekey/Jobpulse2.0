@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Activity,
   Briefcase,
@@ -10,18 +11,27 @@ import {
   PlusCircle,
   ArrowLeft,
   RefreshCw,
-  Sparkles,
   ShieldCheck,
   AlertTriangle,
   Lock,
   ShieldAlert,
   ServerCrash,
   LogIn,
+  Users,
+  ClipboardList,
+  CheckSquare,
+  RotateCw,
+  BarChart3,
 } from 'lucide-react';
 import { AdminMetricsOverview, AdminMetricsData } from '@/components/admin/AdminMetricsOverview';
 import { SourceManagementTable, AdminCompanySource } from '@/components/admin/SourceManagementTable';
 import { SourceOnboardingWizard } from '@/components/admin/SourceOnboardingWizard';
 import { RecentScrapeRunsTable } from '@/components/admin/RecentScrapeRunsTable';
+import { AdminOrgSelector, AdminOrganization } from '@/components/admin/AdminOrgSelector';
+import { WorkersManagement } from '@/components/admin/WorkersManagement';
+import { JobAssignmentDispatcher } from '@/components/admin/JobAssignmentDispatcher';
+import { VerificationReviewQueue } from '@/components/admin/VerificationReviewQueue';
+import { SyncEngineObservatory } from '@/components/admin/SyncEngineObservatory';
 import type { AdminScrapeRunItem } from '@/app/api/admin/scrape/runs/route';
 import { createClient } from '@/lib/supabase/client';
 
@@ -34,16 +44,21 @@ type ApiErrorState = {
 } | null;
 
 // ---------------------------------------------------------------------------
-// Auth states
+// Auth states supporting platform superadmins and organization administrators
 // ---------------------------------------------------------------------------
 type AuthState =
   | { state: 'loading' }
   | { state: 'unauthenticated' }
   | { state: 'forbidden'; email: string }
-  | { state: 'authorized'; email: string };
+  | {
+      state: 'authorized';
+      email: string;
+      isPlatformAdmin: boolean;
+      organizations: AdminOrganization[];
+    };
 
 // ---------------------------------------------------------------------------
-// Admin Auth Gate
+// Multi-Tenant Admin Auth Gate
 // ---------------------------------------------------------------------------
 function useAdminAuth(): AuthState {
   const [authState, setAuthState] = useState<AuthState>({ state: 'loading' });
@@ -65,21 +80,46 @@ function useAdminAuth(): AuthState {
           return;
         }
 
-        // Check admin role via profiles table
-        const { data: profile, error: profileError } = await supabase
+        // 1. Check platform superadmin role via profiles
+        const { data: profile } = await supabase
           .from('profiles')
           .select('id, role, email')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
+
+        const isPlatformAdmin = Boolean(profile && (profile as any).role === 'admin');
+
+        // 2. Check organization memberships for admin or owner roles
+        const { data: memberships } = await supabase
+          .from('organization_members')
+          .select('role, organizations (id, name, slug, domain, logo_url)')
+          .eq('user_id', user.id);
+
+        const manageableOrgs: AdminOrganization[] = (memberships || [])
+          .filter((m: any) => m.role === 'owner' || m.role === 'admin' || isPlatformAdmin)
+          .map((m: any) => ({
+            id: m.organizations.id,
+            name: m.organizations.name,
+            slug: m.organizations.slug,
+            domain: m.organizations.domain,
+            logo_url: m.organizations.logo_url,
+            membershipRole: m.role,
+          }));
 
         if (cancelled) return;
 
-        if (profileError || !profile || (profile as any).role !== 'admin') {
+        // User must be either platform admin OR an admin/owner of at least one organization
+        if (!isPlatformAdmin && manageableOrgs.length === 0) {
           setAuthState({ state: 'forbidden', email: user.email || 'unknown' });
           return;
         }
 
-        setAuthState({ state: 'authorized', email: user.email || (profile as any).email });
+        setAuthState({
+          state: 'authorized',
+          email: user.email || (profile as any)?.email,
+          isPlatformAdmin,
+          organizations: manageableOrgs,
+        });
       } catch {
         if (!cancelled) {
           setAuthState({ state: 'unauthenticated' });
@@ -205,7 +245,7 @@ function AdminLoadingScreen() {
           <ShieldCheck size={24} color="#ffffff" />
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-          Verifying administrator access…
+          Verifying administrator permissions…
         </p>
       </div>
     </div>
@@ -260,7 +300,7 @@ function AdminUnauthenticatedScreen() {
             lineHeight: 1.5,
           }}
         >
-          You must sign in with an administrator account to access the Admin Control Plane.
+          You must sign in with an administrator account to access the Admin Command Center.
         </p>
         <Link
           href="/"
@@ -333,9 +373,7 @@ function AdminForbiddenScreen({ email }: { email: string }) {
             lineHeight: 1.5,
           }}
         >
-          Your account does not have administrator privileges (
-          <code style={{ fontSize: '0.8rem' }}>profiles.role = &apos;admin&apos;</code> required).
-          Contact a platform administrator for access.
+          Your account does not have organization owner/admin privileges or platform administrator permissions.
         </p>
         <Link
           href="/"
@@ -351,10 +389,66 @@ function AdminForbiddenScreen({ email }: { email: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main Dashboard (only rendered when auth state is 'authorized')
+// Main Command Center Dashboard
 // ---------------------------------------------------------------------------
-function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'metrics' | 'sources' | 'onboard' | 'runs'>('metrics');
+function AdminDashboard({
+  isPlatformAdmin,
+  initialOrganizations,
+}: {
+  isPlatformAdmin: boolean;
+  initialOrganizations: AdminOrganization[];
+}) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Command Center Navigation Tabs (Batch Q 5 operational pillars)
+  type CommandCenterTab = 'workers' | 'assignments' | 'verifications' | 'sync' | 'observatory';
+  const tabParam = searchParams.get('tab') as CommandCenterTab | null;
+  const [activeTab, setActiveTab] = useState<CommandCenterTab>(
+    tabParam && ['workers', 'assignments', 'verifications', 'sync', 'observatory'].includes(tabParam)
+      ? tabParam
+      : 'workers'
+  );
+
+  // Active Organization Selection
+  const orgParam = searchParams.get('organizationId');
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(
+    orgParam || (initialOrganizations.length > 0 ? initialOrganizations[0].id : null)
+  );
+  const [selectedOrg, setSelectedOrg] = useState<AdminOrganization | null>(
+    initialOrganizations.find((o) => o.id === selectedOrgId) || (initialOrganizations.length > 0 ? initialOrganizations[0] : null)
+  );
+
+  // Synchronize URL query params
+  const handleSelectOrg = (org: AdminOrganization | null) => {
+    setSelectedOrg(org);
+    const newOrgId = org ? org.id : null;
+    setSelectedOrgId(newOrgId);
+
+    const params = new URLSearchParams(window.location.search);
+    if (newOrgId) {
+      params.set('organizationId', newOrgId);
+    } else {
+      params.delete('organizationId');
+    }
+    params.set('tab', activeTab);
+    router.replace(`?${params.toString()}`);
+  };
+
+  const handleTabChange = (tab: CommandCenterTab) => {
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', tab);
+    if (selectedOrgId) {
+      params.set('organizationId', selectedOrgId);
+    }
+    router.replace(`?${params.toString()}`);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Observatory Tab Sub-state (System Metrics, Sources, ATS Onboard, Runs)
+  // ---------------------------------------------------------------------------
+  const [observatorySubTab, setObservatorySubTab] = useState<'metrics' | 'sources' | 'onboard' | 'runs'>('metrics');
   const [metrics, setMetrics] = useState<AdminMetricsData | null>(null);
   const [sources, setSources] = useState<AdminCompanySource[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
@@ -362,20 +456,16 @@ function AdminDashboard() {
   const [isGlobalScraping, setIsGlobalScraping] = useState(false);
   const [globalScrapeSuccess, setGlobalScrapeSuccess] = useState<string | null>(null);
 
-  // Explicit error states — NEVER silently swallowed
+  // Explicit error states for Observatory
   const [metricsError, setMetricsError] = useState<ApiErrorState>(null);
   const [sourcesError, setSourcesError] = useState<ApiErrorState>(null);
   const [scrapeError, setScrapeError] = useState<ApiErrorState>(null);
 
-  // ---------------------------------------------------------------------------
-  // Fetch metrics with explicit error handling
-  // ---------------------------------------------------------------------------
   const fetchMetrics = useCallback(async () => {
     setLoadingMetrics(true);
     setMetricsError(null);
     try {
       const res = await fetch('/api/admin/metrics');
-
       if (!res.ok) {
         const json = await res.json().catch(() => ({ error: 'Unknown server error' }));
         setMetricsError({
@@ -385,31 +475,23 @@ function AdminDashboard() {
         setMetrics(null);
         return;
       }
-
       const json = await res.json();
-      if (json.data) {
-        setMetrics(json.data);
-      }
+      if (json.data) setMetrics(json.data);
     } catch (err) {
       setMetricsError({
         status: 0,
         message: 'Network error — could not reach the server.',
       });
-      console.error('Failed to fetch admin metrics:', err);
     } finally {
       setLoadingMetrics(false);
     }
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Fetch company sources with explicit error handling + correct unwrapping
-  // ---------------------------------------------------------------------------
   const fetchSources = useCallback(async () => {
     setLoadingSources(true);
     setSourcesError(null);
     try {
       const res = await fetch('/api/admin/sources?limit=100');
-
       if (!res.ok) {
         const json = await res.json().catch(() => ({ error: 'Unknown server error' }));
         setSourcesError({
@@ -419,11 +501,8 @@ function AdminDashboard() {
         setSources([]);
         return;
       }
-
       const json = await res.json();
       if (json.data) {
-        // FIX: API returns { data: { count, limit, offset, sources: [...] } }
-        // Previously incorrectly assigned json.data (an object) instead of json.data.sources (the array)
         setSources(json.data.sources || []);
       }
     } catch (err) {
@@ -431,20 +510,15 @@ function AdminDashboard() {
         status: 0,
         message: 'Network error — could not reach the server.',
       });
-      console.error('Failed to fetch admin sources:', err);
     } finally {
       setLoadingSources(false);
     }
   }, []);
 
-  // Scrape runs telemetry state
   const [runs, setRuns] = useState<AdminScrapeRunItem[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [runsError, setRunsError] = useState<ApiErrorState>(null);
 
-  // ---------------------------------------------------------------------------
-  // Fetch scrape runs telemetry with explicit error handling
-  // ---------------------------------------------------------------------------
   const fetchRuns = useCallback(async () => {
     setLoadingRuns(true);
     setRunsError(null);
@@ -458,7 +532,6 @@ function AdminDashboard() {
         });
         return;
       }
-
       const json = await res.json();
       if (json.data?.runs) {
         setRuns(json.data.runs);
@@ -468,21 +541,19 @@ function AdminDashboard() {
         status: 0,
         message: 'Network error — could not reach the server.',
       });
-      console.error('Failed to fetch admin scrape runs:', err);
     } finally {
       setLoadingRuns(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchMetrics();
-    fetchSources();
-    fetchRuns();
-  }, [fetchMetrics, fetchSources, fetchRuns]);
+    if (activeTab === 'observatory') {
+      fetchMetrics();
+      fetchSources();
+      fetchRuns();
+    }
+  }, [activeTab, fetchMetrics, fetchSources, fetchRuns]);
 
-  // ---------------------------------------------------------------------------
-  // Trigger manual scrape crawl with explicit error handling
-  // ---------------------------------------------------------------------------
   const handleTriggerScrape = async (sourceId?: string) => {
     setIsGlobalScraping(true);
     setGlobalScrapeSuccess(null);
@@ -497,7 +568,6 @@ function AdminDashboard() {
       });
 
       const json = await res.json().catch(() => ({ error: 'Unknown server error' }));
-
       if (!res.ok) {
         setScrapeError({
           status: res.status,
@@ -511,7 +581,6 @@ function AdminDashboard() {
           `Crawl initiated! Run ID: ${json.data.runId || json.data.id || 'Active'}`
         );
         setTimeout(() => setGlobalScrapeSuccess(null), 5000);
-        // Refresh metrics, sources, and runs after trigger
         setTimeout(() => {
           fetchMetrics();
           fetchSources();
@@ -523,7 +592,6 @@ function AdminDashboard() {
         status: 0,
         message: 'Network error — could not reach the server.',
       });
-      console.error('Failed to trigger scrape:', err);
     } finally {
       setIsGlobalScraping(false);
     }
@@ -531,21 +599,21 @@ function AdminDashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
-      {/* Admin Header */}
+      {/* Command Center Header */}
       <header
         style={{
           borderBottom: '1px solid var(--border-color)',
-          background: 'rgba(10, 13, 20, 0.9)',
+          background: 'rgba(10, 13, 20, 0.92)',
           backdropFilter: 'blur(16px)',
           position: 'sticky',
           top: 0,
           zIndex: 100,
-          padding: '16px 24px',
+          padding: '14px 24px',
         }}
       >
         <div
           style={{
-            maxWidth: '1280px',
+            maxWidth: '1360px',
             margin: '0 auto',
             display: 'flex',
             alignItems: 'center',
@@ -554,7 +622,7 @@ function AdminDashboard() {
             gap: '16px',
           }}
         >
-          {/* Logo & Breadcrumb */}
+          {/* Logo & Navigation Breadcrumb */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <Link
               href="/"
@@ -590,33 +658,50 @@ function AdminDashboard() {
               </div>
               <div>
                 <h1 style={{ fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
-                  Admin Control Plane
+                  Admin Command Center
                 </h1>
                 <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  JobPulse 2.0 Ingestion & Platform Intelligence
+                  Workforce Operations, Assignment Dispatch & Observatory
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              onClick={() => handleTriggerScrape()}
-              disabled={isGlobalScraping}
-              className="btn btn-primary"
-              style={{ padding: '8px 16px' }}
-            >
-              <RefreshCw size={15} className={isGlobalScraping ? 'animate-spin' : ''} />
-              <span>{isGlobalScraping ? 'Triggering Crawl...' : 'Trigger Global Crawl'}</span>
-            </button>
+          {/* Header Controls: Multi-Tenant Org Switcher & Quick Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <AdminOrgSelector
+              currentOrgId={selectedOrgId}
+              isPlatformAdmin={isPlatformAdmin}
+              onSelectOrg={handleSelectOrg}
+            />
+
+            {activeTab === 'observatory' && isPlatformAdmin && (
+              <button
+                onClick={() => handleTriggerScrape()}
+                disabled={isGlobalScraping}
+                className="btn btn-primary"
+                style={{ padding: '8px 16px' }}
+              >
+                <RefreshCw size={15} className={isGlobalScraping ? 'animate-spin' : ''} />
+                <span>{isGlobalScraping ? 'Triggering…' : 'Global Crawl'}</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       {/* Main Container */}
-      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        {/* Success banner */}
+      <main
+        style={{
+          maxWidth: '1360px',
+          margin: '0 auto',
+          padding: '28px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+        }}
+      >
+        {/* Global Scrape Banner (if in observatory tab) */}
         {globalScrapeSuccess && (
           <div
             style={{
@@ -633,83 +718,178 @@ function AdminDashboard() {
           </div>
         )}
 
-        {/* Error banners — explicit, never swallowed */}
-        <ErrorBanner error={metricsError} context="Metrics" onRetry={fetchMetrics} />
-        <ErrorBanner error={sourcesError} context="Sources" onRetry={fetchSources} />
-        <ErrorBanner error={scrapeError} context="Crawl Trigger" onRetry={() => handleTriggerScrape()} />
-
-        {/* Tab Navigation */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+        {/* Command Center 5 Operational Tabs */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            borderBottom: '1px solid var(--border-color)',
+            paddingBottom: '12px',
+            overflowX: 'auto',
+          }}
+        >
           <button
-            onClick={() => setActiveTab('metrics')}
-            className={`btn ${activeTab === 'metrics' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 18px' }}
+            onClick={() => handleTabChange('workers')}
+            className={`btn ${activeTab === 'workers' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
           >
-            <LayoutDashboard size={16} />
-            <span>System Overview</span>
+            <Users size={16} />
+            <span>Workforce Management</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('sources')}
-            className={`btn ${activeTab === 'sources' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 18px' }}
+            onClick={() => handleTabChange('assignments')}
+            className={`btn ${activeTab === 'assignments' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
           >
-            <Building2 size={16} />
-            <span>Company Sources ({sources.length})</span>
+            <ClipboardList size={16} />
+            <span>Job Dispatcher</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('onboard')}
-            className={`btn ${activeTab === 'onboard' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 18px' }}
+            onClick={() => handleTabChange('verifications')}
+            className={`btn ${activeTab === 'verifications' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
           >
-            <PlusCircle size={16} />
-            <span>Onboard ATS Source</span>
+            <CheckSquare size={16} />
+            <span>Review Queue</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('runs')}
-            className={`btn ${activeTab === 'runs' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 18px' }}
+            onClick={() => handleTabChange('sync')}
+            className={`btn ${activeTab === 'sync' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
           >
-            <Activity size={16} />
-            <span>Crawl Runs</span>
+            <RotateCw size={16} />
+            <span>Sync Engine</span>
+          </button>
+
+          <button
+            onClick={() => handleTabChange('observatory')}
+            className={`btn ${activeTab === 'observatory' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
+          >
+            <BarChart3 size={16} />
+            <span>Source & Platform Observatory</span>
           </button>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === 'metrics' && (
-          <AdminMetricsOverview
-            metrics={metrics}
-            loading={loadingMetrics}
-            onRefresh={fetchMetrics}
+        {/* Tab 1: Workers Management */}
+        {activeTab === 'workers' && (
+          <WorkersManagement
+            organizationId={selectedOrgId}
+            organizationName={selectedOrg?.name}
+            isPlatformAdmin={isPlatformAdmin}
           />
         )}
 
-        {activeTab === 'sources' && (
-          <SourceManagementTable
-            sources={sources}
-            loading={loadingSources}
-            onRefresh={fetchSources}
-            onTriggerCrawl={handleTriggerScrape}
+        {/* Tab 2: Job Assignment Dispatcher */}
+        {activeTab === 'assignments' && (
+          <JobAssignmentDispatcher
+            organizationId={selectedOrgId}
+            organizationName={selectedOrg?.name}
           />
         )}
 
-        {activeTab === 'onboard' && (
-          <SourceOnboardingWizard
-            onSuccess={() => {
-              fetchSources();
-              fetchMetrics();
-            }}
+        {/* Tab 3: Verification Review Queue */}
+        {activeTab === 'verifications' && (
+          <VerificationReviewQueue
+            organizationId={selectedOrgId}
+            organizationName={selectedOrg?.name}
           />
         )}
 
-        {activeTab === 'runs' && (
-          <RecentScrapeRunsTable
-            runs={runs}
-            loading={loadingRuns}
-            onRefresh={fetchRuns}
+        {/* Tab 4: Sync Engine Monitoring & Retry Controls */}
+        {activeTab === 'sync' && (
+          <SyncEngineObservatory
+            organizationId={selectedOrgId}
+            organizationName={selectedOrg?.name}
           />
+        )}
+
+        {/* Tab 5: Source Health & Platform Observatory */}
+        {activeTab === 'observatory' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Observatory Error Banners */}
+            <ErrorBanner error={metricsError} context="Metrics" onRetry={fetchMetrics} />
+            <ErrorBanner error={sourcesError} context="Sources" onRetry={fetchSources} />
+            <ErrorBanner error={scrapeError} context="Crawl Trigger" onRetry={() => handleTriggerScrape()} />
+
+            {/* Sub-tab Navigation */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => setObservatorySubTab('metrics')}
+                className={`btn ${observatorySubTab === 'metrics' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              >
+                <LayoutDashboard size={14} />
+                <span>System Overview</span>
+              </button>
+
+              <button
+                onClick={() => setObservatorySubTab('sources')}
+                className={`btn ${observatorySubTab === 'sources' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              >
+                <Building2 size={14} />
+                <span>Company Sources ({sources.length})</span>
+              </button>
+
+              <button
+                onClick={() => setObservatorySubTab('onboard')}
+                className={`btn ${observatorySubTab === 'onboard' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              >
+                <PlusCircle size={14} />
+                <span>Onboard ATS Source</span>
+              </button>
+
+              <button
+                onClick={() => setObservatorySubTab('runs')}
+                className={`btn ${observatorySubTab === 'runs' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              >
+                <Activity size={14} />
+                <span>Crawl Runs</span>
+              </button>
+            </div>
+
+            {/* Observatory Sub-tab Content */}
+            {observatorySubTab === 'metrics' && (
+              <AdminMetricsOverview
+                metrics={metrics}
+                loading={loadingMetrics}
+                onRefresh={fetchMetrics}
+              />
+            )}
+
+            {observatorySubTab === 'sources' && (
+              <SourceManagementTable
+                sources={sources}
+                loading={loadingSources}
+                onRefresh={fetchSources}
+                onTriggerCrawl={handleTriggerScrape}
+              />
+            )}
+
+            {observatorySubTab === 'onboard' && (
+              <SourceOnboardingWizard
+                onSuccess={() => {
+                  fetchSources();
+                  fetchMetrics();
+                }}
+              />
+            )}
+
+            {observatorySubTab === 'runs' && (
+              <RecentScrapeRunsTable
+                runs={runs}
+                loading={loadingRuns}
+                onRefresh={fetchRuns}
+              />
+            )}
+          </div>
         )}
       </main>
     </div>
@@ -717,7 +897,7 @@ function AdminDashboard() {
 }
 
 // ---------------------------------------------------------------------------
-// Page export — auth gate wraps the dashboard
+// Page export wrapped in Suspense for Next.js searchParams compatibility
 // ---------------------------------------------------------------------------
 export default function AdminDashboardPage() {
   const authState = useAdminAuth();
@@ -730,6 +910,13 @@ export default function AdminDashboardPage() {
     case 'forbidden':
       return <AdminForbiddenScreen email={authState.email} />;
     case 'authorized':
-      return <AdminDashboard />;
+      return (
+        <Suspense fallback={<AdminLoadingScreen />}>
+          <AdminDashboard
+            isPlatformAdmin={authState.isPlatformAdmin}
+            initialOrganizations={authState.organizations}
+          />
+        </Suspense>
+      );
   }
 }
