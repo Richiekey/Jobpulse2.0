@@ -67,7 +67,12 @@ export function captureGitState(): GitMetadata {
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8', cwd: rootDir }).trim();
     const porcelain = execSync('git status --porcelain', { encoding: 'utf-8', cwd: rootDir }).trim();
 
-    const lines = porcelain ? porcelain.split('\n') : [];
+    const lines = porcelain
+      ? porcelain
+          .split('\n')
+          .map(l => l.trim())
+          .filter(l => l.length > 0 && !l.includes('docs/audits/') && !l.includes('.gates-report.json'))
+      : [];
     const untrackedFiles = lines.filter(l => l.startsWith('??')).map(l => l.slice(3).trim());
     const modifiedFiles = lines.filter(l => !l.startsWith('??')).map(l => l.slice(3).trim());
 
