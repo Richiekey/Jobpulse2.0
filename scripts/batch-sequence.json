@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "name": "JobPulse 2.0 Post-Launch Batch Sequence Governance",
   "version": "1.0.0",
-  "currentBatch": "T",
+  "currentBatch": "U",
   "batches": {
     "K": {
       "name": "Workforce & Multi-Tenant RLS",
@@ -59,7 +59,7 @@
     },
     "U": {
       "name": "Product UX/UI System & Experience Integrity",
-      "status": "PERMITTED",
+      "status": "IN_PROGRESS",
       "prerequisites": [
         { "batch": "T", "status": "CERTIFIED" }
       ]

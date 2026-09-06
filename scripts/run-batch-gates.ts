@@ -206,6 +206,22 @@ function getPnpmVersion(): string {
   }
 }
 
+export function resolveBatchInfo(batchKey: string): { key: string; name: string } {
+  let name = `Batch ${batchKey}`;
+  try {
+    const seqFile = path.resolve(rootDir, 'scripts/batch-sequence.json');
+    if (fs.existsSync(seqFile)) {
+      const seqData = JSON.parse(fs.readFileSync(seqFile, 'utf-8'));
+      if (seqData.batches?.[batchKey]?.name) {
+        name = `Batch ${batchKey} — ${seqData.batches[batchKey].name}`;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return { key: batchKey, name };
+}
+
 /**
  * Runs a command and returns status, duration, and output
  */
@@ -305,8 +321,10 @@ export async function runBatchGates() {
       { id: 8, name: 'Evidence & Certification Synthesis', command: 'internal:generate_report', status: 'BLOCKED', durationMs: 0, summary: `Certification BLOCKED: ${auditBlockReason}` },
     ];
 
+    const batchInfo = resolveBatchInfo(batchSeq.currentBatch || 'U');
+
     const report: CertificationReport = {
-      batchName: 'Batch T — Implementation Sequence & Gates Governance',
+      batchName: batchInfo.name,
       executionProfile: profile,
       timestamp: new Date().toISOString(),
       repository: 'Richiekey/Jobpulse2.0',
@@ -326,8 +344,8 @@ export async function runBatchGates() {
 
     const auditsDir = path.resolve(rootDir, 'docs/audits');
     if (!fs.existsSync(auditsDir)) fs.mkdirSync(auditsDir, { recursive: true });
-    const mdReportPath = path.resolve(auditsDir, 'BATCH_T_CERTIFICATION_EVIDENCE.md');
-    fs.writeFileSync(mdReportPath, `# JobPulse 2.0 — Batch T Quality Gate & Certification Evidence\n\n**Batch:** ${report.batchName}  \n**Execution Profile:** \`${profile.toUpperCase()}\`  \n**Certification Status:** **\`BLOCKED\`**  \n**Reason:** ${auditBlockReason}\n\n## Repository State\n- **Git Commit SHA:** \`${git.commitSha}\`\n- **Branch:** \`${git.branch}\`\n- **Working Tree:** ${git.isClean ? 'CLEAN' : 'DIRTY (' + (git.modifiedFiles.length + git.untrackedFiles.length) + ' uncommitted changes)'}\n\n## Safety & Credentials\n- **Safe:** ${envSafety.safe ? 'YES' : 'NO'}\n- **Project Ref:** ${envSafety.projectRef || 'NONE'}\n- **Has Credentials:** ${envSafety.hasCredentials ? 'YES' : 'NO'}\n- **Reason:** ${envSafety.reason}\n`);
+    const mdReportPath = path.resolve(auditsDir, `BATCH_${batchInfo.key}_CERTIFICATION_EVIDENCE.md`);
+    fs.writeFileSync(mdReportPath, `# JobPulse 2.0 — ${report.batchName} Quality Gate & Certification Evidence\n\n**Batch:** ${report.batchName}  \n**Execution Profile:** \`${profile.toUpperCase()}\`  \n**Certification Status:** **\`BLOCKED\`**  \n**Reason:** ${auditBlockReason}\n\n## Repository State\n- **Git Commit SHA:** \`${git.commitSha}\`\n- **Branch:** \`${git.branch}\`\n- **Working Tree:** ${git.isClean ? 'CLEAN' : 'DIRTY (' + (git.modifiedFiles.length + git.untrackedFiles.length) + ' uncommitted changes)'}\n\n## Safety & Credentials\n- **Safe:** ${envSafety.safe ? 'YES' : 'NO'}\n- **Project Ref:** ${envSafety.projectRef || 'NONE'}\n- **Has Credentials:** ${envSafety.hasCredentials ? 'YES' : 'NO'}\n- **Reason:** ${envSafety.reason}\n`);
 
     console.log('\n================================================================================');
     console.log(' GATE RUN COMPLETE: BLOCKED');
@@ -351,9 +369,12 @@ export async function runBatchGates() {
   // ---------------------------------------------------------------------------
   // GATE 2: UNIT & DOMAIN TESTS
   // ---------------------------------------------------------------------------
-  console.log('\n[GATE 2/8] Package Unit & Domain Test Suites...');
-  const g2 = executeGateCommand('pnpm run test');
-  results.push({ id: 2, name: 'Unit & Domain Test Suites', command: 'pnpm run test', ...g2 });
+  console.log('\n[GATE 2/8] Package Unit & Component Integrity Suites...');
+  const testCmd = fs.existsSync(path.resolve(rootDir, 'tests/batch-u-component-integrity.test.tsx'))
+    ? 'npx vitest run tests/batch-u-component-integrity.test.tsx && pnpm run test'
+    : 'pnpm run test';
+  const g2 = executeGateCommand(testCmd);
+  results.push({ id: 2, name: 'Unit & Domain Test Suites', command: testCmd, ...g2 });
   console.log(`[GATE 2] Result: ${g2.status} (${g2.durationMs}ms)`);
 
   // ---------------------------------------------------------------------------
@@ -540,8 +561,10 @@ export async function runBatchGates() {
     summary: `Synthesized report with status: ${finalStatus}`,
   });
 
+  const batchInfo = resolveBatchInfo(batchSeq.currentBatch || 'U');
+
   const report: CertificationReport = {
-    batchName: 'Batch T — Implementation Sequence & Gates Governance',
+    batchName: batchInfo.name,
     executionProfile: profile,
     timestamp: new Date().toISOString(),
     repository: 'Richiekey/Jobpulse2.0',
@@ -566,8 +589,8 @@ export async function runBatchGates() {
     fs.mkdirSync(auditsDir, { recursive: true });
   }
 
-  const mdReportPath = path.resolve(auditsDir, 'BATCH_T_CERTIFICATION_EVIDENCE.md');
-  const mdContent = `# JobPulse 2.0 — Batch T Quality Gate & Certification Evidence
+  const mdReportPath = path.resolve(auditsDir, `BATCH_${batchInfo.key}_CERTIFICATION_EVIDENCE.md`);
+  const mdContent = `# JobPulse 2.0 — ${report.batchName} Quality Gate & Certification Evidence
 
 **Batch:** ${report.batchName}  
 **Execution Profile:** \`${report.executionProfile.toUpperCase()}\`  
@@ -610,8 +633,8 @@ ${r.failureDetails || 'No additional stack trace captured.'}
 
 ## 4. Governance & Sequence Rule Verification
 - **Sequence:** \`S [PAUSED] → T → U → V → W → X → Y\`
-- **Batch T Status:** ${report.certificationStatus === 'CERTIFIED' ? 'CERTIFIED' : 'PENDING'}
-- **Batch U Permitted:** ${report.certificationStatus === 'CERTIFIED' ? 'YES (Unlocked)' : 'NO (Blocked until T is certified)'}
+- **Current Batch:** ${report.batchName} (${report.certificationStatus})
+- **Permitted Next Batch:** ${report.batchSequence.permittedNextBatch ? `Batch ${report.batchSequence.permittedNextBatch}` : 'None'}
 
 ---
 

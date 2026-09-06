@@ -23,14 +23,23 @@ function loadEnvFile(filePath: string) {
 loadEnvFile(path.resolve(__dirname, 'apps/web/.env.test.local'));
 loadEnvFile(path.resolve(__dirname, 'apps/web/.env.test'));
 
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const resolveFromWeb = (pkg: string) =>
+  path.dirname(require.resolve(`${pkg}/package.json`, { paths: [path.resolve(__dirname, 'apps/web')] }));
+
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['tests/**/*.{test,spec}.ts'],
+    include: ['tests/**/*.{test,spec}.{ts,tsx}'],
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'apps/web'),
+      'react': resolveFromWeb('react'),
+      'react-dom': resolveFromWeb('react-dom'),
+      'lucide-react': resolveFromWeb('lucide-react'),
     },
   },
 });

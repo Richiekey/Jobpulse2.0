@@ -13,6 +13,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
+import { Badge } from '@/components/ui';
 
 interface JobFeedCardProps {
   job: any;
@@ -172,87 +173,35 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
       {/* Attributes & Pills */}
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
         {job.is_remote || job.workplace_type === 'remote' ? (
-          <span
-            style={{
-              fontSize: '11px',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: 'rgba(16, 185, 129, 0.12)',
-              color: '#34d399',
-              fontWeight: 600,
-            }}
-          >
+          <Badge variant="success" size="sm">
             Remote
-          </span>
+          </Badge>
         ) : job.workplace_type === 'hybrid' ? (
-          <span
-            style={{
-              fontSize: '11px',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: 'rgba(59, 130, 246, 0.12)',
-              color: '#60a5fa',
-              fontWeight: 600,
-            }}
-          >
+          <Badge variant="info" size="sm">
             Hybrid
-          </span>
+          </Badge>
         ) : (
-          <span
-            style={{
-              fontSize: '11px',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: 'var(--bg-surface-subtle)',
-              color: 'var(--text-muted)',
-            }}
-          >
+          <Badge variant="default" size="sm">
             {primaryLocation}
-          </span>
+          </Badge>
         )}
 
         {formattedSalary && (
-          <span
-            style={{
-              fontSize: '11px',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: 'rgba(245, 158, 11, 0.12)',
-              color: '#fbbf24',
-              fontWeight: 600,
-            }}
-          >
+          <Badge variant="warning" size="sm">
             {formattedSalary}
-          </span>
+          </Badge>
         )}
 
         {job.equity_mentioned && (
-          <span
-            style={{
-              fontSize: '11px',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: 'rgba(168, 85, 247, 0.12)',
-              color: '#c084fc',
-              fontWeight: 600,
-            }}
-          >
+          <Badge variant="primary" size="sm">
             Equity
-          </span>
+          </Badge>
         )}
 
         {job.job_function_slug && (
-          <span
-            style={{
-              fontSize: '11px',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: 'var(--bg-surface-subtle)',
-              color: 'var(--text-secondary)',
-            }}
-          >
+          <Badge variant="neutral" size="sm">
             {job.job_function_slug.replace(/-/g, ' ')}
-          </span>
+          </Badge>
         )}
       </div>
 

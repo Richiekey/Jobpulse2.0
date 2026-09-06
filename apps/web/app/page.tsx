@@ -25,6 +25,7 @@ import {
   Layers,
   Sparkles,
 } from 'lucide-react';
+import { Button, EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
@@ -109,15 +110,23 @@ export default function HomePage() {
     () => parseFiltersFromUrl().parsedJobId
   );
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  // Authoritative Active Roster Derivation (UX-02)
+  // Applied jobs leave the active jobs roster based on authoritative backend application state
+  const activeRosterJobs = useMemo(() => {
+    return jobs.filter((job) => !appliedJobIds.has(job.id));
+  }, [jobs, appliedJobIds]);
+
   const selectedJob = useMemo(() => {
-    if (!selectedJobId) return jobs[0] || null;
-    return jobs.find((j) => j.id === selectedJobId) || jobs[0] || null;
-  }, [selectedJobId, jobs]);
+    const currentList = activeTab === 'feed' ? activeRosterJobs : activeTab === 'saved' ? savedJobs.map((s) => s.jobs).filter(Boolean) : jobs;
+    if (!selectedJobId) return currentList[0] || null;
+    return currentList.find((j) => j.id === selectedJobId) || currentList[0] || null;
+  }, [selectedJobId, activeTab, activeRosterJobs, savedJobs, jobs]);
 
   const selectedIndex = useMemo(() => {
     if (!selectedJob) return -1;
-    return jobs.findIndex((j) => j.id === selectedJob.id);
-  }, [selectedJob, jobs]);
+    const currentList = activeTab === 'feed' ? activeRosterJobs : jobs;
+    return currentList.findIndex((j) => j.id === selectedJob.id);
+  }, [selectedJob, activeTab, activeRosterJobs, jobs]);
 
   // Pagination state
   const [cursor, setCursor] = useState<string | null>(null);
@@ -155,7 +164,7 @@ export default function HomePage() {
     fetchFilterMeta();
   }, []);
 
-  // Fetch feed jobs
+  // Fetch feed jobs with append-only pagination & deduplication (UX-01)
   const fetchFeedJobs = useCallback(
     async (resetCursor = true) => {
       if (resetCursor) {
@@ -201,21 +210,28 @@ export default function HomePage() {
 
         if (data.data) {
           if (resetCursor) {
-            setJobs(data.data);
+            setJobs(data.data || []);
             if (data.data.length > 0 && !selectedJobId) {
               setSelectedJobId(data.data[0].id);
             }
           } else {
-            setJobs((prev) => [...prev, ...data.data]);
+            // Append-only pagination: preserve existing jobs and append unique new cards (UX-01)
+            setJobs((prev) => {
+              const existingIds = new Set(prev.map((j) => j.id));
+              const incoming = data.data || [];
+              const uniqueIncoming = incoming.filter((j: any) => !existingIds.has(j.id));
+              return [...prev, ...uniqueIncoming];
+            });
           }
           setCursor(data.meta?.pagination?.next_cursor || data.pagination?.next_cursor || null);
-          setHasMore(data.meta?.pagination?.has_more || data.pagination?.has_more || false);
+          setHasMore(Boolean(data.meta?.pagination?.has_more || data.pagination?.has_more));
         }
       } catch (err: any) {
         console.error('Error fetching jobs feed:', err);
         if (resetCursor) {
           setFetchError(err?.message || 'Failed to load jobs feed. Please try again.');
         } else {
+          // Preserve loaded cards on subsequent pagination failure (UX-01)
           showToast('error', 'Failed to load next page of jobs.');
         }
       } finally {
@@ -226,7 +242,15 @@ export default function HomePage() {
     [filters, sortOrder, cursor, selectedJobId, showToast]
   );
 
-  // Sync state to URL and trigger feed reload on filter/sort change
+  // Trigger feed reload ONLY on filter/sort change (NOT on selectedJobId change!) (UX-01)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchFeedJobs(true);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [filters, sortOrder]);
+
+  // Sync state to URL without resetting feed pagination
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams();
@@ -247,11 +271,6 @@ export default function HomePage() {
       const nextUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
       window.history.replaceState(null, '', nextUrl);
     }
-
-    const timer = setTimeout(() => {
-      fetchFeedJobs(true);
-    }, 200);
-    return () => clearTimeout(timer);
   }, [filters, sortOrder, selectedJobId]);
 
   // Handle browser back/forward navigation
@@ -306,22 +325,23 @@ export default function HomePage() {
         return; // Don't intercept when typing in form controls
       }
 
+      const list = activeTab === 'feed' ? activeRosterJobs : jobs;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < jobs.length - 1) {
-          setSelectedJobId(jobs[selectedIndex + 1].id);
+        if (selectedIndex >= 0 && selectedIndex < list.length - 1) {
+          setSelectedJobId(list[selectedIndex + 1].id);
         }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (selectedIndex > 0) {
-          setSelectedJobId(jobs[selectedIndex - 1].id);
+          setSelectedJobId(list[selectedIndex - 1].id);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, jobs]);
+  }, [selectedIndex, activeTab, activeRosterJobs, jobs]);
 
   // Handle Optimistic Save / Unsave
   const handleToggleSave = async (jobId: string) => {
@@ -400,14 +420,16 @@ export default function HomePage() {
   };
 
   const handleNextJob = () => {
-    if (selectedIndex >= 0 && selectedIndex < jobs.length - 1) {
-      setSelectedJobId(jobs[selectedIndex + 1].id);
+    const list = activeTab === 'feed' ? activeRosterJobs : jobs;
+    if (selectedIndex >= 0 && selectedIndex < list.length - 1) {
+      setSelectedJobId(list[selectedIndex + 1].id);
     }
   };
 
   const handlePrevJob = () => {
+    const list = activeTab === 'feed' ? activeRosterJobs : jobs;
     if (selectedIndex > 0) {
-      setSelectedJobId(jobs[selectedIndex - 1].id);
+      setSelectedJobId(list[selectedIndex - 1].id);
     }
   };
 
@@ -525,73 +547,47 @@ export default function HomePage() {
 
               {/* Feed Content */}
               {isLoading && jobs.length === 0 ? (
-                <div style={{ padding: '60px 0', textAlign: 'center' }}>
-                  <Loader2 size={32} className="animate-spin" color="var(--brand-text)" style={{ margin: '0 auto 12px' }} />
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading verified opportunities...</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Skeleton variant="card" count={4} />
                 </div>
               ) : fetchError ? (
-                <div
-                  style={{
-                    padding: '24px',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'var(--danger-surface)',
-                    border: '1px solid var(--danger-border)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <AlertCircle size={24} color="var(--danger-text)" style={{ margin: '0 auto 8px' }} />
-                  <p style={{ fontSize: '13px', color: 'var(--danger-text)', fontWeight: 600 }}>{fetchError}</p>
-                  <button
-                    onClick={() => fetchFeedJobs(true)}
-                    style={{
-                      marginTop: '12px',
-                      padding: '6px 14px',
-                      fontSize: '12px',
-                      backgroundColor: 'var(--bg-surface)',
-                      border: '1px solid var(--border-default)',
-                      borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-primary)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Retry
-                  </button>
-                </div>
+                <ErrorState
+                  title="Unable to load jobs feed"
+                  message={fetchError}
+                  onRetry={() => fetchFeedJobs(true)}
+                />
               ) : jobs.length === 0 ? (
-                <div
-                  style={{
-                    padding: '60px 20px',
-                    textAlign: 'center',
-                    backgroundColor: 'var(--bg-surface)',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <Search size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                  <h4 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>No matching jobs found</h4>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '300px', margin: '0 auto 16px' }}>
-                    Try expanding your filters or clearing search criteria to see more direct ATS postings.
-                  </p>
-                  <button
-                    onClick={handleResetFilters}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      backgroundColor: 'var(--brand-primary)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 'var(--radius-sm)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Reset All Filters
-                  </button>
-                </div>
+                <EmptyState
+                  title="No matching jobs found"
+                  description="Try expanding your filters or clearing search criteria to see more direct ATS postings."
+                  actionLabel="Reset All Filters"
+                  onAction={handleResetFilters}
+                />
+              ) : activeRosterJobs.length === 0 ? (
+                <EmptyState
+                  icon={<CheckSquare size={32} color="var(--status-success-text)" />}
+                  title="All Current Opportunities Applied"
+                  description="You have applied to all loaded jobs in this view. Review them in your Applications tracker or load additional opportunities."
+                  actionLabel="View Applications"
+                  onAction={() => setActiveTab('applications')}
+                  actionSlot={
+                    hasMore ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => fetchFeedJobs(false)}
+                        isLoading={isLoadingMore}
+                        style={{ marginTop: 'var(--space-3)' }}
+                      >
+                        {isLoadingMore ? 'Loading More...' : 'Load More Jobs'}
+                      </Button>
+                    ) : undefined
+                  }
+                />
               ) : (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {jobs.map((job) => (
+                    {activeRosterJobs.map((job) => (
                       <JobFeedCard
                         key={job.id}
                         job={job}
@@ -606,28 +602,18 @@ export default function HomePage() {
                   </div>
 
                   {hasMore && (
-                    <button
+                    <Button
+                      variant="secondary"
+                      size="md"
                       onClick={() => fetchFeedJobs(false)}
-                      disabled={isLoadingMore}
+                      isLoading={isLoadingMore}
                       style={{
-                        margin: '12px 0 24px',
-                        padding: '10px',
-                        borderRadius: 'var(--radius-md)',
-                        backgroundColor: 'var(--bg-surface-elevated)',
-                        border: '1px solid var(--border-default)',
-                        color: 'var(--text-primary)',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
+                        margin: 'var(--space-3) 0 var(--space-6)',
+                        width: '100%',
                       }}
                     >
-                      {isLoadingMore ? <Loader2 size={16} className="animate-spin" /> : null}
-                      <span>{isLoadingMore ? 'Loading More...' : 'Load More Jobs'}</span>
-                    </button>
+                      {isLoadingMore ? 'Loading More...' : 'Load More Jobs'}
+                    </Button>
                   )}
                 </>
               )}
@@ -642,7 +628,7 @@ export default function HomePage() {
               onTrackApplication={handleTrackApplication}
               onNextJob={handleNextJob}
               onPrevJob={handlePrevJob}
-              hasNext={selectedIndex >= 0 && selectedIndex < jobs.length - 1}
+              hasNext={selectedIndex >= 0 && selectedIndex < (activeTab === 'feed' ? activeRosterJobs.length : jobs.length) - 1}
               hasPrev={selectedIndex > 0}
             />
           </>

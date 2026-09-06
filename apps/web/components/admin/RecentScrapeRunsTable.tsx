@@ -12,6 +12,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { AdminScrapeRunItem } from '@/app/api/admin/scrape/runs/route';
+import { StatusBadge, Badge } from '@/components/ui';
 
 interface RecentScrapeRunsTableProps {
   runs: AdminScrapeRunItem[];
@@ -42,90 +43,9 @@ export const RecentScrapeRunsTable: React.FC<RecentScrapeRunsTableProps> = ({
     return `${min}m ${sec % 60}s`;
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return (
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '2px 8px',
-              borderRadius: '9999px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              background: 'rgba(16, 185, 129, 0.15)',
-              color: '#34d399',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-            }}
-          >
-            <CheckCircle2 size={12} />
-            Completed
-          </span>
-        );
-      case 'running':
-        return (
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '2px 8px',
-              borderRadius: '9999px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              background: 'rgba(59, 130, 246, 0.15)',
-              color: '#60a5fa',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-            }}
-          >
-            <RefreshCw size={12} className="animate-spin" />
-            Running
-          </span>
-        );
-      case 'pending':
-        return (
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '2px 8px',
-              borderRadius: '9999px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              background: 'rgba(245, 158, 11, 0.15)',
-              color: '#fbbf24',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-            }}
-          >
-            <Clock size={12} />
-            Queued
-          </span>
-        );
-      default:
-        return (
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '2px 8px',
-              borderRadius: '9999px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              background: 'rgba(239, 68, 68, 0.15)',
-              color: '#f87171',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-            }}
-          >
-            <XCircle size={12} />
-            Failed
-          </span>
-        );
-    }
-  };
+  const getStatusBadge = (status: string) => (
+    <StatusBadge status={status} size="sm" />
+  );
 
   const getModeBadge = (mode: string) => {
     const labels: Record<string, { label: string; color: string; bg: string }> = {

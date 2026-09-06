@@ -20,6 +20,16 @@ import {
   FileText,
 } from 'lucide-react';
 import { useWorker } from '@/components/worker/WorkerContext';
+import {
+  Button,
+  Modal,
+  StatusBadge,
+  Badge,
+  StatCard,
+  ErrorState,
+  EmptyState,
+  Skeleton,
+} from '@/components/ui';
 
 type AssignmentStatusTab = 'all' | 'assigned' | 'in_progress' | 'completed' | 'skipped';
 
@@ -241,69 +251,29 @@ export default function WorkerJobsPage() {
             marginTop: '20px',
           }}
         >
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: '16px',
-            }}
-          >
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Total Assignments
-            </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '6px' }}>
-              {assignments.length}
-            </div>
-          </div>
-
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: '16px',
-            }}
-          >
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--brand-text)', textTransform: 'uppercase' }}>
-              Pending Action
-            </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--brand-text)', marginTop: '6px' }}>
-              {countAssigned}
-            </div>
-          </div>
-
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: '16px',
-            }}
-          >
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--warning-text)', textTransform: 'uppercase' }}>
-              In Progress
-            </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--warning-text)', marginTop: '6px' }}>
-              {countInProgress}
-            </div>
-          </div>
-
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: '16px',
-            }}
-          >
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--success-text)', textTransform: 'uppercase' }}>
-              Completed
-            </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: '6px' }}>
-              {countCompleted}
-            </div>
-          </div>
+          <StatCard
+            label="Total Assignments"
+            value={assignments.length}
+            icon={<Briefcase size={16} />}
+          />
+          <StatCard
+            label="Pending Action"
+            value={countAssigned}
+            icon={<Clock size={16} />}
+            iconColor="var(--brand-text)"
+          />
+          <StatCard
+            label="In Progress"
+            value={countInProgress}
+            icon={<RefreshCw size={16} />}
+            iconColor="var(--warning-text)"
+          />
+          <StatCard
+            label="Completed"
+            value={countCompleted}
+            icon={<CheckCircle2 size={16} />}
+            iconColor="var(--success-text)"
+          />
         </div>
       </div>
 
@@ -383,81 +353,32 @@ export default function WorkerJobsPage() {
 
       {/* Error Banner */}
       {error && (
-        <div
-          style={{
-            padding: '14px 18px',
-            backgroundColor: 'var(--danger-surface)',
-            border: '1px solid var(--danger-border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--danger-text)',
-            fontSize: '0.875rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            marginBottom: '20px',
-          }}
-        >
-          <AlertCircle size={18} />
-          <span style={{ flex: 1 }}>{error}</span>
-          <button type="button" onClick={() => fetchAssignments()} className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-            Retry
-          </button>
-        </div>
+        <ErrorState
+          title="Error loading assignments"
+          message={error}
+          onRetry={fetchAssignments}
+          style={{ marginBottom: 'var(--space-5)' }}
+        />
       )}
 
       {/* Loading Skeleton */}
       {isLoading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              style={{
-                height: '110px',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                animation: 'pulse 1.5s infinite',
-              }}
-            />
-          ))}
+          <Skeleton variant="card" count={3} />
         </div>
       )}
 
       {/* Empty State */}
       {!isLoading && filteredAssignments.length === 0 && (
-        <div
-          style={{
-            padding: '64px 20px',
-            textAlign: 'center',
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-md)',
-          }}
-        >
-          <div
-            style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: 'var(--radius-full)',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <CheckCircle2 size={24} />
-          </div>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-            No assignments in this view
-          </h3>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '6px', maxWidth: '420px', margin: '6px auto 0' }}>
-            {activeTab === 'all'
+        <EmptyState
+          icon={<CheckCircle2 size={32} color="var(--status-success-text)" />}
+          title="No assignments in this view"
+          description={
+            activeTab === 'all'
               ? 'You currently have no jobs dispatched to you. Check back later or notify your organization administrator.'
-              : `No assignments matching the "${activeTab.replace('_', ' ')}" status.`}
-          </p>
-        </div>
+              : `No assignments matching the "${activeTab.replace('_', ' ')}" status.`
+          }
+        />
       )}
 
       {/* Assignments List */}
@@ -500,73 +421,22 @@ export default function WorkerJobsPage() {
                   {/* Job Details */}
                   <div style={{ flex: 1, minWidth: '260px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.6875rem',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 'var(--radius-xs)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
-                          backgroundColor:
-                            assignment.status === 'completed'
-                              ? 'var(--success-surface)'
-                              : assignment.status === 'in_progress'
-                              ? 'var(--warning-surface)'
-                              : assignment.status === 'skipped'
-                              ? 'rgba(100, 116, 139, 0.2)'
-                              : 'var(--brand-surface)',
-                          color:
-                            assignment.status === 'completed'
-                              ? 'var(--success-text)'
-                              : assignment.status === 'in_progress'
-                              ? 'var(--warning-text)'
-                              : assignment.status === 'skipped'
-                              ? 'var(--text-muted)'
-                              : 'var(--brand-text)',
-                          border:
-                            assignment.status === 'completed'
-                              ? '1px solid var(--success-border)'
-                              : assignment.status === 'in_progress'
-                              ? '1px solid var(--warning-border)'
-                              : '1px solid var(--brand-border)',
-                        }}
-                      >
-                        {assignment.status.replace('_', ' ')}
-                      </span>
+                      <StatusBadge status={assignment.status} size="sm" />
 
                       {deadlineLabel && (
-                        <span
-                          style={{
-                            fontSize: '0.6875rem',
-                            fontWeight: 700,
-                            padding: '2px 8px',
-                            borderRadius: 'var(--radius-xs)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            backgroundColor: isOverdue ? 'var(--danger-surface)' : 'var(--bg-surface-elevated)',
-                            color: isOverdue ? 'var(--danger-text)' : 'var(--text-secondary)',
-                            border: isOverdue ? '1px solid var(--danger-border)' : '1px solid var(--border-subtle)',
-                          }}
+                        <Badge
+                          variant={isOverdue ? 'danger' : 'default'}
+                          size="sm"
+                          icon={<Clock size={11} />}
                         >
-                          <Clock size={11} />
-                          <span>{deadlineLabel}</span>
-                        </span>
+                          {deadlineLabel}
+                        </Badge>
                       )}
 
                       {job?.workplaceType && (
-                        <span
-                          style={{
-                            fontSize: '0.6875rem',
-                            color: 'var(--text-muted)',
-                            backgroundColor: 'var(--bg-surface-subtle)',
-                            padding: '2px 6px',
-                            borderRadius: 'var(--radius-xs)',
-                          }}
-                        >
+                        <Badge variant="neutral" size="sm">
                           {job.workplaceType}
-                        </span>
+                        </Badge>
                       )}
                     </div>
 
@@ -695,174 +565,130 @@ export default function WorkerJobsPage() {
       )}
 
       {/* Skip Assignment Modal */}
-      {skipModalAssignment && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setSkipModalAssignment(null)}
-          role="dialog"
-          aria-modal="true"
-        >
+      <Modal
+        isOpen={Boolean(skipModalAssignment)}
+        onClose={() => setSkipModalAssignment(null)}
+        title="Skip Job Assignment"
+        description="Provide an optional reason why this job cannot be completed."
+        size="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           <div
-            className="modal-surface"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '480px', padding: '24px' }}
+            style={{
+              backgroundColor: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '12px',
+            }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertTriangle size={20} style={{ color: 'var(--warning-text)' }} />
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Skip Job Assignment
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSkipModalAssignment(null)}
-                className="btn-icon"
-                aria-label="Close"
-              >
-                <X size={16} />
-              </button>
+            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {skipModalAssignment?.job?.displayTitle || skipModalAssignment?.job?.canonicalTitle}
             </div>
-
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              Are you sure you want to skip{' '}
-              <strong style={{ color: 'var(--text-primary)' }}>
-                {skipModalAssignment.job?.displayTitle || 'this assignment'}
-              </strong>{' '}
-              at {skipModalAssignment.job?.company?.name || 'Company'}?
-            </p>
-
-            <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-              Reason for skipping (optional):
-            </label>
-            <textarea
-              value={skipReason}
-              onChange={(e) => setSkipReason(e.target.value)}
-              placeholder="e.g. Incompatible tech stack, expired posting, location restriction..."
-              className="input"
-              rows={3}
-              style={{
-                width: '100%',
-                fontSize: '0.8125rem',
-                padding: '10px',
-                marginBottom: '20px',
-                resize: 'vertical',
-              }}
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setSkipModalAssignment(null)}
-                className="btn btn-ghost"
-                disabled={isSubmittingSkip}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmSkip}
-                className="btn btn-primary"
-                style={{ backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }}
-                disabled={isSubmittingSkip}
-              >
-                {isSubmittingSkip ? 'Skipping...' : 'Confirm Skip'}
-              </button>
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              {skipModalAssignment?.job?.company?.name}
             </div>
           </div>
+
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            Reason for skipping (optional):
+          </label>
+          <textarea
+            value={skipReason}
+            onChange={(e) => setSkipReason(e.target.value)}
+            placeholder="e.g. Incompatible tech stack, expired posting, location restriction..."
+            className="input-field"
+            rows={3}
+            style={{
+              width: '100%',
+              fontSize: 'var(--font-size-sm)',
+              padding: '10px',
+              resize: 'vertical',
+            }}
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSkipModalAssignment(null)}
+              disabled={isSubmittingSkip}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleConfirmSkip}
+              isLoading={isSubmittingSkip}
+            >
+              Confirm Skip
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
 
       {/* Complete & Log Application Modal */}
-      {applyModalAssignment && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setApplyModalAssignment(null)}
-          role="dialog"
-          aria-modal="true"
-        >
+      <Modal
+        isOpen={Boolean(applyModalAssignment)}
+        onClose={() => setApplyModalAssignment(null)}
+        title="Complete & Log Application"
+        description="This will record the application in your tracker and mark the assignment as completed."
+        size="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           <div
-            className="modal-surface"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '520px', padding: '24px' }}
+            style={{
+              backgroundColor: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '12px',
+            }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CheckCircle2 size={20} style={{ color: 'var(--success-text)' }} />
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Complete & Log Application
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setApplyModalAssignment(null)}
-                className="btn-icon"
-                aria-label="Close"
-              >
-                <X size={16} />
-              </button>
+            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {applyModalAssignment?.job?.displayTitle || applyModalAssignment?.job?.canonicalTitle}
             </div>
-
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              This will record the application in your tracker and mark the assignment as completed.
-            </p>
-
-            <div
-              style={{
-                backgroundColor: 'var(--bg-surface-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '12px',
-                marginBottom: '16px',
-              }}
-            >
-              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {applyModalAssignment.job?.displayTitle || applyModalAssignment.job?.canonicalTitle}
-              </div>
-              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                {applyModalAssignment.job?.company?.name}
-              </div>
-            </div>
-
-            <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-              Application Notes & Confirmation Details:
-            </label>
-            <textarea
-              value={applyNotes}
-              onChange={(e) => setApplyNotes(e.target.value)}
-              placeholder="e.g. Applied via Workday; confirmation email received #10293..."
-              className="input"
-              rows={3}
-              style={{
-                width: '100%',
-                fontSize: '0.8125rem',
-                padding: '10px',
-                marginBottom: '20px',
-                resize: 'vertical',
-              }}
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setApplyModalAssignment(null)}
-                className="btn btn-ghost"
-                disabled={isSubmittingApply}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmApplyAndComplete}
-                className="btn btn-primary"
-                disabled={isSubmittingApply}
-              >
-                {isSubmittingApply ? 'Saving...' : 'Confirm & Complete'}
-              </button>
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              {applyModalAssignment?.job?.company?.name}
             </div>
           </div>
+
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            Application Notes & Confirmation Details:
+          </label>
+          <textarea
+            value={applyNotes}
+            onChange={(e) => setApplyNotes(e.target.value)}
+            placeholder="e.g. Applied via Workday; confirmation email received #10293..."
+            className="input-field"
+            rows={3}
+            style={{
+              width: '100%',
+              fontSize: 'var(--font-size-sm)',
+              padding: '10px',
+              resize: 'vertical',
+            }}
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setApplyModalAssignment(null)}
+              disabled={isSubmittingApply}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleConfirmApplyAndComplete}
+              isLoading={isSubmittingApply}
+            >
+              Confirm & Complete
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

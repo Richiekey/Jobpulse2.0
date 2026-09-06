@@ -19,6 +19,7 @@ import {
   Database,
   Layers,
 } from 'lucide-react';
+import { StatusBadge } from '@/components/ui';
 
 export interface SyncEventItem {
   id: string;
@@ -501,40 +502,7 @@ export const SyncEngineObservatory: React.FC<SyncEngineObservatoryProps> = ({
 
                       {/* Status */}
                       <td style={{ padding: '12px 16px' }}>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            padding: '3px 8px',
-                            borderRadius: '999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            textTransform: 'capitalize',
-                            background:
-                              evt.status === 'synced'
-                                ? 'rgba(16, 185, 129, 0.15)'
-                                : evt.status === 'dead_letter'
-                                ? 'rgba(239, 68, 68, 0.15)'
-                                : evt.status === 'failed'
-                                ? 'rgba(245, 158, 11, 0.15)'
-                                : evt.status === 'processing'
-                                ? 'rgba(56, 189, 248, 0.15)'
-                                : 'rgba(99, 102, 241, 0.15)',
-                            color:
-                              evt.status === 'synced'
-                                ? '#34d399'
-                                : evt.status === 'dead_letter'
-                                ? '#f87171'
-                                : evt.status === 'failed'
-                                ? '#fbbf24'
-                                : evt.status === 'processing'
-                                ? '#38bdf8'
-                                : '#818cf8',
-                          }}
-                        >
-                          {evt.status.replace('_', ' ')}
-                        </span>
+                        <StatusBadge status={evt.status} size="sm" />
                       </td>
 
                       {/* Attempts */}

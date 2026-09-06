@@ -25,6 +25,7 @@ import {
   FileText,
   Zap,
 } from 'lucide-react';
+import { ErrorState, Skeleton, StatCard, Button } from '@/components/ui';
 
 export interface OperationalIntelligenceData {
   timeRange: '24h' | '7d' | '30d';
@@ -276,35 +277,18 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
 
       {/* Error Banner */}
       {error && (
-        <div
-          role="alert"
-          style={{
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: '8px',
-            padding: '14px 18px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            color: '#ef4444',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-          }}
-        >
-          <XCircle size={20} />
-          <span style={{ flex: 1 }}>{error}</span>
-          <button onClick={fetchMetrics} className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-            Retry
-          </button>
-        </div>
+        <ErrorState
+          title="Telemetry Load Failed"
+          message={error}
+          onRetry={fetchMetrics}
+          style={{ marginBottom: 'var(--space-4)' }}
+        />
       )}
 
       {/* Loading Skeleton */}
       {loading && !metrics && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="card" style={{ height: '140px', opacity: 0.5, animation: 'pulse 1.5s infinite' }} />
-          ))}
+          <Skeleton variant="card" count={6} />
         </div>
       )}
 

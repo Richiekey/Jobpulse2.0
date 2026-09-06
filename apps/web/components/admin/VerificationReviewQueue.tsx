@@ -18,6 +18,7 @@ import {
   X,
   FileImage,
 } from 'lucide-react';
+import { StatusBadge } from '@/components/ui';
 
 export interface AdminVerificationItem {
   id: string;
@@ -505,39 +506,7 @@ export const VerificationReviewQueue: React.FC<VerificationReviewQueueProps> = (
                       {/* Status */}
                       <td style={{ padding: '12px 16px' }}>
                         <div>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              padding: '3px 8px',
-                              borderRadius: '999px',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              textTransform: 'capitalize',
-                              background:
-                                item.status === 'verified'
-                                ? 'rgba(16, 185, 129, 0.15)'
-                                : item.status === 'rejected'
-                                ? 'rgba(239, 68, 68, 0.15)'
-                                : 'rgba(245, 158, 11, 0.15)',
-                              color:
-                                item.status === 'verified'
-                                ? '#34d399'
-                                : item.status === 'rejected'
-                                ? '#f87171'
-                                : '#fbbf24',
-                            }}
-                          >
-                            {item.status === 'verified' ? (
-                              <CheckCircle2 size={12} />
-                            ) : item.status === 'rejected' ? (
-                              <XCircle size={12} />
-                            ) : (
-                              <Clock size={12} />
-                            )}
-                            {item.status}
-                          </span>
+                          <StatusBadge status={item.status} size="sm" />
 
                           {item.reviewerNotes && (
                             <div
