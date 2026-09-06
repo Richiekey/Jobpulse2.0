@@ -534,6 +534,15 @@ describe('Batch Q — Genuine Authenticated PostgREST / Multi-Tenant RLS Boundar
     expect(original).not.toBeNull();
     expect(original!.status).toBe('assigned');
 
+    // 1b. Prove worker cannot perform unauthorized cancellation (Q-FIX-06 #9)
+    const { error: workerCancelErr } = await workerAClient
+      .from('job_assignments')
+      .update({ status: 'cancelled' })
+      .eq('id', asgnAId);
+
+    expect(workerCancelErr).not.toBeNull();
+    expect(workerCancelErr!.message).toMatch(/FORBIDDEN/i);
+
     // 2. Perform cancellation through authenticated client (Admin A of Org A)
     const { data: updated, error: updateErr } = await adminAClient
       .from('job_assignments')
