@@ -20,13 +20,27 @@ describe('Admin Operational Intelligence API (Batch R)', () => {
     timeRange: '24h',
     windowStart: '2026-09-05T12:00:00Z',
     organizationId: null,
+    scope: {
+      workforce: 'organization',
+      jobs: 'platform',
+      sourceHealth: 'platform',
+      dataQuality: 'platform',
+    },
     workforce: {
       roster: { totalWorkers: 10, activeWorkers: 5 },
-      velocity: { dispatched: 8, completed: 6, inProgress: 2, cancelled: 1, skipped: 0 },
+      velocity: { dispatched: 8, startedInWindow: 6, completed: 6, cancelled: 1, skipped: 0 },
+      inProgress: 2,
       completionRatePercent: 85.7,
       currentActive: 2,
       overdueBacklog: 0,
-      verifications: { total: 5, verified: 4, rejected: 1, pending: 0, verificationRatePercent: 80.0 },
+      verifications: {
+        verifiedInWindow: 4,
+        rejectedInWindow: 1,
+        reviewedInWindow: 5,
+        pendingCurrent: 0,
+        approvalRatePercent: 80.0,
+        total: 5,
+      },
       avgTurnaroundHours: 3.2,
     },
     jobs: {
@@ -45,7 +59,7 @@ describe('Admin Operational Intelligence API (Batch R)', () => {
       distribution: { healthy: 28, degraded: 1, failing: 2, disabled: 0, total: 31 },
       executionPerformance: { avgDurationMs: 2500, minDurationMs: 50, maxDurationMs: 200000 },
       yield: { avgDiscovered: 100.0, avgInserted: 25.0, avgUpdated: 0.0 },
-      failureTaxonomy: [{ category: 'Crawl timeout', count: 12 }],
+      failureTaxonomy: [{ category: 'timeout', count: 12 }],
     },
     dataQuality: {
       auditedActiveJobs: 15000,
@@ -54,7 +68,6 @@ describe('Admin Operational Intelligence API (Batch R)', () => {
         resolvedCount: 15000,
         fallbackCount: 0,
         resolutionRatePercent: 100.0,
-        avgConfidence: 0.97,
         methods: { GREENHOUSE: 8000, ASHBY: 1000 },
       },
       compensation: {

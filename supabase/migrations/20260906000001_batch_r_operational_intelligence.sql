@@ -8,8 +8,68 @@
 -- ============================================================================
 
 -- -----------------------------------------------------------------------------
--- 1. INDEX OPTIMIZATIONS FOR OPERATIONAL INTELLIGENCE
+-- 1. SCHEMA HARDENING & INDEX OPTIMIZATIONS FOR OPERATIONAL INTELLIGENCE
 -- -----------------------------------------------------------------------------
+-- Ensure authoritative url_resolution_method column exists on jobs (R-H01)
+ALTER TABLE public.jobs
+  ADD COLUMN IF NOT EXISTS url_resolution_method TEXT DEFAULT 'direct';
+
+-- Ensure normalized failure taxonomy classification exists on source_runs (R-H02)
+ALTER TABLE public.source_runs
+  ADD COLUMN IF NOT EXISTS error_class TEXT;
+
+-- Normalized error classification helper function (R-H02)
+CREATE OR REPLACE FUNCTION public.classify_source_error(p_error_message TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v_msg TEXT := lower(coalesce(p_error_message, ''));
+BEGIN
+  IF v_msg = '' THEN
+    RETURN 'unknown';
+  ELSIF v_msg ~* 'timeout|timed out|etimedout' THEN
+    RETURN 'timeout';
+  ELSIF v_msg ~* 'rate limit|too many requests|429' THEN
+    RETURN 'rate_limit';
+  ELSIF v_msg ~* 'cloudflare|blocked|forbidden|403|waf|captcha' THEN
+    RETURN 'blocked';
+  ELSIF v_msg ~* 'unauthorized|401|auth|credentials|login' THEN
+    RETURN 'authentication';
+  ELSIF v_msg ~* '404|not found' THEN
+    RETURN 'not_found';
+  ELSIF v_msg ~* 'parse|syntax|json|unexpected token' THEN
+    RETURN 'parse_error';
+  ELSIF v_msg ~* 'econnrefused|econnreset|network|dns|getaddrinfo' THEN
+    RETURN 'network_error';
+  ELSIF v_msg ~* '500|502|503|504|internal server' THEN
+    RETURN 'server_error';
+  ELSE
+    RETURN 'unknown';
+  END IF;
+END;
+$$;
+
+-- Trigger to classify error on insert/update of failed source_runs (R-H02)
+CREATE OR REPLACE FUNCTION public.trg_source_runs_classify_error()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.status = 'FAILED' AND (NEW.error_class IS NULL OR NEW.error_class = '') THEN
+    NEW.error_class := public.classify_source_error(NEW.error_message);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_source_runs_error_class ON public.source_runs;
+CREATE TRIGGER trg_source_runs_error_class
+BEFORE INSERT OR UPDATE ON public.source_runs
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_source_runs_classify_error();
+
 CREATE INDEX IF NOT EXISTS idx_jobs_status_scraped_at
   ON public.jobs (status, scraped_at DESC);
 
@@ -27,6 +87,10 @@ CREATE INDEX IF NOT EXISTS idx_source_runs_source_started
 
 -- -----------------------------------------------------------------------------
 -- 2. OPERATIONAL INTELLIGENCE AGGREGATION RPC
+-- -----------------------------------------------------------------------------
+-- Scope contract (R-H05):
+--   - Workforce metrics are strictly organization-scoped (when p_organization_id is provided).
+--   - Job catalog, source health, and data quality are platform-wide operational telemetry.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_operational_intelligence_metrics(
   p_organization_id UUID DEFAULT NULL,
@@ -55,7 +119,7 @@ DECLARE
   v_source_health_metrics JSONB;
   v_data_quality_metrics JSONB;
 
-  -- Workforce intermediate counts
+  -- Workforce intermediate counts (R-H03, R-H04)
   v_total_workers INT := 0;
   v_active_workers INT := 0;
   v_dispatched INT := 0;
@@ -64,13 +128,14 @@ DECLARE
   v_cancelled_events INT := 0;
   v_skipped_events INT := 0;
   v_current_active INT := 0;
+  v_current_in_progress INT := 0;
   v_overdue_backlog INT := 0;
   v_completion_rate NUMERIC(5,1) := 0.0;
   v_avg_turnaround_hours NUMERIC(6,1) := 0.0;
 
-  v_verif_total INT := 0;
   v_verif_verified INT := 0;
   v_verif_rejected INT := 0;
+  v_verif_reviewed INT := 0;
   v_verif_pending INT := 0;
   v_verif_rate NUMERIC(5,1) := 0.0;
 
@@ -108,7 +173,7 @@ DECLARE
   v_disabled_sources INT := 0;
   v_total_sources INT := 0;
 
-  -- Data quality intermediate counts
+  -- Data quality intermediate counts (R-H01: Zero heuristics)
   v_missing_salary INT := 0;
   v_missing_skills INT := 0;
   v_missing_location INT := 0;
@@ -116,7 +181,6 @@ DECLARE
   v_resolved_count INT := 0;
   v_fallback_count INT := 0;
   v_resolution_rate NUMERIC(5,1) := 0.0;
-  v_avg_confidence NUMERIC(3,2) := 0.00;
   v_methods_json JSONB := '{}'::jsonb;
   v_currencies_json JSONB := '{}'::jsonb;
   v_intervals_json JSONB := '{}'::jsonb;
@@ -242,12 +306,14 @@ BEGIN
     v_completion_rate := 0.0;
   END IF;
 
-  -- Current active and overdue backlog
+  -- Current active, current in-progress, and overdue backlog (R-H03)
   SELECT
     count(*)::int,
-    count(*) FILTER (WHERE deadline_at IS NOT NULL AND deadline_at < now())::int
+    count(*) FILTER (WHERE ja.status = 'in_progress')::int,
+    count(*) FILTER (WHERE ja.deadline_at IS NOT NULL AND ja.deadline_at < now())::int
   INTO
     v_current_active,
+    v_current_in_progress,
     v_overdue_backlog
   FROM public.job_assignments ja
   WHERE (p_organization_id IS NULL OR ja.organization_id = p_organization_id)
@@ -265,7 +331,7 @@ BEGIN
     AND ae.created_at >= v_window_start
     AND ae.created_at >= ja.created_at;
 
-  -- 1.3 Application Verifications in window
+  -- 1.3 Application Verifications (R-H04: explicit separation of windowed activity and current backlog)
   SELECT
     count(*) FILTER (WHERE status = 'verified' AND reviewed_at >= v_window_start)::int,
     count(*) FILTER (WHERE status = 'rejected' AND reviewed_at >= v_window_start)::int,
@@ -277,10 +343,10 @@ BEGIN
   FROM public.application_verifications av
   WHERE (p_organization_id IS NULL OR av.organization_id = p_organization_id);
 
-  v_verif_total := v_verif_verified + v_verif_rejected + v_verif_pending;
-  IF (v_verif_verified + v_verif_rejected) > 0 THEN
+  v_verif_reviewed := v_verif_verified + v_verif_rejected;
+  IF v_verif_reviewed > 0 THEN
     v_verif_rate := round(
-      (v_verif_verified::numeric / (v_verif_verified + v_verif_rejected)::numeric) * 100.0,
+      (v_verif_verified::numeric / v_verif_reviewed::numeric) * 100.0,
       1
     );
   ELSE
@@ -294,20 +360,22 @@ BEGIN
     ),
     'velocity', jsonb_build_object(
       'dispatched', v_dispatched,
+      'startedInWindow', v_started_events,
       'completed', v_completed_events,
-      'inProgress', v_started_events,
       'cancelled', v_cancelled_events,
       'skipped', v_skipped_events
     ),
-    'completionRatePercent', v_completion_rate,
+    'inProgress', v_current_in_progress,
     'currentActive', v_current_active,
+    'completionRatePercent', v_completion_rate,
     'overdueBacklog', v_overdue_backlog,
     'verifications', jsonb_build_object(
-      'total', v_verif_total,
-      'verified', v_verif_verified,
-      'rejected', v_verif_rejected,
-      'pending', v_verif_pending,
-      'verificationRatePercent', v_verif_rate
+      'verifiedInWindow', v_verif_verified,
+      'rejectedInWindow', v_verif_rejected,
+      'reviewedInWindow', v_verif_reviewed,
+      'pendingCurrent', v_verif_pending,
+      'approvalRatePercent', v_verif_rate,
+      'total', v_verif_reviewed
     ),
     'avgTurnaroundHours', v_avg_turnaround_hours
   );
@@ -334,14 +402,9 @@ BEGIN
     count(*) FILTER (WHERE lower(status::text) = 'active' AND locations IS NOT NULL AND locations != '[]'::jsonb AND locations != 'null'::jsonb)::int,
     count(*) FILTER (WHERE lower(status::text) = 'active' AND description IS NOT NULL AND description != '')::int,
     count(*) FILTER (WHERE lower(status::text) = 'active' AND apply_url IS NOT NULL AND apply_url != '')::int,
-    -- ATS resolution audit on active jobs
-    count(*) FILTER (WHERE lower(status::text) = 'active' AND apply_url IS NOT NULL AND apply_url != '' AND (apply_url_original IS NULL OR apply_url != apply_url_original OR upper(source::text) != 'UNKNOWN'))::int,
-    count(*) FILTER (WHERE lower(status::text) = 'active' AND (apply_url IS NULL OR apply_url = '' OR (apply_url_original IS NOT NULL AND apply_url = apply_url_original AND upper(source::text) = 'UNKNOWN')))::int,
-    coalesce(round(avg(CASE
-      WHEN upper(source::text) IN ('GREENHOUSE', 'LEVER', 'ASHBY', 'WORKABLE', 'RECRUITEE', 'TEAMTAILOR', 'SMARTRECRUITERS', 'BAMBOOHR', 'ICIMS', 'WORKDAY') THEN 1.00
-      WHEN apply_url IS NOT NULL AND apply_url != '' THEN 0.90
-      ELSE 0.40
-    END) FILTER (WHERE lower(status::text) = 'active')::numeric, 2), 0.00)
+    -- ATS resolution audit on active jobs (R-H01: Authoritative persisted resolution method, zero heuristics)
+    count(*) FILTER (WHERE lower(status::text) = 'active' AND coalesce(url_resolution_method, 'direct') NOT IN ('fallback', 'fallback_source', 'unresolved') AND apply_url IS NOT NULL AND apply_url != '')::int,
+    count(*) FILTER (WHERE lower(status::text) = 'active' AND coalesce(url_resolution_method, 'direct') IN ('fallback', 'fallback_source'))::int
   INTO
     v_active_jobs,
     v_expired_jobs,
@@ -359,8 +422,7 @@ BEGIN
     v_has_description,
     v_has_direct_apply,
     v_resolved_count,
-    v_fallback_count,
-    v_avg_confidence
+    v_fallback_count
   FROM public.jobs;
 
   -- Derive quality percentages and missing counts
@@ -440,11 +502,11 @@ BEGIN
   FROM public.source_runs
   WHERE started_at >= v_window_start;
 
-  -- Failure taxonomy: authoritative error messages from failed runs in window
+  -- Failure taxonomy: authoritative normalized classes from failed runs in window (R-H02)
   SELECT coalesce(jsonb_agg(f), '[]'::jsonb) INTO v_failures_json
   FROM (
     SELECT
-      coalesce(nullif(trim(error_message), ''), 'Crawl error') AS category,
+      coalesce(nullif(trim(error_class), ''), public.classify_source_error(error_message)) AS category,
       count(*)::int AS count
     FROM public.source_runs
     WHERE status = 'FAILED' AND started_at >= v_window_start
@@ -509,13 +571,13 @@ BEGIN
   -- ---------------------------------------------------------------------------
   -- MODULE 4: BREAKDOWNS (METHODS, CURRENCIES, INTERVALS)
   -- ---------------------------------------------------------------------------
-  -- Method breakdown (grouped by source adapter type)
+  -- Method breakdown (R-H01: grouped by authoritative url_resolution_method)
   SELECT coalesce(jsonb_object_agg(m.method, m.count), '{}'::jsonb) INTO v_methods_json
   FROM (
-    SELECT upper(source::text) AS method, count(*)::int AS count
+    SELECT coalesce(nullif(trim(url_resolution_method), ''), 'direct') AS method, count(*)::int AS count
     FROM public.jobs
-    WHERE lower(status::text) = 'active' AND source IS NOT NULL
-    GROUP BY upper(source::text)
+    WHERE lower(status::text) = 'active'
+    GROUP BY 1
     ORDER BY count DESC
     LIMIT 10
   ) m;
@@ -553,7 +615,6 @@ BEGIN
       'resolvedCount', v_resolved_count,
       'fallbackCount', v_fallback_count,
       'resolutionRatePercent', v_resolution_rate,
-      'avgConfidence', v_avg_confidence,
       'methods', v_methods_json
     ),
     'compensation', jsonb_build_object(
@@ -563,12 +624,18 @@ BEGIN
   );
 
   -- ---------------------------------------------------------------------------
-  -- E. FINAL AGGREGATE DOCUMENT
+  -- E. FINAL AGGREGATE DOCUMENT (R-H05: Explicit Multi-Tenant Scope Contract)
   -- ---------------------------------------------------------------------------
   RETURN jsonb_build_object(
     'timeRange', p_time_range,
     'windowStart', v_window_start,
     'organizationId', p_organization_id,
+    'scope', jsonb_build_object(
+      'workforce', 'organization',
+      'jobs', 'platform',
+      'sourceHealth', 'platform',
+      'dataQuality', 'platform'
+    ),
     'workforce', v_workforce_metrics,
     'jobs', v_job_metrics,
     'sourceHealth', v_source_health_metrics,

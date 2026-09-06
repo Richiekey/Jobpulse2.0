@@ -88,6 +88,7 @@ describe('Batch R — Genuine Authenticated PostgREST Operational Intelligence S
   const createdJobIds: string[] = [testJobId];
   const createdAssignmentIds: string[] = [];
   const createdAppIds: string[] = [];
+  const createdSourceRunIds: string[] = [];
 
   beforeAll(async () => {
     if (!testUrl || !testAnonKey || !testServiceRoleKey) {
@@ -345,6 +346,9 @@ describe('Batch R — Genuine Authenticated PostgREST Operational Intelligence S
       if (createdJobIds.length > 0) {
         await adminClient.from('jobs').delete().in('id', createdJobIds);
       }
+      if (createdSourceRunIds.length > 0) {
+        await adminClient.from('source_runs').delete().in('id', createdSourceRunIds);
+      }
       if (createdOrgIds.length > 0) {
         await adminClient.from('organization_members').delete().in('organization_id', createdOrgIds);
         await adminClient.from('organizations').delete().in('id', createdOrgIds);
@@ -477,12 +481,14 @@ describe('Batch R — Genuine Authenticated PostgREST Operational Intelligence S
     expect(data.workforce.velocity.skipped).toBe(1);
     expect(data.workforce.completionRatePercent).toBe(50.0);
 
-    // Verifications:
-    // 1 verified, 1 rejected, 1 pending -> verificationRate = 1 / (1 + 1) * 100 = 50.0%
-    expect(data.workforce.verifications.verified).toBe(1);
-    expect(data.workforce.verifications.rejected).toBe(1);
-    expect(data.workforce.verifications.pending).toBe(1);
-    expect(data.workforce.verifications.verificationRatePercent).toBe(50.0);
+    // Verifications (R-H04: Explicit separation of windowed activity and current backlog)
+    // 1 verified, 1 rejected, 1 pending -> approvalRate = 1 / (1 + 1) * 100 = 50.0%
+    expect(data.workforce.verifications.verifiedInWindow).toBe(1);
+    expect(data.workforce.verifications.rejectedInWindow).toBe(1);
+    expect(data.workforce.verifications.reviewedInWindow).toBe(2);
+    expect(data.workforce.verifications.pendingCurrent).toBe(1);
+    expect(data.workforce.verifications.approvalRatePercent).toBe(50.0);
+    expect(data.workforce.verifications.total).toBe(2);
 
     // Turnaround hours should be > 0.0 (assignments dispatched 1 hour before completion)
     expect(data.workforce.avgTurnaroundHours).toBeGreaterThanOrEqual(0.9);
@@ -541,16 +547,17 @@ describe('Batch R — Genuine Authenticated PostgREST Operational Intelligence S
     expect(data.workforce.roster.totalWorkers).toBe(0);
     expect(data.workforce.roster.activeWorkers).toBe(0);
 
-    // Velocity
+    // Velocity (R-H03)
     expect(data.workforce.velocity.dispatched).toBe(0);
+    expect(data.workforce.velocity.startedInWindow).toBe(0);
     expect(data.workforce.velocity.completed).toBe(0);
-    expect(data.workforce.velocity.inProgress).toBe(0);
     expect(data.workforce.velocity.cancelled).toBe(0);
     expect(data.workforce.velocity.skipped).toBe(0);
+    expect(data.workforce.inProgress).toBe(0);
 
     // Percentages & averages must safely return 0.0, NOT NaN or null
     expect(data.workforce.completionRatePercent).toBe(0.0);
-    expect(data.workforce.verifications.verificationRatePercent).toBe(0.0);
+    expect(data.workforce.verifications.approvalRatePercent).toBe(0.0);
     expect(data.workforce.avgTurnaroundHours).toBe(0.0);
     expect(data.workforce.overdueBacklog).toBe(0);
     expect(data.workforce.currentActive).toBe(0);
@@ -591,5 +598,515 @@ describe('Batch R — Genuine Authenticated PostgREST Operational Intelligence S
     // Data quality resolution rate must be valid
     expect(data.dataQuality.atsResolution.resolutionRatePercent).toBeGreaterThanOrEqual(0);
     expect(data.dataQuality.atsResolution.resolutionRatePercent).toBeLessThanOrEqual(100);
+  });
+
+  // ---------------------------------------------------------------------------
+  // TEST 7: R-H01 — AUTHORITATIVE ATS RESOLUTION (TESTS A, B, C, D)
+  // Zero fabricated confidence; telemetry must strictly reflect authoritative state
+  // ---------------------------------------------------------------------------
+  it('7. R-H01: Authoritative ATS Resolution telemetry strictly reflects persisted state without heuristics', async () => {
+    // Fixture A: Job with non-empty apply URL but no successful ATS resolution (url_resolution_method = 'unresolved')
+    const jobUnresolvedId = crypto.randomUUID();
+    // Fixture B: Job with known ATS source (GREENHOUSE) but url_resolution_method = 'unresolved'
+    const jobGreenhouseUnresolvedId = crypto.randomUUID();
+    // Fixture C: Job resolved via fallback method (url_resolution_method = 'fallback_source')
+    const jobFallbackId = crypto.randomUUID();
+    // Fixture D: Job resolved directly via Greenhouse API (url_resolution_method = 'greenhouse_api')
+    const jobDirectId = crypto.randomUUID();
+
+    createdJobIds.push(jobUnresolvedId, jobGreenhouseUnresolvedId, jobFallbackId, jobDirectId);
+
+    const nowIso = new Date().toISOString();
+    const { error: insertErr } = await adminClient.from('jobs').insert([
+      {
+        id: jobUnresolvedId,
+        title: `Unresolved URL Job (${runId})`,
+        company_name: `Corp Alpha ${runId}`,
+        status: 'active',
+        source: 'UNKNOWN',
+        apply_url: 'https://example-careers.com/job/9999',
+        url_resolution_method: 'unresolved',
+        scraped_at: nowIso,
+      },
+      {
+        id: jobGreenhouseUnresolvedId,
+        title: `Greenhouse Unresolved Job (${runId})`,
+        company_name: `Corp Beta ${runId}`,
+        status: 'active',
+        source: 'GREENHOUSE',
+        apply_url: 'https://boards.greenhouse.io/corp-beta/jobs/111',
+        url_resolution_method: 'unresolved',
+        scraped_at: nowIso,
+      },
+      {
+        id: jobFallbackId,
+        title: `Fallback Resolved Job (${runId})`,
+        company_name: `Corp Gamma ${runId}`,
+        status: 'active',
+        source: 'ASHBY',
+        apply_url: 'https://jobs.ashbyhq.com/corp-gamma/222',
+        url_resolution_method: 'fallback_source',
+        scraped_at: nowIso,
+      },
+      {
+        id: jobDirectId,
+        title: `Direct Resolved Job (${runId})`,
+        company_name: `Corp Delta ${runId}`,
+        status: 'active',
+        source: 'GREENHOUSE',
+        apply_url: 'https://boards.greenhouse.io/corp-delta/jobs/333',
+        url_resolution_method: 'greenhouse_api',
+        scraped_at: nowIso,
+      },
+    ]);
+    expect(insertErr).toBeNull();
+
+    const { data, error } = await platformAdminClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: null, p_time_range: '24h' }
+    );
+    expect(error).toBeNull();
+    const ats = data.dataQuality.atsResolution;
+
+    // Test A — Unknown/non-ATS URL: non-empty apply URL but unresolved must not be counted as resolved
+    // and must not receive fabricated confidence
+    expect(ats.methods['unresolved']).toBeDefined();
+    expect(ats.methods['unresolved']).toBeGreaterThanOrEqual(2);
+
+    // Test B — Known ATS source: job with source=GREENHOUSE but url_resolution_method='unresolved'
+    // is NOT counted as resolved
+    // Direct/resolved methods are counted in resolvedCount
+    expect(ats.resolvedCount).toBeGreaterThan(0);
+    expect(ats.methods['greenhouse_api']).toBeGreaterThanOrEqual(1);
+
+    // Test C — Fallback: fallback-resolved jobs are explicitly counted in fallbackCount and methods
+    expect(ats.fallbackCount).toBeGreaterThanOrEqual(1);
+    expect(ats.methods['fallback_source']).toBeGreaterThanOrEqual(1);
+
+    // Test D — No persisted confidence: API must not fabricate one
+    expect((ats as any).avgConfidence).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // TEST 8: R-H02 — NORMALIZED FAILURE TAXONOMY
+  // Groups failures into stable machine-readable classes, not raw error messages
+  // ---------------------------------------------------------------------------
+  it('8. R-H02: Source Run failure taxonomy normalizes raw error strings into machine-readable classes', async () => {
+    const runTimeout1Id = crypto.randomUUID();
+    const runTimeout2Id = crypto.randomUUID();
+    const runTimeout3Id = crypto.randomUUID();
+    const runRateLimitId = crypto.randomUUID();
+    const runUnknownId = crypto.randomUUID();
+
+    createdSourceRunIds.push(
+      runTimeout1Id,
+      runTimeout2Id,
+      runTimeout3Id,
+      runRateLimitId,
+      runUnknownId
+    );
+
+    const nowIso = new Date().toISOString();
+    const { error: runErr } = await adminClient.from('source_runs').insert([
+      {
+        id: runTimeout1Id,
+        source: 'GREENHOUSE',
+        status: 'FAILED',
+        error_message: 'Cloudflare timeout',
+        started_at: nowIso,
+      },
+      {
+        id: runTimeout2Id,
+        source: 'ASHBY',
+        status: 'FAILED',
+        error_message: 'Request timeout after 30s',
+        started_at: nowIso,
+      },
+      {
+        id: runTimeout3Id,
+        source: 'LEVER',
+        status: 'FAILED',
+        error_message: 'Timeout connecting to ATS',
+        started_at: nowIso,
+      },
+      {
+        id: runRateLimitId,
+        source: 'GREENHOUSE',
+        status: 'FAILED',
+        error_message: '429 Too Many Requests',
+        started_at: nowIso,
+      },
+      {
+        id: runUnknownId,
+        source: 'GREENHOUSE',
+        status: 'FAILED',
+        error_message: 'Unprecedented internal glitch xyz_9999',
+        started_at: nowIso,
+      },
+    ]);
+    expect(runErr).toBeNull();
+
+    const { data, error } = await platformAdminClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: null, p_time_range: '24h' }
+    );
+    expect(error).toBeNull();
+    const taxonomy = data.sourceHealth.failureTaxonomy as Array<{ category: string; count: number }>;
+    expect(Array.isArray(taxonomy)).toBe(true);
+
+    const categories = taxonomy.map(t => t.category);
+
+    // Raw error messages MUST NOT appear as category keys
+    expect(categories).not.toContain('Cloudflare timeout');
+    expect(categories).not.toContain('Request timeout after 30s');
+    expect(categories).not.toContain('Timeout connecting to ATS');
+    expect(categories).not.toContain('429 Too Many Requests');
+
+    // All three timeout variants must normalize to 'timeout'
+    const timeoutEntry = taxonomy.find(t => t.category === 'timeout');
+    expect(timeoutEntry).toBeDefined();
+    expect(timeoutEntry!.count).toBeGreaterThanOrEqual(3);
+
+    // 429 must normalize to 'rate_limit'
+    const rateLimitEntry = taxonomy.find(t => t.category === 'rate_limit');
+    expect(rateLimitEntry).toBeDefined();
+    expect(rateLimitEntry!.count).toBeGreaterThanOrEqual(1);
+
+    // Unclassified error must safely resolve to 'unknown'
+    const unknownEntry = taxonomy.find(t => t.category === 'unknown');
+    expect(unknownEntry).toBeDefined();
+    expect(unknownEntry!.count).toBeGreaterThanOrEqual(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // TEST 9: R-H03 — CORRECT "IN PROGRESS" SEMANTICS
+  // Separates startedInWindow (interval events) from inProgress (current active state)
+  // ---------------------------------------------------------------------------
+  it('9. R-H03: Disambiguates startedInWindow from current inProgress assignments', async () => {
+    const orgH03Id = crypto.randomUUID();
+    createdOrgIds.push(orgH03Id);
+
+    const { error: orgErr } = await adminClient.from('organizations').insert({
+      id: orgH03Id,
+      name: `Org H03 Semantics ${runId}`,
+      slug: `org-h03-${runId}`,
+    });
+    expect(orgErr).toBeNull();
+
+    await adminClient.from('organization_members').insert([
+      { organization_id: orgH03Id, user_id: adminAUserId, role: 'admin' },
+      { organization_id: orgH03Id, user_id: workerAUserId, role: 'worker' },
+    ]);
+
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 3600000).toISOString();
+    const twoDaysAgo = new Date(now.getTime() - 48 * 3600000).toISOString();
+
+    // 1. Create 20 assignments started during the selected 24h window:
+    //    - 19 completed
+    //    - 1 still in progress
+    const windowJobIds: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const jid = crypto.randomUUID();
+      windowJobIds.push(jid);
+      createdJobIds.push(jid);
+    }
+    await adminClient.from('jobs').insert(
+      windowJobIds.map(jid => ({
+        id: jid,
+        title: `H03 Test Job ${jid.slice(0, 4)}`,
+        company_name: `H03 Corp ${runId}`,
+        status: 'active',
+        source: 'GREENHOUSE',
+        scraped_at: now.toISOString(),
+      }))
+    );
+
+    for (let i = 0; i < 20; i++) {
+      const asgnId = crypto.randomUUID();
+      createdAssignmentIds.push(asgnId);
+      const isStillInProgress = i === 19;
+      const status = isStillInProgress ? 'in_progress' : 'completed';
+
+      await adminClient.from('job_assignments').insert({
+        id: asgnId,
+        organization_id: orgH03Id,
+        job_id: windowJobIds[i],
+        worker_id: workerAUserId,
+        assigned_by: adminAUserId,
+        status: status,
+        created_at: oneHourAgo,
+      });
+
+      // Assignment event: started (in window)
+      await adminClient.from('assignment_events').insert({
+        assignment_id: asgnId,
+        organization_id: orgH03Id,
+        worker_id: workerAUserId,
+        actor_id: adminAUserId,
+        event_type: 'started',
+        from_status: 'assigned',
+        to_status: 'in_progress',
+        created_at: oneHourAgo,
+      });
+
+      if (!isStillInProgress) {
+        // Completed in window
+        await adminClient.from('assignment_events').insert({
+          assignment_id: asgnId,
+          organization_id: orgH03Id,
+          worker_id: workerAUserId,
+          actor_id: adminAUserId,
+          event_type: 'completed',
+          from_status: 'in_progress',
+          to_status: 'completed',
+          created_at: now.toISOString(),
+        });
+      }
+    }
+
+    // 2. Create 1 assignment started BEFORE the window (48h ago) that remains in_progress
+    const preWindowJobId = crypto.randomUUID();
+    createdJobIds.push(preWindowJobId);
+    await adminClient.from('jobs').insert({
+      id: preWindowJobId,
+      title: `Pre-window Job ${runId}`,
+      company_name: `H03 Corp ${runId}`,
+      status: 'active',
+      source: 'GREENHOUSE',
+      scraped_at: twoDaysAgo,
+    });
+
+    const preWindowAsgnId = crypto.randomUUID();
+    createdAssignmentIds.push(preWindowAsgnId);
+    await adminClient.from('job_assignments').insert({
+      id: preWindowAsgnId,
+      organization_id: orgH03Id,
+      job_id: preWindowJobId,
+      worker_id: workerAUserId,
+      assigned_by: adminAUserId,
+      status: 'in_progress',
+      created_at: twoDaysAgo,
+    });
+    await adminClient.from('assignment_events').insert({
+      assignment_id: preWindowAsgnId,
+      organization_id: orgH03Id,
+      worker_id: workerAUserId,
+      actor_id: adminAUserId,
+      event_type: 'started',
+      from_status: 'assigned',
+      to_status: 'in_progress',
+      created_at: twoDaysAgo,
+    });
+
+    // Query telemetry for orgH03Id in 24h window
+    const { data, error } = await adminAClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: orgH03Id, p_time_range: '24h' }
+    );
+    expect(error).toBeNull();
+
+    // Adversarial verification:
+    // startedInWindow must be 20 (the 20 assignments that started within the 24h window)
+    expect(data.workforce.velocity.startedInWindow).toBe(20);
+    // completed must be 19
+    expect(data.workforce.velocity.completed).toBe(19);
+    // inProgress must be 2 (1 started in window + 1 started before window, both currently in_progress)
+    expect(data.workforce.inProgress).toBe(2);
+    // currentActive (assigned + in_progress) must be 2
+    expect(data.workforce.currentActive).toBe(2);
+
+    // CRITICAL: inProgress MUST NOT equal startedInWindow (2 != 20)
+    expect(data.workforce.inProgress).not.toBe(data.workforce.velocity.startedInWindow);
+  });
+
+  // ---------------------------------------------------------------------------
+  // TEST 10: R-H04 — VERIFICATION POPULATION SEMANTICS
+  // Separates windowed verification activity from current pending backlog
+  // ---------------------------------------------------------------------------
+  it('10. R-H04: Semantically separates windowed verification activity from current pending backlog', async () => {
+    const orgH04Id = crypto.randomUUID();
+    createdOrgIds.push(orgH04Id);
+
+    const { error: orgErr } = await adminClient.from('organizations').insert({
+      id: orgH04Id,
+      name: `Org H04 Verifications ${runId}`,
+      slug: `org-h04-${runId}`,
+    });
+    expect(orgErr).toBeNull();
+
+    await adminClient.from('organization_members').insert([
+      { organization_id: orgH04Id, user_id: adminAUserId, role: 'admin' },
+      { organization_id: orgH04Id, user_id: workerAUserId, role: 'worker' },
+    ]);
+
+    const now = new Date();
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600000).toISOString();
+    const threeDaysAgo = new Date(now.getTime() - 3 * 86400000).toISOString();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
+    const oneHourAgo = new Date(now.getTime() - 3600000).toISOString();
+
+    const job1 = crypto.randomUUID();
+    const job2 = crypto.randomUUID();
+    const job3 = crypto.randomUUID();
+    const job4 = crypto.randomUUID();
+    createdJobIds.push(job1, job2, job3, job4);
+
+    await adminClient.from('jobs').insert([job1, job2, job3, job4].map(jid => ({
+      id: jid,
+      title: `Verification Job ${jid.slice(0, 4)}`,
+      company_name: `H04 Corp ${runId}`,
+      status: 'active',
+      source: 'GREENHOUSE',
+      scraped_at: now.toISOString(),
+    })));
+
+    const app1 = crypto.randomUUID();
+    const app2 = crypto.randomUUID();
+    const app3 = crypto.randomUUID();
+    const app4 = crypto.randomUUID();
+    createdAppIds.push(app1, app2, app3, app4);
+
+    const { error: appErr } = await adminClient.from('applications').insert([
+      { id: app1, user_id: workerAUserId, job_id: job1, organization_id: orgH04Id, company_name: 'H04 Corp', job_title: 'Engineer', status: 'applied', applied_at: twoHoursAgo },
+      { id: app2, user_id: workerAUserId, job_id: job2, organization_id: orgH04Id, company_name: 'H04 Corp', job_title: 'Engineer', status: 'applied', applied_at: threeDaysAgo },
+      { id: app3, user_id: workerAUserId, job_id: job3, organization_id: orgH04Id, company_name: 'H04 Corp', job_title: 'Engineer', status: 'applied', applied_at: thirtyDaysAgo },
+      { id: app4, user_id: workerAUserId, job_id: job4, organization_id: orgH04Id, company_name: 'H04 Corp', job_title: 'Engineer', status: 'applied', applied_at: oneHourAgo },
+    ]);
+    expect(appErr).toBeNull();
+
+    // Fixtures:
+    // 1. Reviewed 2 hours ago -> verified
+    // 2. Reviewed 3 days ago -> rejected
+    // 3. Pending created 30 days ago
+    // 4. Pending created 1 hour ago
+    const { error: verifErr } = await adminClient.from('application_verifications').insert([
+      {
+        application_id: app1,
+        organization_id: orgH04Id,
+        worker_id: workerAUserId,
+        screenshot_url: 'https://storage.internal/screenshot1.png',
+        status: 'verified',
+        reviewer_id: adminAUserId,
+        reviewed_at: twoHoursAgo,
+        created_at: twoHoursAgo,
+      },
+      {
+        application_id: app2,
+        organization_id: orgH04Id,
+        worker_id: workerAUserId,
+        screenshot_url: 'https://storage.internal/screenshot2.png',
+        status: 'rejected',
+        reviewer_id: adminAUserId,
+        reviewed_at: threeDaysAgo,
+        created_at: threeDaysAgo,
+      },
+      {
+        application_id: app3,
+        organization_id: orgH04Id,
+        worker_id: workerAUserId,
+        screenshot_url: 'https://storage.internal/screenshot3.png',
+        status: 'pending',
+        reviewed_at: null,
+        created_at: thirtyDaysAgo,
+      },
+      {
+        application_id: app4,
+        organization_id: orgH04Id,
+        worker_id: workerAUserId,
+        screenshot_url: 'https://storage.internal/screenshot4.png',
+        status: 'pending',
+        reviewed_at: null,
+        created_at: oneHourAgo,
+      },
+    ]);
+    expect(verifErr).toBeNull();
+
+    // Evaluation 1: 24-hour window
+    const { data: v24h, error: err24h } = await adminAClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: orgH04Id, p_time_range: '24h' }
+    );
+    expect(err24h).toBeNull();
+    const verif24h = v24h.workforce.verifications;
+
+    expect(verif24h.verifiedInWindow).toBe(1);
+    expect(verif24h.rejectedInWindow).toBe(0);
+    expect(verif24h.reviewedInWindow).toBe(1);
+    expect(verif24h.pendingCurrent).toBe(2);
+    expect(verif24h.approvalRatePercent).toBe(100.0);
+    // Adversarial invariant: windowed total must be 1 (reviewed in window), NEVER 1 + 0 + 2 = 3
+    expect(verif24h.total).toBe(1);
+    expect(verif24h.total).not.toBe(3);
+
+    // Evaluation 2: 7-day window
+    const { data: v7d, error: err7d } = await adminAClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: orgH04Id, p_time_range: '7d' }
+    );
+    expect(err7d).toBeNull();
+    const verif7d = v7d.workforce.verifications;
+
+    expect(verif7d.verifiedInWindow).toBe(1);
+    expect(verif7d.rejectedInWindow).toBe(1);
+    expect(verif7d.reviewedInWindow).toBe(2);
+    expect(verif7d.pendingCurrent).toBe(2);
+    expect(verif7d.approvalRatePercent).toBe(50.0);
+    expect(verif7d.total).toBe(2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // TEST 11: R-H05 — MULTI-TENANT SCOPE & PLATFORM CATALOG CONTRACT
+  // Explicitly establishes tenant isolation for workforce vs platform-wide catalog
+  // ---------------------------------------------------------------------------
+  it('11. R-H05: Explicitly enforces multi-tenant workforce isolation while exposing platform-wide catalog', async () => {
+    // 1. Query as Org A administrator
+    const { data: orgAData, error: orgAErr } = await adminAClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: orgAId, p_time_range: '24h' }
+    );
+    expect(orgAErr).toBeNull();
+
+    // Verify documented scope metadata contract
+    expect(orgAData.scope).toEqual({
+      workforce: 'organization',
+      jobs: 'platform',
+      sourceHealth: 'platform',
+      dataQuality: 'platform',
+    });
+
+    // Org A workforce metrics reflect Org A only
+    expect(orgAData.workforce.roster.totalWorkers).toBe(1);
+    expect(orgAData.workforce.velocity.completed).toBe(2);
+
+    // Platform job inventory is visible as documented
+    expect(orgAData.jobs.inventory.totalJobs).toBeGreaterThan(0);
+    expect(orgAData.jobs.inventory.activeJobs).toBeGreaterThan(0);
+
+    // 2. Query as Org B administrator
+    const { data: orgBData, error: orgBErr } = await adminBClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: orgBId, p_time_range: '24h' }
+    );
+    expect(orgBErr).toBeNull();
+
+    // Org B workforce metrics reflect Org B only
+    expect(orgBData.workforce.velocity.completed).toBe(1);
+
+    // Org B cannot see Org A's completed assignments
+    expect(orgBData.workforce.velocity.completed).not.toBe(orgAData.workforce.velocity.completed);
+
+    // 3. Query as Platform Administrator (global, organizationId = null)
+    const { data: platData, error: platErr } = await platformAdminClient.rpc(
+      'get_operational_intelligence_metrics',
+      { p_organization_id: null, p_time_range: '24h' }
+    );
+    expect(platErr).toBeNull();
+    expect(platData.organizationId).toBeNull();
+
+    // Platform administrator sees global aggregate of workforce across all organizations
+    expect(platData.workforce.velocity.completed).toBeGreaterThanOrEqual(
+      orgAData.workforce.velocity.completed + orgBData.workforce.velocity.completed
+    );
   });
 });

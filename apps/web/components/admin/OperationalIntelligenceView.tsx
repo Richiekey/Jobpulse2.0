@@ -30,6 +30,12 @@ export interface OperationalIntelligenceData {
   timeRange: '24h' | '7d' | '30d';
   windowStart: string;
   organizationId: string | null;
+  scope?: {
+    workforce: string;
+    jobs: string;
+    sourceHealth: string;
+    dataQuality: string;
+  };
   workforce: {
     roster: {
       totalWorkers: number;
@@ -37,20 +43,22 @@ export interface OperationalIntelligenceData {
     };
     velocity: {
       dispatched: number;
+      startedInWindow: number;
       completed: number;
-      inProgress: number;
       cancelled: number;
       skipped: number;
     };
-    completionRatePercent: number;
+    inProgress: number;
     currentActive: number;
+    completionRatePercent: number;
     overdueBacklog: number;
     verifications: {
+      verifiedInWindow: number;
+      rejectedInWindow: number;
+      reviewedInWindow: number;
+      pendingCurrent: number;
+      approvalRatePercent: number;
       total: number;
-      verified: number;
-      rejected: number;
-      pending: number;
-      verificationRatePercent: number;
     };
     avgTurnaroundHours: number;
   };
@@ -119,7 +127,6 @@ export interface OperationalIntelligenceData {
       resolvedCount: number;
       fallbackCount: number;
       resolutionRatePercent: number;
-      avgConfidence: number;
       methods: Record<string, number>;
     };
     compensation: {
@@ -377,27 +384,31 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
                 </div>
               </div>
 
-              {/* Verification Approval Rate */}
+              {/* Verification Approval Rate (R-H04) */}
               <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '8px', padding: '14px' }}>
-                <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>Verification Approval</div>
+                <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>Verification Activity ({metrics.timeRange})</div>
                 <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: '4px', color: '#f59e0b' }}>
-                  {metrics.workforce.verifications.verificationRatePercent}%
+                  {metrics.workforce.verifications.approvalRatePercent}%
                 </div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {metrics.workforce.verifications.verified} verified, {metrics.workforce.verifications.rejected} rejected
+                  {metrics.workforce.verifications.verifiedInWindow} verified, {metrics.workforce.verifications.rejectedInWindow} rejected
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#f59e0b', marginTop: '4px', fontWeight: 600 }}>
+                  Current Backlog: {metrics.workforce.verifications.pendingCurrent} pending
                 </div>
               </div>
             </div>
 
-            {/* Assignment Velocity Ribbon */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Velocity in Window:</span>
+            {/* Assignment Velocity Ribbon (R-H03) */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '0.8rem' }}>
+              <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Activity in Window:</span>
               <span>Dispatched: <strong>{metrics.workforce.velocity.dispatched}</strong></span>
-              <span>Started: <strong>{metrics.workforce.velocity.inProgress}</strong></span>
+              <span>Started in Window: <strong>{metrics.workforce.velocity.startedInWindow}</strong></span>
+              <span>Current In Progress: <strong style={{ color: '#3b82f6' }}>{metrics.workforce.inProgress}</strong></span>
               <span>Completed: <strong style={{ color: '#10b981' }}>{metrics.workforce.velocity.completed}</strong></span>
               <span>Cancelled: <strong style={{ color: '#ef4444' }}>{metrics.workforce.velocity.cancelled}</strong></span>
               <span>Skipped: <strong style={{ color: '#f59e0b' }}>{metrics.workforce.velocity.skipped}</strong></span>
-              <span>Pending Reviews: <strong>{metrics.workforce.verifications.pending}</strong></span>
+              <span>Backlog Pending: <strong>{metrics.workforce.verifications.pendingCurrent}</strong></span>
             </div>
           </div>
 
@@ -693,7 +704,7 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
               </div>
             </div>
 
-            {/* ATS URL Resolution & Confidence */}
+            {/* ATS URL Resolution & Method Breakdown (R-H01: Authoritative Persisted Resolution State) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
               <div style={{ background: 'var(--bg-secondary)', borderRadius: '8px', padding: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -702,8 +713,9 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
                     {metrics.dataQuality.atsResolution.resolutionRatePercent}% Resolved
                   </span>
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Avg Resolution Confidence: <strong>{metrics.dataQuality.atsResolution.avgConfidence}</strong> / 1.00
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '12px' }}>
+                  <span>Direct/Resolved: <strong>{metrics.dataQuality.atsResolution.resolvedCount.toLocaleString()}</strong></span>
+                  <span>Fallbacks: <strong>{metrics.dataQuality.atsResolution.fallbackCount.toLocaleString()}</strong></span>
                 </div>
 
                 {/* Adapter Method Breakdown */}
