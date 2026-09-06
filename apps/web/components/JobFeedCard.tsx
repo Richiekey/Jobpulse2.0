@@ -34,7 +34,8 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
   isApplied = false,
   onTrackApplication,
 }) => {
-  const companyName = job.companies?.name || 'Verified Employer';
+  const rawCompanyName = job.companies?.name || 'Verified Employer';
+  const companyName = rawCompanyName.replace(/^\[(.*)\]$/, '$1').trim();
   const companyLogo = job.companies?.logo_url;
 
   const formattedSalary = formatSalary({
@@ -54,6 +55,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
   };
 
   const atsPlatform = job.ats_platform_slug || 'direct';
+  const isJobright = atsPlatform === 'jobright';
   const atsNameMap: Record<string, string> = {
     greenhouse: 'Greenhouse',
     lever: 'Lever',
@@ -63,7 +65,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
     icims: 'iCIMS',
     successfactors: 'SuccessFactors',
     oracle: 'Oracle Cloud',
-    jobright: 'Jobright',
+    jobright: 'Jobright Aggregator',
   };
 
   const primaryLocation =
@@ -72,6 +74,9 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
       : job.locations && job.locations.length > 0
       ? job.locations[0]
       : 'Unspecified';
+
+  const rawTitle = job.canonical_title || job.display_title || 'Untitled Role';
+  const cleanTitle = rawTitle.replace(/^\[(.*)\]$/, '$1').trim();
 
   return (
     <div
@@ -143,14 +148,15 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
                 fontWeight: 700,
                 padding: '1px 6px',
                 borderRadius: 'var(--radius-xs)',
-                backgroundColor: 'var(--bg-surface-subtle)',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--text-muted)',
+                backgroundColor: isJobright ? 'var(--status-info-bg)' : 'var(--bg-surface-subtle)',
+                border: `1px solid ${isJobright ? 'var(--status-info-border)' : 'var(--border-subtle)'}`,
+                color: isJobright ? 'var(--status-info-text)' : 'var(--text-muted)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em',
               }}
+              title={isJobright ? 'Aggregated via Jobright Collection' : `Direct ATS (${atsNameMap[atsPlatform] || atsPlatform})`}
             >
-              {atsNameMap[atsPlatform] || atsPlatform}
+              {isJobright ? 'Aggregator' : (atsNameMap[atsPlatform] || atsPlatform)}
             </span>
           )}
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{timeAgo(job.posted_at)}</span>
@@ -167,7 +173,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
           margin: 0,
         }}
       >
-        {job.canonical_title || job.display_title}
+        {cleanTitle}
       </h3>
 
       {/* Attributes & Pills */}

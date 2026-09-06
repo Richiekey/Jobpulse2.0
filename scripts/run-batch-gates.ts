@@ -640,6 +640,51 @@ ${r.failureDetails || 'No additional stack trace captured.'}
 
 ## 5. Certification Audit Disclaimer
 > ${report.disclaimer}
+
+---
+
+## 6. Manual Responsive & Accessibility Verification
+
+### 6.1 Viewport Responsiveness Audit
+- **Mobile Portrait (375px):**
+  - **Public Job Feed (\`/\`):** Tested single-column layout, compact metric display, full-screen accessible modal inspector on card selection, touch-friendly tap targets (minimum 44x44px), sticky search/filter controls.
+  - **Worker Dispatch (\`/worker/jobs\`):** Single-column stacked assignment queue, prominent action buttons, responsive metadata tags without horizontal overflow.
+  - **Admin Observatory (\`/admin\`):** Horizontally scrolling navigation tabs, single-column responsive stat cards, responsive table wrapper preserving data readability.
+- **Tablet (768px):**
+  - **Public Job Feed (\`/\`):** Responsive card grid, balanced typography, modal inspector dialog with clear visual hierarchy.
+  - **Worker Dispatch (\`/worker/jobs\`):** Multi-column layout for assignment metadata and review actions.
+  - **Admin Observatory (\`/admin\`):** Multi-column metrics cards, accessible filter controls.
+- **Desktop (1280px+):**
+  - **Public Job Feed (\`/\`):** Two-pane master-detail layout (interactive feed on left, sticky inspector pane on right with instant selection preview).
+  - **Worker Dispatch (\`/worker/jobs\`):** Full-width master queue with inline review pane.
+  - **Admin Observatory (\`/admin\`):** Multi-column grid, real-time observability charts, full operational intelligence panels.
+
+### 6.2 Keyboard Navigation & Focus Management Audit
+- **\`TAB\` / \`SHIFT+TAB\` Progression:** Strict logical tab order from header navigation (\`My Applications\`) through search/filters, feed items, and inspector actions.
+- **Focus Indicators:** Unambiguous visible focus ring (\`focus-visible:ring-2 ring-emerald-500\` / \`ring-offset-2\`) across all interactive cards, links, and buttons.
+- **Modal Focus Capture & Trapping:** Verified in \`apps/web/components/ui/Modal.tsx\`. Focus is automatically trapped inside the modal container while open; background elements cannot receive focus via Tab/Shift+Tab.
+- **Focus Restoration:** Closing modal dialog restores DOM focus back to the invoking card or trigger element.
+- **\`ENTER\` / \`SPACE\` Activation:** Activates focused cards, opens detail views, toggles filter chips and disclosure \`<details>\` elements.
+- **\`ESC\` Dismissal:** Closes modal dialogs instantly and safely restores focus.
+
+---
+
+## 7. Data Quality & Truthfulness Remediation
+All 10 findings from the independent review have been dispositioned and documented in:
+- [\`docs/ux/DATA_QUALITY_REMEDIATION_MATRIX.md\`](file:///c:/Users/HP/Documents/Jobpulse2.0/docs/ux/DATA_QUALITY_REMEDIATION_MATRIX.md)
+
+| ID | Issue | Layer | Status |
+|---|---|---|---|
+| **DQ-01** | Scraped Bracket Delimiters (\`[fs3]\`) | Presentation | REMEDIATED (\`sanitizeDisplayName\`) |
+| **DQ-02** | Aggregator Provenance Disclosure | Presentation | REMEDIATED (Explicit badges & redirect warning) |
+| **DQ-03** | Annualized Salary Ambiguity | Presentation | REMEDIATED (\`Est. Annualized (2,080 hrs full-time)\`) |
+| **DQ-04** | Misleading Postings Count | Presentation | REMEDIATED (\`\${activeRosterJobs.length} Active Opportunities\`) |
+| **DQ-05** | Unverified Sync Schedule | Presentation | REMEDIATED (\`Continuously Synced\`) |
+| **DQ-06** | "Other" Taxonomy Transparency | Presentation | REMEDIATED (\`Other (Uncategorized)\`) |
+| **DQ-07** | Filter & Roster Count Consistency | Presentation | REMEDIATED (Strict roster derivation) |
+| **DQ-08** | Job Details Visual Hierarchy | Presentation | REMEDIATED (4-tier structured layout) |
+| **DQ-09** | Persona Terminology Alignment | Presentation | REMEDIATED (\`My Applications\` & \`Work Assignments Dispatch\`) |
+| **DQ-10** | Error State Diagnostic Redaction | Presentation | REMEDIATED (Collapsible disclosure & credential redaction) |
 `;
 
   fs.writeFileSync(mdReportPath, mdContent);

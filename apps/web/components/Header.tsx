@@ -159,7 +159,7 @@ export const Header: React.FC<HeaderProps> = ({
             }}
           >
             <CheckSquare size={16} />
-            <span>Applications</span>
+            <span>My Applications</span>
             {applicationCount > 0 && (
               <span
                 style={{
@@ -349,7 +349,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <CheckSquare size={18} />
-              <span>Applications</span>
+              <span>My Applications</span>
             </div>
             {applicationCount > 0 && (
               <span

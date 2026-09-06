@@ -223,10 +223,10 @@ export default function WorkerJobsPage() {
           <div>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Briefcase size={24} style={{ color: 'var(--brand-text)' }} />
-              <span>Assigned Jobs Dispatch</span>
+              <span>Work Assignments Dispatch</span>
             </h1>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-              {activeOrg ? `Review and fulfill job assignments dispatched for ${activeOrg.name}.` : 'Review and execute your dispatched job applications.'}
+              {activeOrg ? `Review and fulfill work assignments dispatched for ${activeOrg.name}.` : 'Review, execute, and verify your assigned job fulfillment tasks.'}
             </p>
           </div>
 

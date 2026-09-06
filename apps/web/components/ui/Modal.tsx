@@ -1,4 +1,4 @@
-import React, { useEffect, useId } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 
 export interface ModalProps {
@@ -10,6 +10,49 @@ export interface ModalProps {
   showCloseButton?: boolean;
   children: React.ReactNode;
   className?: string;
+}
+
+export const FOCUSABLE_ELEMENTS_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+export function getModalFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_ELEMENTS_SELECTOR)).filter(
+    (el) =>
+      typeof window === 'undefined' ||
+      el.offsetParent !== null ||
+      el.getClientRects().length > 0 ||
+      window.getComputedStyle(el).display !== 'none'
+  );
+}
+
+export function trapFocusInContainer(
+  e: KeyboardEvent | React.KeyboardEvent,
+  container: HTMLElement
+): void {
+  if (e.key !== 'Tab') return;
+
+  const focusable = getModalFocusableElements(container);
+  if (focusable.length === 0) {
+    e.preventDefault();
+    container.focus();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = typeof document !== 'undefined' ? document.activeElement : null;
+
+  if (e.shiftKey) {
+    if (active === first || active === container || !container.contains(active)) {
+      e.preventDefault();
+      last.focus();
+    }
+  } else {
+    if (active === last || !container.contains(active)) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -25,8 +68,37 @@ export const Modal: React.FC<ModalProps> = ({
   const generatedId = useId();
   const titleId = `modal-title-${generatedId}`;
   const descId = `modal-desc-${generatedId}`;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
-  // Keyboard ESC dismissal listener
+  // Focus capture on open & restoration on close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (typeof document !== 'undefined') {
+      previouslyFocusedRef.current = (document.activeElement as HTMLElement) || null;
+    }
+
+    const timer = setTimeout(() => {
+      if (!dialogRef.current) return;
+      const focusable = getModalFocusableElements(dialogRef.current);
+      if (focusable.length > 0) {
+        const preferred = focusable.find((el) => el.tagName.toLowerCase() === 'input') || focusable[0];
+        preferred.focus();
+      } else {
+        dialogRef.current.focus();
+      }
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      if (previouslyFocusedRef.current && typeof previouslyFocusedRef.current.focus === 'function') {
+        previouslyFocusedRef.current.focus();
+      }
+    };
+  }, [isOpen]);
+
+  // Keyboard listeners: ESC dismissal and Tab focus trapping
   useEffect(() => {
     if (!isOpen) return;
 
@@ -34,6 +106,10 @@ export const Modal: React.FC<ModalProps> = ({
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        trapFocusInContainer(e, dialogRef.current);
       }
     };
 
@@ -80,6 +156,8 @@ export const Modal: React.FC<ModalProps> = ({
       }}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
@@ -96,6 +174,7 @@ export const Modal: React.FC<ModalProps> = ({
           flexDirection: 'column',
           boxShadow: 'var(--shadow-lg)',
           overflow: 'hidden',
+          outline: 'none',
         }}
       >
         {(title || showCloseButton) && (

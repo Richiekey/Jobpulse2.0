@@ -15,6 +15,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
+import { Modal } from '@/components/ui';
 
 interface JobDetailsModalProps {
   job: any | null;
@@ -33,9 +34,13 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 }) => {
   if (!job) return null;
 
-  const companyName = job.companies?.name || 'Verified Employer';
+  const rawCompanyName = job.companies?.name || 'Verified Employer';
+  const companyName = rawCompanyName.replace(/^\[(.*)\]$/, '$1').trim();
   const companyLogo = job.companies?.logo_url;
   const companyWebsite = job.companies?.website;
+
+  const rawTitle = job.display_title || job.canonical_title || 'Untitled Role';
+  const cleanTitle = rawTitle.replace(/^\[(.*)\]$/, '$1').trim();
 
   // Format compensation
   const formattedSalary = formatSalary({
@@ -45,7 +50,9 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     interval: job.salary_interval,
   });
 
-  const displaySalary = formattedSalary || 'Not Disclosed';
+  const displaySalary = formattedSalary
+    ? (job.salary_currency ? formattedSalary : `${formattedSalary} (Currency not disclosed)`)
+    : 'Not Disclosed';
 
   let annualizedEst: string | null = null;
   if (
@@ -65,25 +72,26 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   }
 
   // Detect ATS Name
+  const isJobright = job.ats_platform_slug === 'jobright';
   let atsName = 'Direct Employer ATS';
   if (job.apply_url?.includes('greenhouse.io')) atsName = 'Greenhouse ATS';
   else if (job.apply_url?.includes('lever.co')) atsName = 'Lever ATS';
   else if (job.apply_url?.includes('ashbyhq.com')) atsName = 'Ashby ATS';
   else if (job.apply_url?.includes('myworkdayjobs.com')) atsName = 'Workday ATS';
+  else if (isJobright) atsName = 'Jobright Aggregator';
+
+  const applyUrl = job.apply_url || job.canonical_url || `/api/jobs/${job.id}/apply`;
+  const isDirectAts = applyUrl && !applyUrl.includes('jobright.ai');
+  let applyButtonLabel = `Apply on ${companyName} Careers`;
+  if (isDirectAts) {
+    applyButtonLabel = `Apply via ${atsName}`;
+  } else if (isJobright) {
+    applyButtonLabel = 'View on Jobright (Aggregator)';
+  }
 
   return (
-    <div
-      className="modal-backdrop"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="job-details-title"
-    >
-      <div
-        className="modal-surface"
-        onClick={(e) => e.stopPropagation()}
-        style={{ padding: '28px' }}
-      >
+    <Modal isOpen={true} onClose={onClose} size="xl" showCloseButton={false}>
+      <div>
         {/* Header */}
         <div
           style={{
@@ -141,7 +149,7 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 id="job-details-title"
                 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}
               >
-                {job.display_title}
+                {cleanTitle}
               </h1>
             </div>
           </div>
@@ -382,17 +390,17 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </div>
 
           <a
-            href={`/api/jobs/${job.id}/apply`}
+            href={applyUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary"
             style={{ padding: '9px 20px', fontSize: '0.875rem' }}
           >
-            <span>Apply on {companyName} ATS</span>
+            <span>{applyButtonLabel}</span>
             <ExternalLink size={15} />
           </a>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };

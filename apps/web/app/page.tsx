@@ -517,10 +517,11 @@ export default function HomePage() {
               >
                 <div>
                   <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {isLoading ? 'Scanning Feed...' : `${jobs.length} Verified Postings`}
+                    {isLoading ? 'Scanning Feed...' : `${activeRosterJobs.length} Active Opportunities`}
                   </span>
                   <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Direct ATS Feeds • Deduplicated • Updated Hourly
+                    Direct ATS & Aggregated Sources • Deduplicated • Continuously Synced
+                    {appliedJobIds.size > 0 && ` • (${appliedJobIds.size} applied excluded)`}
                   </p>
                 </div>
 
@@ -553,7 +554,8 @@ export default function HomePage() {
               ) : fetchError ? (
                 <ErrorState
                   title="Unable to load jobs feed"
-                  message={fetchError}
+                  userMessage="We couldn't load the jobs feed right now. Please check your connection and try again."
+                  diagnostic={fetchError}
                   onRetry={() => fetchFeedJobs(true)}
                 />
               ) : jobs.length === 0 ? (
@@ -673,9 +675,9 @@ export default function HomePage() {
         {/* Application Tracker Tab */}
         {activeTab === 'applications' && (
           <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>Application Tracker ({applications.length})</h2>
+            <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>My Applications ({applications.length})</h2>
             <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
-              Track the status of your direct ATS applications and pipeline stages.
+              Track the status of your direct applications and pipeline stages.
             </p>
 
             {applications.length === 0 ? (

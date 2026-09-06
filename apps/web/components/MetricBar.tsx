@@ -49,7 +49,7 @@ export const MetricBar: React.FC<MetricBarProps> = ({
         <div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800 }}>{totalJobs}</div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Active Verified Postings
+            Active Direct Postings
           </div>
         </div>
       </div>
