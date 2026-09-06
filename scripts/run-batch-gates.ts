@@ -71,7 +71,7 @@ export function captureGitState(): GitMetadata {
       ? porcelain
           .split('\n')
           .map(l => l.trim())
-          .filter(l => l.length > 0 && !l.includes('docs/audits/') && !l.includes('.gates-report.json'))
+          .filter(l => l.length > 0 && !l.includes('.gates-report.json'))
       : [];
     const untrackedFiles = lines.filter(l => l.startsWith('??')).map(l => l.slice(3).trim());
     const modifiedFiles = lines.filter(l => !l.startsWith('??')).map(l => l.slice(3).trim());
@@ -298,7 +298,7 @@ export async function runBatchGates() {
       { id: 1, name: 'Typecheck Integrity', command: 'pnpm run typecheck', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
       { id: 2, name: 'Unit & Domain Test Suites', command: 'pnpm run test', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
       { id: 3, name: 'Integration (Authenticated PostgREST)', command: 'pnpm run test:authenticated', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
-      { id: 4, name: 'Production Build', command: 'pnpm --filter @jobpulse/web build', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
+      { id: 4, name: 'Production Build (Entire Workspace)', command: 'pnpm run build', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
       { id: 5, name: 'Migration & Schema Integrity', command: 'npx tsx scripts/check-schema-integrity.mjs --audit', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
       { id: 6, name: 'Security & Tenant Isolation Boundary', command: 'npx vitest run tests/batch-t-security-boundary.test.ts', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
       { id: 7, name: 'Observability & Operational Truthfulness', command: 'npx vitest run tests/batch-t-observability-truth.test.ts', status: 'BLOCKED', durationMs: 0, summary: auditBlockReason },
@@ -401,9 +401,9 @@ export async function runBatchGates() {
   // ---------------------------------------------------------------------------
   // GATE 4: PRODUCTION BUILD
   // ---------------------------------------------------------------------------
-  console.log('\n[GATE 4/8] Production Build & Asset Packaging...');
-  const g4 = executeGateCommand('pnpm --filter @jobpulse/web build');
-  results.push({ id: 4, name: 'Production Build', command: 'pnpm --filter @jobpulse/web build', ...g4 });
+  console.log('\n[GATE 4/8] Production Build & Asset Packaging (Entire Workspace)...');
+  const g4 = executeGateCommand('pnpm run build');
+  results.push({ id: 4, name: 'Production Build (Entire Workspace)', command: 'pnpm run build', ...g4 });
   console.log(`[GATE 4] Result: ${g4.status} (${g4.durationMs}ms)`);
 
   // ---------------------------------------------------------------------------

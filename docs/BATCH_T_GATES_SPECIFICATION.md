@@ -74,7 +74,7 @@ The gate engine provides three dedicated execution profiles:
 ├─────────┼───────────────────────────────┼────────────────────────────────────┤
 │ Gate 3  │ Genuine Authenticated Test    │ pnpm run test:authenticated        │
 ├─────────┼───────────────────────────────┼────────────────────────────────────┤
-│ Gate 4  │ Production Build              │ pnpm --filter @jobpulse/web build  │
+│ Gate 4  │ Production Build (Workspace)  │ pnpm run build                     │
 ├─────────┼───────────────────────────────┼────────────────────────────────────┤
 │ Gate 5  │ Migration & Schema Integrity  │ check-schema-integrity             │
 ├─────────┼───────────────────────────────┼────────────────────────────────────┤
@@ -101,9 +101,12 @@ The gate engine provides three dedicated execution profiles:
 - **Target**: Genuine non-production Supabase project (`wvyrivmvpcrhwinzmcyy`).
 - **Invariant**: Validates multi-tenant workforce workflows, assignment lifecycles, and operational intelligence against live PostgreSQL.
 
-#### Gate 4: Production Build (`pnpm --filter @jobpulse/web build`)
-- **Scope**: Next.js production packaging.
-- **Invariant**: Successful compilation and page generation across all 43 static and dynamic routes with zero build-time syntax or type errors.
+#### Gate 4: Production Build (`pnpm run build`)
+- **Scope**: Full workspace production packaging across all projects:
+  - **Shared Libraries (`packages/*`)**: Compiles `@jobpulse/shared`, `@jobpulse/domain`, `@jobpulse/url-resolution`, `@jobpulse/validation`, `@jobpulse/ats` via `tsc`.
+  - **Worker Daemon (`apps/worker`)**: Compiles background ingestion and sync daemon into production bundle (`dist/index.js`).
+  - **Web Application (`apps/web`)**: Compiles Next.js production bundles, middleware, and generates all 43 static/dynamic routes.
+- **Invariant**: Zero build-time syntax, bundling, or type errors across the entire workspace.
 
 #### Gate 5: Migration & Schema Integrity (`scripts/check-schema-integrity.mjs`)
 - **Scope**: All SQL files in `supabase/migrations/`.
