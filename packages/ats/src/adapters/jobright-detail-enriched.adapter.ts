@@ -92,7 +92,7 @@ async function ensureJobrightSession(): Promise<string | null> {
     );
 
     const setCookie = response.headers.get('set-cookie') || '';
-    const sessionMatch = setCookie.match(/(?:^|,\s*)SESSION_ID=([^;,\s]+)/i);
+    const sessionMatch = setCookie.match(/SESSION_ID=([^;,\s]+)/i);
     if (!sessionMatch?.[1]) {
       logger.warn('jobright_direct_url_login_missing_session_cookie', { status: response.status });
       return null;
