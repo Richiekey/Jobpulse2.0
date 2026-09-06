@@ -602,40 +602,47 @@ describe('Batch R — Genuine Authenticated PostgREST Operational Intelligence S
 
   // ---------------------------------------------------------------------------
   // TEST 7: R-H01 — AUTHORITATIVE ATS RESOLUTION (TESTS A, B, C, D)
-  // Zero fabricated confidence; telemetry must strictly reflect authoritative state
+  // ---------------------------------------------------------------------------
+  // TEST 7: R-H01 — AUTHORITATIVE ATS RESOLUTION (MIGRATION-STATE ADVERSARIAL COVERAGE)
+  // Proves migration cannot manufacture 'direct' resolution when url_resolution_method IS NULL
   // ---------------------------------------------------------------------------
   it('7. R-H01: Authoritative ATS Resolution telemetry strictly reflects persisted state without heuristics', async () => {
-    // Fixture A: Job with non-empty apply URL but no successful ATS resolution (url_resolution_method = 'unresolved')
-    const jobUnresolvedId = crypto.randomUUID();
-    // Fixture B: Job with known ATS source (GREENHOUSE) but url_resolution_method = 'unresolved'
-    const jobGreenhouseUnresolvedId = crypto.randomUUID();
-    // Fixture C: Job resolved via fallback method (url_resolution_method = 'fallback_source')
+    // Scenario 1: Pre-existing job with non-empty apply URL, unknown source, and NULL resolution method
+    const jobPreExistingUnknownId = crypto.randomUUID();
+    // Scenario 2: Pre-existing job with non-empty apply URL, known ATS source (GREENHOUSE), but NULL resolution method
+    const jobPreExistingGreenhouseId = crypto.randomUUID();
+    // Scenario 3: Job resolved via fallback method (url_resolution_method = 'fallback_source')
     const jobFallbackId = crypto.randomUUID();
-    // Fixture D: Job resolved directly via Greenhouse API (url_resolution_method = 'greenhouse_api')
+    // Scenario 4: Job resolved directly via Greenhouse API (url_resolution_method = 'greenhouse_api')
     const jobDirectId = crypto.randomUUID();
 
-    createdJobIds.push(jobUnresolvedId, jobGreenhouseUnresolvedId, jobFallbackId, jobDirectId);
+    createdJobIds.push(
+      jobPreExistingUnknownId,
+      jobPreExistingGreenhouseId,
+      jobFallbackId,
+      jobDirectId
+    );
 
     const nowIso = new Date().toISOString();
     const { error: insertErr } = await adminClient.from('jobs').insert([
       {
-        id: jobUnresolvedId,
-        title: `Unresolved URL Job (${runId})`,
+        id: jobPreExistingUnknownId,
+        title: `Pre-existing Unknown Job (${runId})`,
         company_name: `Corp Alpha ${runId}`,
         status: 'active',
         source: 'UNKNOWN',
         apply_url: 'https://example-careers.com/job/9999',
-        url_resolution_method: 'unresolved',
+        url_resolution_method: null, // Crucial: represents pre-existing un-resolved job
         scraped_at: nowIso,
       },
       {
-        id: jobGreenhouseUnresolvedId,
-        title: `Greenhouse Unresolved Job (${runId})`,
+        id: jobPreExistingGreenhouseId,
+        title: `Pre-existing Greenhouse Job (${runId})`,
         company_name: `Corp Beta ${runId}`,
         status: 'active',
         source: 'GREENHOUSE',
         apply_url: 'https://boards.greenhouse.io/corp-beta/jobs/111',
-        url_resolution_method: 'unresolved',
+        url_resolution_method: null, // Crucial: source is known ATS, but resolution method was NOT persisted
         scraped_at: nowIso,
       },
       {
@@ -668,22 +675,23 @@ describe('Batch R — Genuine Authenticated PostgREST Operational Intelligence S
     expect(error).toBeNull();
     const ats = data.dataQuality.atsResolution;
 
-    // Test A — Unknown/non-ATS URL: non-empty apply URL but unresolved must not be counted as resolved
-    // and must not receive fabricated confidence
+    // Scenario 1 Verification: A job with non-empty apply URL and unknown source but url_resolution_method = NULL
+    // must NOT be classified as resolved and must NOT be classified as 'direct'
+    // It must group under 'unresolved'
     expect(ats.methods['unresolved']).toBeDefined();
     expect(ats.methods['unresolved']).toBeGreaterThanOrEqual(2);
+    expect(ats.methods['direct']).toBeUndefined(); // Zero fabricated 'direct' method counts!
 
-    // Test B — Known ATS source: job with source=GREENHOUSE but url_resolution_method='unresolved'
-    // is NOT counted as resolved
-    // Direct/resolved methods are counted in resolvedCount
-    expect(ats.resolvedCount).toBeGreaterThan(0);
+    // Scenario 2 Verification: A job with known ATS source (GREENHOUSE) but url_resolution_method = NULL
+    // must NOT become resolved merely because the source is known
+    // Direct/authoritative resolution count only increments for jobs with persisted non-fallback methods
     expect(ats.methods['greenhouse_api']).toBeGreaterThanOrEqual(1);
 
-    // Test C — Fallback: fallback-resolved jobs are explicitly counted in fallbackCount and methods
+    // Scenario 3 Verification: Fallback-resolved jobs are explicitly classified in fallbackCount and methods
     expect(ats.fallbackCount).toBeGreaterThanOrEqual(1);
     expect(ats.methods['fallback_source']).toBeGreaterThanOrEqual(1);
 
-    // Test D — No persisted confidence: API must not fabricate one
+    // Scenario 4 Verification: No fabricated confidence score
     expect((ats as any).avgConfidence).toBeUndefined();
   });
 

@@ -11,8 +11,19 @@
 -- 1. SCHEMA HARDENING & INDEX OPTIMIZATIONS FOR OPERATIONAL INTELLIGENCE
 -- -----------------------------------------------------------------------------
 -- Ensure authoritative url_resolution_method column exists on jobs (R-H01)
+-- CRITICAL: Must be nullable with NO default to prevent fabricating resolution state.
 ALTER TABLE public.jobs
-  ADD COLUMN IF NOT EXISTS url_resolution_method TEXT DEFAULT 'direct';
+  ADD COLUMN IF NOT EXISTS url_resolution_method TEXT;
+
+-- Drop default if it was previously created with 'direct'
+ALTER TABLE public.jobs
+  ALTER COLUMN url_resolution_method DROP DEFAULT;
+
+-- Reset any fabricated 'direct' values populated strictly by previous migration default.
+-- Pre-existing jobs that have not been through the URL resolution pipeline must be NULL (unresolved).
+UPDATE public.jobs
+  SET url_resolution_method = NULL
+  WHERE url_resolution_method = 'direct';
 
 -- Ensure normalized failure taxonomy classification exists on source_runs (R-H02)
 ALTER TABLE public.source_runs
@@ -69,6 +80,11 @@ CREATE TRIGGER trg_source_runs_error_class
 BEFORE INSERT OR UPDATE ON public.source_runs
 FOR EACH ROW
 EXECUTE FUNCTION public.trg_source_runs_classify_error();
+
+-- Backfill historical failed source_runs that lack an error_class (R-H02)
+UPDATE public.source_runs
+SET error_class = public.classify_source_error(error_message)
+WHERE status = 'FAILED' AND (error_class IS NULL OR error_class = '');
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status_scraped_at
   ON public.jobs (status, scraped_at DESC);
@@ -403,8 +419,17 @@ BEGIN
     count(*) FILTER (WHERE lower(status::text) = 'active' AND description IS NOT NULL AND description != '')::int,
     count(*) FILTER (WHERE lower(status::text) = 'active' AND apply_url IS NOT NULL AND apply_url != '')::int,
     -- ATS resolution audit on active jobs (R-H01: Authoritative persisted resolution method, zero heuristics)
-    count(*) FILTER (WHERE lower(status::text) = 'active' AND coalesce(url_resolution_method, 'direct') NOT IN ('fallback', 'fallback_source', 'unresolved') AND apply_url IS NOT NULL AND apply_url != '')::int,
-    count(*) FILTER (WHERE lower(status::text) = 'active' AND coalesce(url_resolution_method, 'direct') IN ('fallback', 'fallback_source'))::int
+    count(*) FILTER (
+      WHERE lower(status::text) = 'active'
+        AND url_resolution_method IS NOT NULL
+        AND url_resolution_method NOT IN ('fallback', 'fallback_source', 'unresolved')
+        AND apply_url IS NOT NULL AND apply_url != ''
+    )::int,
+    count(*) FILTER (
+      WHERE lower(status::text) = 'active'
+        AND url_resolution_method IS NOT NULL
+        AND url_resolution_method IN ('fallback', 'fallback_source')
+    )::int
   INTO
     v_active_jobs,
     v_expired_jobs,
@@ -571,10 +596,10 @@ BEGIN
   -- ---------------------------------------------------------------------------
   -- MODULE 4: BREAKDOWNS (METHODS, CURRENCIES, INTERVALS)
   -- ---------------------------------------------------------------------------
-  -- Method breakdown (R-H01: grouped by authoritative url_resolution_method)
+  -- Method breakdown (R-H01: grouped by authoritative url_resolution_method, NULL -> 'unresolved')
   SELECT coalesce(jsonb_object_agg(m.method, m.count), '{}'::jsonb) INTO v_methods_json
   FROM (
-    SELECT coalesce(nullif(trim(url_resolution_method), ''), 'direct') AS method, count(*)::int AS count
+    SELECT coalesce(nullif(trim(url_resolution_method), ''), 'unresolved') AS method, count(*)::int AS count
     FROM public.jobs
     WHERE lower(status::text) = 'active'
     GROUP BY 1
