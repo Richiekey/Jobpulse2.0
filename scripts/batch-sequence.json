@@ -51,18 +51,25 @@
     },
     "T": {
       "name": "Implementation Sequence & Gates Governance",
-      "status": "CERTIFIED",
-      "prerequisites": ["R"]
+      "status": "IN_PROGRESS",
+      "prerequisites": [
+        { "batch": "R", "status": "CERTIFIED" },
+        { "batch": "S", "status": "PAUSED" }
+      ]
     },
     "U": {
       "name": "Product UX/UI System & Experience Integrity",
-      "status": "PERMITTED",
-      "prerequisites": ["T"]
+      "status": "BLOCKED",
+      "prerequisites": [
+        { "batch": "T", "status": "CERTIFIED" }
+      ]
     },
     "V": {
       "name": "Production Reliability & Observability",
       "status": "BLOCKED",
-      "prerequisites": ["U"]
+      "prerequisites": [
+        { "batch": "U", "status": "CERTIFIED" }
+      ]
     },
     "W": {
       "name": "Security Operations & Disaster Recovery",

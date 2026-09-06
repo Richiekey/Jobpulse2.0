@@ -52,7 +52,7 @@ export interface CertificationReport {
   batchSequence: BatchSequenceStatus;
   totalDurationMs: number;
   gateResults: GateResult[];
-  certificationStatus: 'CERTIFIED' | 'NOT CERTIFIED' | 'BLOCKED' | 'NOT A PRODUCTION CERTIFICATION';
+  certificationStatus: 'CERTIFIED' | 'VERIFIED' | 'NOT CERTIFIED' | 'BLOCKED' | 'NOT A PRODUCTION CERTIFICATION';
   disclaimer: string;
 }
 
@@ -94,14 +94,83 @@ export function captureGitState(): GitMetadata {
   }
 }
 
+export interface PrerequisiteItem {
+  batch: string;
+  status?: string;
+}
+
+/**
+ * Generic dependency evaluator: consumes batch sequence graph and checks whether
+ * target batch is executable based on its status and prerequisite requirements.
+ */
+export function evaluateBatchPrerequisites(
+  targetBatchKey: string,
+  seqData: { currentBatch: string; batches: Record<string, any> }
+): { executable: boolean; reason: string; permittedNextBatch: string | null } {
+  const target = seqData.batches?.[targetBatchKey];
+  if (!target) {
+    return {
+      executable: false,
+      reason: `Target batch '${targetBatchKey}' not found in batch-sequence.json.`,
+      permittedNextBatch: null,
+    };
+  }
+
+  // A batch that is explicitly PAUSED cannot execute gates
+  if (target.status === 'PAUSED') {
+    return {
+      executable: false,
+      reason: `Batch ${targetBatchKey} is explicitly PAUSED. Gate execution is prohibited.`,
+      permittedNextBatch: null,
+    };
+  }
+
+  const rawPrereqs: (string | PrerequisiteItem)[] = target.prerequisites || [];
+  for (const rawPrereq of rawPrereqs) {
+    const reqBatch = typeof rawPrereq === 'string' ? rawPrereq : rawPrereq.batch;
+    const reqStatus = typeof rawPrereq === 'object' && rawPrereq.status ? rawPrereq.status : 'CERTIFIED';
+
+    const prereqObj = seqData.batches?.[reqBatch];
+    if (!prereqObj) {
+      return {
+        executable: false,
+        reason: `Prerequisite batch '${reqBatch}' for batch '${targetBatchKey}' not found in sequence definition.`,
+        permittedNextBatch: null,
+      };
+    }
+
+    if (prereqObj.status !== reqStatus) {
+      return {
+        executable: false,
+        reason: `Prerequisite batch ${reqBatch} has status '${prereqObj.status}', but '${reqStatus}' is required for batch ${targetBatchKey}.`,
+        permittedNextBatch: null,
+      };
+    }
+  }
+
+  // Determine permitted next batch in sequence
+  const batchKeys = Object.keys(seqData.batches || {});
+  const targetIdx = batchKeys.indexOf(targetBatchKey);
+  let nextBatch: string | null = null;
+  if (targetIdx !== -1 && targetIdx + 1 < batchKeys.length) {
+    nextBatch = batchKeys[targetIdx + 1];
+  }
+
+  return {
+    executable: true,
+    reason: `All prerequisites satisfied for batch ${targetBatchKey}.`,
+    permittedNextBatch: nextBatch,
+  };
+}
+
 /**
  * Validates batch sequence dependencies from scripts/batch-sequence.json
  */
-export function validateBatchSequence(): BatchSequenceStatus {
+export function validateBatchSequence(targetBatch?: string): BatchSequenceStatus {
   const seqFile = path.resolve(rootDir, 'scripts/batch-sequence.json');
   if (!fs.existsSync(seqFile)) {
     return {
-      currentBatch: 'T',
+      currentBatch: targetBatch || 'T',
       prerequisitesMet: false,
       permittedNextBatch: null,
       details: 'FAIL_CLOSED: scripts/batch-sequence.json missing.',
@@ -110,40 +179,18 @@ export function validateBatchSequence(): BatchSequenceStatus {
 
   try {
     const seqData = JSON.parse(fs.readFileSync(seqFile, 'utf-8'));
-    const current = seqData.batches[seqData.currentBatch];
-    if (!current) {
-      return {
-        currentBatch: seqData.currentBatch || 'T',
-        prerequisitesMet: false,
-        permittedNextBatch: null,
-        details: `Current batch ${seqData.currentBatch} not found in sequence.`,
-      };
-    }
-
-    // For Batch T: prerequisite is Batch R (CERTIFIED). Batch S is explicitly PAUSED per roadmap.
-    const rBatch = seqData.batches['R'];
-    const sBatch = seqData.batches['S'];
-    const rCertified = rBatch && rBatch.status === 'CERTIFIED';
-    const sPaused = sBatch && sBatch.status === 'PAUSED';
-
-    if (rCertified && sPaused) {
-      return {
-        currentBatch: 'T',
-        prerequisitesMet: true,
-        permittedNextBatch: 'U',
-        details: 'Batch R is CERTIFIED; Batch S is explicitly PAUSED; Batch T is permitted to execute.',
-      };
-    }
+    const batchKey = targetBatch || seqData.currentBatch || 'T';
+    const evalResult = evaluateBatchPrerequisites(batchKey, seqData);
 
     return {
-      currentBatch: 'T',
-      prerequisitesMet: false,
-      permittedNextBatch: null,
-      details: `Prerequisites unmet: Batch R status=${rBatch?.status}, Batch S status=${sBatch?.status}`,
+      currentBatch: batchKey,
+      prerequisitesMet: evalResult.executable,
+      permittedNextBatch: evalResult.permittedNextBatch,
+      details: evalResult.reason,
     };
   } catch (err: any) {
     return {
-      currentBatch: 'T',
+      currentBatch: targetBatch || 'T',
       prerequisitesMet: false,
       permittedNextBatch: null,
       details: `Error parsing batch sequence: ${err?.message}`,
@@ -313,7 +360,7 @@ export async function runBatchGates() {
   // GATE 3: INTEGRATION
   // ---------------------------------------------------------------------------
   console.log('\n[GATE 3/8] Genuine Authenticated Integration Suite...');
-  if (profile === 'ci' && !envSafety.safe) {
+  if (profile === 'ci' && (!envSafety.safe || !envSafety.hasCredentials)) {
     results.push({
       id: 3,
       name: 'Integration (Authenticated PostgREST)',
@@ -334,6 +381,17 @@ export async function runBatchGates() {
       failureDetails: envSafety.reason,
     });
     console.log(`[GATE 3] Result: BLOCKED (${envSafety.reason})`);
+  } else if (!envSafety.hasCredentials) {
+    results.push({
+      id: 3,
+      name: 'Integration (Authenticated PostgREST)',
+      command: 'pnpm run test:authenticated',
+      status: 'BLOCKED',
+      durationMs: 0,
+      summary: 'Blocked: Missing authenticated test credentials (SUPABASE_TEST_SERVICE_ROLE_KEY required).',
+      failureDetails: 'SUPABASE_TEST_SERVICE_ROLE_KEY missing.',
+    });
+    console.log('[GATE 3] Result: BLOCKED (Missing test credentials)');
   } else {
     const g3 = executeGateCommand('pnpm run test:authenticated');
     results.push({ id: 3, name: 'Integration (Authenticated PostgREST)', command: 'pnpm run test:authenticated', ...g3 });
@@ -361,7 +419,7 @@ export async function runBatchGates() {
   // GATE 6: SECURITY & RLS
   // ---------------------------------------------------------------------------
   console.log('\n[GATE 6/8] Security & Tenant Isolation Boundary...');
-  if (profile === 'ci' && !envSafety.safe) {
+  if (profile === 'ci' && (!envSafety.safe || !envSafety.hasCredentials)) {
     results.push({
       id: 6,
       name: 'Security & Tenant Isolation Boundary',
@@ -382,6 +440,17 @@ export async function runBatchGates() {
       failureDetails: envSafety.reason,
     });
     console.log(`[GATE 6] Result: BLOCKED (${envSafety.reason})`);
+  } else if (!envSafety.hasCredentials) {
+    results.push({
+      id: 6,
+      name: 'Security & Tenant Isolation Boundary',
+      command: 'npx vitest run tests/batch-t-security-boundary.test.ts',
+      status: 'BLOCKED',
+      durationMs: 0,
+      summary: 'Blocked: Missing authenticated test credentials (SUPABASE_TEST_SERVICE_ROLE_KEY required).',
+      failureDetails: 'SUPABASE_TEST_SERVICE_ROLE_KEY missing.',
+    });
+    console.log('[GATE 6] Result: BLOCKED (Missing test credentials)');
   } else {
     const g6 = executeGateCommand('npx vitest run tests/batch-t-security-boundary.test.ts');
     results.push({ id: 6, name: 'Security & Tenant Isolation Boundary', command: 'npx vitest run tests/batch-t-security-boundary.test.ts', ...g6 });
@@ -392,7 +461,7 @@ export async function runBatchGates() {
   // GATE 7: OBSERVABILITY & TRUTHFULNESS
   // ---------------------------------------------------------------------------
   console.log('\n[GATE 7/8] Observability & Semantic Truthfulness...');
-  if (profile === 'ci' && !envSafety.safe) {
+  if (profile === 'ci' && (!envSafety.safe || !envSafety.hasCredentials)) {
     results.push({
       id: 7,
       name: 'Observability & Operational Truthfulness',
@@ -413,6 +482,17 @@ export async function runBatchGates() {
       failureDetails: envSafety.reason,
     });
     console.log(`[GATE 7] Result: BLOCKED (${envSafety.reason})`);
+  } else if (!envSafety.hasCredentials) {
+    results.push({
+      id: 7,
+      name: 'Observability & Operational Truthfulness',
+      command: 'npx vitest run tests/batch-t-observability-truth.test.ts',
+      status: 'BLOCKED',
+      durationMs: 0,
+      summary: 'Blocked: Missing authenticated test credentials (SUPABASE_TEST_SERVICE_ROLE_KEY required).',
+      failureDetails: 'SUPABASE_TEST_SERVICE_ROLE_KEY missing.',
+    });
+    console.log('[GATE 7] Result: BLOCKED (Missing test credentials)');
   } else {
     const g7 = executeGateCommand('npx vitest run tests/batch-t-observability-truth.test.ts');
     results.push({ id: 7, name: 'Observability & Operational Truthfulness', command: 'npx vitest run tests/batch-t-observability-truth.test.ts', ...g7 });
@@ -455,7 +535,7 @@ export async function runBatchGates() {
     id: 8,
     name: 'Evidence & Certification Synthesis',
     command: 'internal:generate_report',
-    status: finalStatus === 'CERTIFIED' || finalStatus === 'NOT A PRODUCTION CERTIFICATION' ? 'PASS' : finalStatus === 'BLOCKED' ? 'BLOCKED' : 'FAIL',
+    status: finalStatus === 'CERTIFIED' || finalStatus === 'VERIFIED' || finalStatus === 'NOT A PRODUCTION CERTIFICATION' ? 'PASS' : finalStatus === 'BLOCKED' ? 'BLOCKED' : 'FAIL',
     durationMs: Date.now() - startTime - totalDurationMs,
     summary: `Synthesized report with status: ${finalStatus}`,
   });
@@ -499,7 +579,8 @@ export async function runBatchGates() {
 
 ## 1. Repository & Execution Environment
 - **Repository:** \`${report.repository}\`
-- **Git Commit SHA:** \`${report.git.commitSha}\` (metadata point-in-time reference)
+- **Commit Tested (HEAD SHA):** \`${report.git.commitSha}\` (point-in-time reference of code evaluated during execution)
+- **Certification Commit:** Recorded in subsequent commit following gate run artifact generation
 - **Branch / Ref:** \`${report.git.branch}\`
 - **Working Tree:** ${report.git.isClean ? 'Clean (0 uncommitted changes)' : 'Dirty (' + (report.git.modifiedFiles.length + report.git.untrackedFiles.length) + ' uncommitted changes)'}
 - **Runtime:** Node \`${report.nodeVersion}\`, pnpm \`${report.pnpmVersion}\`

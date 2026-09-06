@@ -10,9 +10,12 @@ import * as path from 'path';
 
 export const KNOWN_PRODUCTION_PROJECT_REF = 'rgwutmthzigjmzsmmjnp';
 export const KNOWN_NON_PRODUCTION_PROJECT_REF = 'wvyrivmvpcrhwinzmcyy';
+export const APPROVED_NON_PRODUCTION_PROJECT_REFS = ['wvyrivmvpcrhwinzmcyy'] as const;
+export const APPROVED_LOCAL_TARGETS = ['local-supabase', '127.0.0.1', 'localhost'] as const;
 
 export interface EnvironmentSafetyResult {
   safe: boolean;
+  status: 'PERMITTED' | 'BLOCKED';
   isProduction: boolean;
   projectRef: string | null;
   targetUrl: string | null;
@@ -39,7 +42,7 @@ export function extractProjectRef(urlOrRef?: string | null): string | null {
     return 'local-supabase';
   }
 
-  // Direct alphanumeric project ref (typically 20 characters)
+  // Direct alphanumeric project ref (typically 15-30 characters)
   if (/^[a-z0-9]{15,30}$/i.test(trimmed)) {
     return trimmed.toLowerCase();
   }
@@ -87,33 +90,33 @@ export function loadTestEnvFiles(rootDir: string = process.cwd()): Record<string
 
 /**
  * Evaluates whether the configured environment is safe to execute tests against.
- * Fails closed if the target cannot be determined or matches production.
+ * Fails closed if the target cannot be determined, is unapproved, or matches production.
  */
 export function evaluateEnvironmentSafety(
   explicitEnv?: Record<string, string | undefined>,
   rootDir: string = process.cwd()
 ): EnvironmentSafetyResult {
   const fileEnv = explicitEnv ? {} : loadTestEnvFiles(rootDir);
+  const baseEnv = explicitEnv ? {} : process.env;
   const mergedEnv: Record<string, string | undefined> = {
     ...fileEnv,
-    ...process.env,
+    ...baseEnv,
     ...(explicitEnv || {}),
   };
 
-  const urlKeys = [
+  const candidateKeys = [
     'SUPABASE_TEST_URL',
     'NEXT_PUBLIC_SUPABASE_TEST_URL',
     'SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_URL',
-  ];
-
-  const refKeys = [
     'SUPABASE_TEST_PROJECT_REF',
+    'NEXT_PUBLIC_SUPABASE_TEST_PROJECT_REF',
     'SUPABASE_PROJECT_REF',
+    'NEXT_PUBLIC_SUPABASE_PROJECT_REF',
   ];
 
   // Check 1: Direct production reference violation in any candidate variable
-  for (const k of [...urlKeys, ...refKeys]) {
+  for (const k of candidateKeys) {
     const val = mergedEnv[k];
     if (val && typeof val === 'string') {
       const extracted = extractProjectRef(val);
@@ -123,6 +126,7 @@ export function evaluateEnvironmentSafety(
       ) {
         return {
           safe: false,
+          status: 'BLOCKED',
           isProduction: true,
           projectRef: KNOWN_PRODUCTION_PROJECT_REF,
           targetUrl: val,
@@ -133,38 +137,78 @@ export function evaluateEnvironmentSafety(
     }
   }
 
-  // Find candidate target
-  let detectedRef: string | null = null;
+  // Find candidate target URL
   let targetUrl: string | null = null;
-
-  for (const k of refKeys) {
+  for (const k of [
+    'SUPABASE_TEST_URL',
+    'NEXT_PUBLIC_SUPABASE_TEST_URL',
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+  ]) {
     const val = mergedEnv[k];
-    if (val) {
-      detectedRef = extractProjectRef(val);
-      if (detectedRef) break;
+    if (val && typeof val === 'string' && val.trim()) {
+      targetUrl = val.trim();
+      break;
     }
   }
 
-  for (const k of urlKeys) {
+  // Find candidate explicit project ref
+  let refFromKeys: string | null = null;
+  for (const k of [
+    'SUPABASE_TEST_PROJECT_REF',
+    'NEXT_PUBLIC_SUPABASE_TEST_PROJECT_REF',
+    'SUPABASE_PROJECT_REF',
+    'NEXT_PUBLIC_SUPABASE_PROJECT_REF',
+  ]) {
     const val = mergedEnv[k];
-    if (val) {
-      targetUrl = val;
-      if (!detectedRef) {
-        detectedRef = extractProjectRef(val);
-      }
-      if (detectedRef) break;
+    if (val && typeof val === 'string' && val.trim()) {
+      refFromKeys = extractProjectRef(val.trim());
+      if (refFromKeys) break;
     }
   }
+
+  let urlRef: string | null = null;
+  if (targetUrl) {
+    urlRef = extractProjectRef(targetUrl);
+    // Check 2: If target URL exists but cannot be parsed, fail closed
+    if (!urlRef) {
+      return {
+        safe: false,
+        status: 'BLOCKED',
+        isProduction: false,
+        projectRef: null,
+        targetUrl,
+        hasCredentials: Boolean(mergedEnv['SUPABASE_TEST_SERVICE_ROLE_KEY']),
+        reason: 'FAIL_CLOSED: Target Supabase URL is malformed or unparseable.',
+      };
+    }
+  }
+
+  // Check 3: If both target URL and explicit ref are provided, they must agree
+  if (urlRef && refFromKeys && urlRef !== refFromKeys) {
+    return {
+      safe: false,
+      status: 'BLOCKED',
+      isProduction: false,
+      projectRef: urlRef,
+      targetUrl,
+      hasCredentials: Boolean(mergedEnv['SUPABASE_TEST_SERVICE_ROLE_KEY']),
+      reason: `FAIL_CLOSED: Project reference mismatch between target URL (${urlRef}) and project ref variable (${refFromKeys}).`,
+    };
+  }
+
+  const detectedRef = urlRef || refFromKeys;
 
   const hasCredentials = Boolean(
     mergedEnv['SUPABASE_TEST_SERVICE_ROLE_KEY'] &&
     (mergedEnv['SUPABASE_TEST_ANON_KEY'] || mergedEnv['NEXT_PUBLIC_SUPABASE_TEST_ANON_KEY'])
   );
 
-  // Check 2: Fail closed if target reference cannot be determined
+  // Check 4: Fail closed if target reference cannot be determined from environment
   if (!detectedRef) {
     return {
       safe: false,
+      status: 'BLOCKED',
       isProduction: false,
       projectRef: null,
       targetUrl,
@@ -173,14 +217,41 @@ export function evaluateEnvironmentSafety(
     };
   }
 
-  // Check 3: Verified non-production target
+  // Check 5: Approved isolated non-production target
+  if ((APPROVED_NON_PRODUCTION_PROJECT_REFS as readonly string[]).includes(detectedRef)) {
+    return {
+      safe: true,
+      status: 'PERMITTED',
+      isProduction: false,
+      projectRef: detectedRef,
+      targetUrl,
+      hasCredentials,
+      reason: `Permitted: Target project reference (${detectedRef}) is an approved isolated non-production environment.`,
+    };
+  }
+
+  // Check 6: Approved local test environment
+  if ((APPROVED_LOCAL_TARGETS as readonly string[]).includes(detectedRef)) {
+    return {
+      safe: true,
+      status: 'PERMITTED',
+      isProduction: false,
+      projectRef: detectedRef,
+      targetUrl,
+      hasCredentials,
+      reason: `Permitted: Target project reference (${detectedRef}) is an approved local development instance.`,
+    };
+  }
+
+  // Check 7: Unapproved / unknown environment - Fail closed
   return {
-    safe: true,
+    safe: false,
+    status: 'BLOCKED',
     isProduction: false,
     projectRef: detectedRef,
     targetUrl,
     hasCredentials,
-    reason: `Permitted: target project reference (${detectedRef}) is verified non-production.`,
+    reason: `UNAPPROVED_ENVIRONMENT: Target Supabase project reference (${detectedRef}) is not in approved non-production allowlist.`,
   };
 }
 
