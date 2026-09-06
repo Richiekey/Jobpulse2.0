@@ -35,7 +35,7 @@ export interface SourceRunResult {
   sourceId: string;
   sourceIdentifier: string;
   adapterName: string;
-  status: 'succeeded' | 'failed' | 'skipped';
+  status: 'succeeded' | 'partial_failure' | 'failed' | 'skipped';
   discovered: number;
   inserted: number;
   updated: number;
@@ -210,7 +210,11 @@ export class ScraperRunner {
       // Determine truthful source status and health
       const isAllCandidatesFailed = discoveredCount > 0 && failed === discoveredCount;
       const hasPartialCandidateFailures = failed > 0 && (inserted > 0 || updated > 0);
-      const sourceStatus: 'succeeded' | 'failed' = isAllCandidatesFailed ? 'failed' : 'succeeded';
+      const sourceStatus: 'succeeded' | 'partial_failure' | 'failed' = isAllCandidatesFailed
+        ? 'failed'
+        : hasPartialCandidateFailures
+          ? 'partial_failure'
+          : 'succeeded';
       const sourceError = isAllCandidatesFailed
         ? `All ${failed} candidates failed ingestion`
         : hasPartialCandidateFailures
@@ -531,7 +535,7 @@ export class ScraperRunner {
       const summary = sourceResults.reduce(
         (acc, r) => ({
           attempted: acc.attempted + 1,
-          succeeded: acc.succeeded + (r.status === 'succeeded' ? 1 : 0),
+          succeeded: acc.succeeded + (r.status === 'succeeded' || r.status === 'partial_failure' ? 1 : 0),
           failed: acc.failed + (r.status === 'failed' ? 1 : 0),
           discovered: acc.discovered + r.discovered,
           inserted: acc.inserted + r.inserted,
@@ -728,7 +732,7 @@ export class ScraperRunner {
   private async recordSourceTelemetry(
     runId: string,
     companySource: CompanySourceConfig,
-    status: 'succeeded' | 'failed' | 'skipped',
+    status: 'succeeded' | 'partial_failure' | 'failed' | 'skipped',
     discovered: number,
     inserted: number,
     updated: number,

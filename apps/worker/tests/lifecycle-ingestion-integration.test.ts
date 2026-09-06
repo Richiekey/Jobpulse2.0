@@ -136,7 +136,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     const result = await runner.processSource(sampleCompanySource as any, 'run_123');
 
-    expect(result.status).toBe('succeeded');
+    expect(result.status).toBe('partial_failure');
     expect(result.failed).toBe(1);
 
     // Ingestion failed for 1 candidate -> crawl is incomplete -> reconciliation skipped
