@@ -89,7 +89,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
   const activeOrg = organizations.find((o) => o.id === currentOrgId) || null;
 
   return (
-    <div style={{ position: 'relative' }} ref={dropdownRef}>
+    <div style={{ position: 'relative', zIndex: 1000 }} ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={loading}

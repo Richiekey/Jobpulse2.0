@@ -18,6 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
+import { isPresentableSalary } from '@/lib/salary-shield';
 
 interface JobInspectorPaneProps {
   job: any | null;
@@ -45,6 +46,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   if (!job) {
     return (
       <div
+        className="job-inspector-pane"
         style={{
           flex: '1.4',
           height: 'calc(100vh - 120px)',
@@ -90,12 +92,17 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   const rawTitle = job.display_title || job.canonical_title || 'Untitled Opportunity';
   const cleanTitle = rawTitle.replace(/^\[(.*)\]$/, '$1').trim();
 
-  const formattedSalary = formatSalary({
+  const rawSalaryObj = {
     min: job.salary_min,
     max: job.salary_max,
     currency: job.salary_currency,
     interval: job.salary_interval,
-  });
+  };
+  const isSalaryValid = isPresentableSalary(rawSalaryObj);
+
+  const formattedSalary = isSalaryValid
+    ? formatSalary(rawSalaryObj)
+    : null;
 
   const displaySalary = formattedSalary
     ? (job.salary_currency ? formattedSalary : `${formattedSalary} (Currency not disclosed)`)
@@ -103,6 +110,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
 
   let annualizedEst: string | null = null;
   if (
+    isSalaryValid &&
     job.salary_interval &&
     job.salary_interval !== 'yearly' &&
     (job.annualized_min || job.annualized_max)

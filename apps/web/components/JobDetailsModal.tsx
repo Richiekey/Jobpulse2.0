@@ -15,6 +15,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
+import { isPresentableSalary } from '@/lib/salary-shield';
 import { Modal } from '@/components/ui';
 
 interface JobDetailsModalProps {
@@ -43,12 +44,17 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const cleanTitle = rawTitle.replace(/^\[(.*)\]$/, '$1').trim();
 
   // Format compensation
-  const formattedSalary = formatSalary({
+  const rawSalaryObj = {
     min: job.salary_min,
     max: job.salary_max,
     currency: job.salary_currency,
     interval: job.salary_interval,
-  });
+  };
+  const isSalaryValid = isPresentableSalary(rawSalaryObj);
+
+  const formattedSalary = isSalaryValid
+    ? formatSalary(rawSalaryObj)
+    : null;
 
   const displaySalary = formattedSalary
     ? (job.salary_currency ? formattedSalary : `${formattedSalary} (Currency not disclosed)`)
@@ -56,6 +62,7 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   let annualizedEst: string | null = null;
   if (
+    isSalaryValid &&
     job.salary_interval &&
     job.salary_interval !== 'yearly' &&
     (job.annualized_min || job.annualized_max)

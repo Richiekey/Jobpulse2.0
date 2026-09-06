@@ -13,6 +13,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
+import { isPresentableSalary } from '@/lib/salary-shield';
 import { Badge } from '@/components/ui';
 
 interface JobFeedCardProps {
@@ -38,12 +39,14 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
   const companyName = rawCompanyName.replace(/^\[(.*)\]$/, '$1').trim();
   const companyLogo = job.companies?.logo_url;
 
-  const formattedSalary = formatSalary({
+  const rawSalaryObj = {
     min: job.salary_min,
     max: job.salary_max,
     currency: job.salary_currency,
     interval: job.salary_interval,
-  });
+  };
+  const isSalaryValid = isPresentableSalary(rawSalaryObj);
+  const formattedSalary = isSalaryValid ? formatSalary(rawSalaryObj) : null;
 
   const timeAgo = (dateStr?: string) => {
     if (!dateStr) return 'Recently';
@@ -94,11 +97,13 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
         flexDirection: 'column',
         gap: '8px',
         position: 'relative',
+        minWidth: 0,
+        overflow: 'hidden',
       }}
     >
       {/* Top Row: Company & Badges */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', minWidth: 0 }}>
           {companyLogo ? (
             <img
               src={companyLogo}
@@ -109,6 +114,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
                 borderRadius: '4px',
                 objectFit: 'contain',
                 backgroundColor: 'var(--bg-surface-subtle)',
+                flexShrink: 0,
               }}
             />
           ) : (
@@ -121,6 +127,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
               <Building2 size={13} color="var(--text-muted)" />
@@ -134,13 +141,14 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              minWidth: 0,
             }}
           >
             {companyName}
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           {atsPlatform && (
             <span
               style={{
@@ -169,8 +177,10 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
           fontSize: '14px',
           fontWeight: 700,
           color: isSelected ? 'var(--brand-text)' : 'var(--text-primary)',
-          lineHeight: 1.3,
+          lineHeight: 1.35,
           margin: 0,
+          overflowWrap: 'break-word',
+          wordBreak: 'break-word',
         }}
       >
         {cleanTitle}

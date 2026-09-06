@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Header } from '@/components/Header';
 import { FiltersSidebar, type FilterOptions, type ActiveFilters } from '@/components/FiltersSidebar';
 import { JobFeedCard } from '@/components/JobFeedCard';
@@ -135,6 +135,10 @@ export default function HomePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Request generation counter & AbortController to eliminate race conditions (P1-FUNC-01)
+  const activeFetchControllerRef = useRef<AbortController | null>(null);
+  const requestGenerationRef = useRef<number>(0);
+
   // Modals state
   const [modalJob, setModalJob] = useState<any | null>(null);
   const [trackingJob, setTrackingJob] = useState<any | null>(null);
@@ -164,9 +168,19 @@ export default function HomePage() {
     fetchFilterMeta();
   }, []);
 
-  // Fetch feed jobs with append-only pagination & deduplication (UX-01)
+  // Fetch feed jobs with append-only pagination & deduplication (UX-01) & race protection (P1-FUNC-01)
   const fetchFeedJobs = useCallback(
     async (resetCursor = true) => {
+      // Monotonically increasing request generation
+      const currentGeneration = ++requestGenerationRef.current;
+
+      // Abort preceding pending feed request
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      activeFetchControllerRef.current = controller;
+
       if (resetCursor) {
         setIsLoading(true);
         setFetchError(null);
@@ -202,11 +216,24 @@ export default function HomePage() {
 
         if (!resetCursor && cursor) params.set('cursor', cursor);
 
-        const res = await fetch(`/api/jobs/feed?${params.toString()}`);
+        const res = await fetch(`/api/jobs/feed?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        // If a newer request has already fired, ignore this resolution
+        if (currentGeneration !== requestGenerationRef.current) {
+          return;
+        }
+
         if (!res.ok) {
           throw new Error(`Feed API returned status ${res.status}`);
         }
         const data = await res.json();
+
+        // Check generation again after json parse
+        if (currentGeneration !== requestGenerationRef.current) {
+          return;
+        }
 
         if (data.data) {
           if (resetCursor) {
@@ -227,6 +254,16 @@ export default function HomePage() {
           setHasMore(Boolean(data.meta?.pagination?.has_more || data.pagination?.has_more));
         }
       } catch (err: any) {
+        // Intentionally aborted requests must not trigger error state or toast (P1-FUNC-01)
+        if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+          return;
+        }
+
+        // Stale responses must not overwrite newer error/success states
+        if (currentGeneration !== requestGenerationRef.current) {
+          return;
+        }
+
         console.error('Error fetching jobs feed:', err);
         if (resetCursor) {
           setFetchError(err?.message || 'Failed to load jobs feed. Please try again.');
@@ -235,8 +272,10 @@ export default function HomePage() {
           showToast('error', 'Failed to load next page of jobs.');
         }
       } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+        if (currentGeneration === requestGenerationRef.current) {
+          setIsLoading(false);
+          setIsLoadingMore(false);
+        }
       }
     },
     [filters, sortOrder, cursor, selectedJobId, showToast]
@@ -480,6 +519,19 @@ export default function HomePage() {
         {activeTab === 'feed' && (
           <>
             {/* Left Pane: Filters & Taxonomy */}
+            {isMobileFiltersOpen && (
+              <div
+                onClick={() => setIsMobileFiltersOpen(false)}
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                  zIndex: 9999,
+                  backdropFilter: 'blur(2px)',
+                }}
+                aria-hidden="true"
+              />
+            )}
             <FiltersSidebar
               options={filterOptions}
               filters={filters}
@@ -493,6 +545,7 @@ export default function HomePage() {
 
             {/* Center Pane: Rapid Job Stream */}
             <main
+              className="job-feed-stream"
               style={{
                 flex: '1',
                 minWidth: '380px',
@@ -513,6 +566,8 @@ export default function HomePage() {
                   justifyContent: 'space-between',
                   paddingBottom: '12px',
                   borderBottom: '1px solid var(--border-subtle)',
+                  flexWrap: 'wrap',
+                  gap: '8px',
                 }}
               >
                 <div>
@@ -526,6 +581,24 @@ export default function HomePage() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {/* Mobile Filters Toggle Button (Visible below 1024px) */}
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileFiltersOpen(true)}
+                    className="btn btn-secondary mobile-filters-trigger"
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: '12px',
+                      display: 'none',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                    aria-label="Open filter options"
+                  >
+                    <SlidersHorizontal size={14} />
+                    <span>Filters</span>
+                  </button>
+
                   <select
                     value={sortOrder}
                     onChange={(e) => setSortOrder(e.target.value as any)}
@@ -594,7 +667,13 @@ export default function HomePage() {
                         key={job.id}
                         job={job}
                         isSelected={selectedJob?.id === job.id}
-                        onSelect={() => setSelectedJobId(job.id)}
+                        onSelect={() => {
+                          setSelectedJobId(job.id);
+                          // Below 1024px, card selection opens JobDetailsModal for complete details inspection
+                          if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                            setModalJob(job);
+                          }
+                        }}
                         isSaved={savedJobIds.has(job.id)}
                         onToggleSave={(e, id) => handleToggleSave(id)}
                         isApplied={appliedJobIds.has(job.id)}
@@ -703,12 +782,12 @@ export default function HomePage() {
                   >
                     <div>
                       <h4 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
-                        {app.jobs?.display_title || app.jobs?.canonical_title || 'Applied Position'}
+                        {app.jobs?.display_title || app.jobs?.canonical_title || app.job_title || 'Applied Position'}
                       </h4>
-                      <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', gap: '12px' }}>
-                        <span>{app.jobs?.companies?.name || 'Verified Employer'}</span>
+                      <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                        <span>{app.jobs?.companies?.name || app.company_name || 'Verified Employer'}</span>
                         <span>•</span>
-                        <span>Applied on {new Date(app.created_at || Date.now()).toLocaleDateString()}</span>
+                        <span>Applied on {new Date(app.applied_at || app.created_at || Date.now()).toLocaleDateString()}</span>
                       </div>
                     </div>
                     <span

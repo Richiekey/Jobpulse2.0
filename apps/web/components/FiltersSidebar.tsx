@@ -122,6 +122,27 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
     });
   };
 
+  // Close mobile filters on Escape key and manage body scroll
+  React.useEffect(() => {
+    if (!isOpenMobile) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCloseMobile?.();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpenMobile, onCloseMobile]);
+
   const hasActiveFilters =
     filters.search.trim() !== '' ||
     filters.selectedFunctions.size > 0 ||
@@ -197,27 +218,50 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           )}
         </div>
 
-        {hasActiveFilters && (
-          <button
-            onClick={onReset}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontSize: '12px',
-              color: 'var(--text-muted)',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px 6px',
-              borderRadius: 'var(--radius-sm)',
-            }}
-            title="Reset all filters"
-          >
-            <RotateCcw size={12} />
-            Reset
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {hasActiveFilters && (
+            <button
+              onClick={onReset}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px 6px',
+                borderRadius: 'var(--radius-sm)',
+              }}
+              title="Reset all filters"
+              aria-label="Reset all filters"
+            >
+              <RotateCcw size={12} />
+              Reset
+            </button>
+          )}
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="filters-close-mobile-btn"
+              style={{
+                display: 'none',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: 'var(--radius-sm)',
+              }}
+              aria-label="Close filters drawer"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -254,6 +298,7 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
             />
             {filters.search && (
               <button
+                type="button"
                 onClick={() => onFilterChange({ ...filters, search: '' })}
                 style={{
                   position: 'absolute',
@@ -264,7 +309,9 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
                   border: 'none',
                   color: 'var(--text-muted)',
                   cursor: 'pointer',
+                  padding: '4px',
                 }}
+                aria-label="Clear keyword search"
               >
                 <X size={14} />
               </button>

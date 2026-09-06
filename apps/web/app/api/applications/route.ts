@@ -24,7 +24,20 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const organizationId = searchParams.get('organizationId');
 
-    let query = supabase.from('applications').select('*');
+    let query = supabase.from('applications').select(`
+      *,
+      jobs (
+        id,
+        canonical_title,
+        display_title,
+        apply_url,
+        companies (
+          id,
+          name,
+          logo_url
+        )
+      )
+    `);
 
     if (organizationId) {
       // Check if user is admin or member of this organization
