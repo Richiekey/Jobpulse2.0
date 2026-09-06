@@ -51,12 +51,12 @@
     },
     "T": {
       "name": "Implementation Sequence & Gates Governance",
-      "status": "IN_PROGRESS",
+      "status": "CERTIFIED",
       "prerequisites": ["R"]
     },
     "U": {
       "name": "Product UX/UI System & Experience Integrity",
-      "status": "BLOCKED",
+      "status": "PERMITTED",
       "prerequisites": ["T"]
     },
     "V": {
