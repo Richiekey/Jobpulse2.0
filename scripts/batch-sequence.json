@@ -59,14 +59,14 @@
     },
     "U": {
       "name": "Product UX/UI System & Experience Integrity",
-      "status": "IN_PROGRESS",
+      "status": "CERTIFIED",
       "prerequisites": [
         { "batch": "T", "status": "CERTIFIED" }
       ]
     },
     "V": {
       "name": "Production Reliability & Observability",
-      "status": "BLOCKED",
+      "status": "PERMITTED",
       "prerequisites": [
         { "batch": "U", "status": "CERTIFIED" }
       ]
