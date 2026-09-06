@@ -63,6 +63,7 @@ END;
 $$;
 
 -- Trigger to classify error on insert/update of failed source_runs (R-H02)
+-- NOTE (R-H02 non-blocking future hardening): Recompute error_class when a failed run's error_message changes, rather than only when error_class is empty.
 CREATE OR REPLACE FUNCTION public.trg_source_runs_classify_error()
 RETURNS TRIGGER
 LANGUAGE plpgsql

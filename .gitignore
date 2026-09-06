@@ -29,6 +29,7 @@ yarn-debug.log*
 pnpm-debug.log*
 coverage/
 .nyc_output/
+.gates-report.json
 
 # IDE & OS
 .DS_Store

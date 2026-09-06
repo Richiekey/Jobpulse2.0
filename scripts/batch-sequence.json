@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "JobPulse 2.0 Post-Launch Batch Sequence Governance",
+  "version": "1.0.0",
+  "currentBatch": "T",
+  "batches": {
+    "K": {
+      "name": "Workforce & Multi-Tenant RLS",
+      "status": "CERTIFIED",
+      "prerequisites": []
+    },
+    "L": {
+      "name": "Application CRM & Events",
+      "status": "CERTIFIED",
+      "prerequisites": ["K"]
+    },
+    "M": {
+      "name": "Screenshot Verification & Storage",
+      "status": "CERTIFIED",
+      "prerequisites": ["L"]
+    },
+    "N": {
+      "name": "Google Sheets OAuth Integration",
+      "status": "CERTIFIED",
+      "prerequisites": ["M"]
+    },
+    "O": {
+      "name": "Durable Application Sync Engine",
+      "status": "CERTIFIED",
+      "prerequisites": ["N"]
+    },
+    "P": {
+      "name": "Worker Command Center",
+      "status": "CERTIFIED",
+      "prerequisites": ["O"]
+    },
+    "Q": {
+      "name": "Admin Command Center",
+      "status": "CERTIFIED",
+      "prerequisites": ["P"]
+    },
+    "R": {
+      "name": "Operational Intelligence",
+      "status": "CERTIFIED",
+      "prerequisites": ["Q"]
+    },
+    "S": {
+      "name": "AI Layer & Provider Architecture",
+      "status": "PAUSED",
+      "prerequisites": ["R"]
+    },
+    "T": {
+      "name": "Implementation Sequence & Gates Governance",
+      "status": "IN_PROGRESS",
+      "prerequisites": ["R"]
+    },
+    "U": {
+      "name": "Product UX/UI System & Experience Integrity",
+      "status": "BLOCKED",
+      "prerequisites": ["T"]
+    },
+    "V": {
+      "name": "Production Reliability & Observability",
+      "status": "BLOCKED",
+      "prerequisites": ["U"]
+    },
+    "W": {
+      "name": "Security Operations & Disaster Recovery",
+      "status": "BLOCKED",
+      "prerequisites": ["V"]
+    },
+    "X": {
+      "name": "Performance, Capacity & Cost Engineering",
+      "status": "BLOCKED",
+      "prerequisites": ["W"]
+    },
+    "Y": {
+      "name": "Production Acceptance & Launch Certification",
+      "status": "BLOCKED",
+      "prerequisites": ["X"]
+    }
+  }
+}
