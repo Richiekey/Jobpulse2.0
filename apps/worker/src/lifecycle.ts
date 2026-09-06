@@ -24,11 +24,11 @@ export function validateWorkerEnvironment(env: NodeJS.ProcessEnv = process.env):
   const errors: string[] = [];
 
   // 1. Validate Supabase URL
-  const supabaseUrl = env['NEXT_PUBLIC_SUPABASE_URL'];
+  const supabaseUrl = env['SUPABASE_URL'] || env['NEXT_PUBLIC_SUPABASE_URL'];
   if (!supabaseUrl || !supabaseUrl.trim()) {
-    errors.push('NEXT_PUBLIC_SUPABASE_URL is required and cannot be empty or whitespace.');
+    errors.push('NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL is required and cannot be empty or whitespace.');
   } else if (!supabaseUrl.startsWith('http://') && !supabaseUrl.startsWith('https://')) {
-    errors.push('NEXT_PUBLIC_SUPABASE_URL must be a valid HTTP/HTTPS URL.');
+    errors.push('NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL must be a valid HTTP/HTTPS URL.');
   }
 
   // 2. Validate Supabase Service Role Key (strictly no anon key fallback)

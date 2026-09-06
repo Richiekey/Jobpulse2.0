@@ -13,10 +13,19 @@ async function main() {
 
   const args = process.argv.slice(2);
   const companyArg = args.find((a) => a.startsWith('--company='))?.split('=')[1] || (args.includes('--company') ? args[args.indexOf('--company') + 1] : undefined);
-  const isOnce = args.includes('--once') || Boolean(companyArg);
+  const sourceArg = args.find((a) => a.startsWith('--source='))?.split('=')[1] || (args.includes('--source') ? args[args.indexOf('--source') + 1] : undefined);
+  const limitArg = args.find((a) => a.startsWith('--limit='))?.split('=')[1] || (args.includes('--limit') ? args[args.indexOf('--limit') + 1] : undefined);
+  const forceDue = args.includes('--force-due') || args.includes('--force');
+  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg);
   const isDaemon = args.includes('--daemon') || !isOnce;
 
-  logger.info('Starting JobPulse Worker Process...', { isOnce, isDaemon, company: companyArg || 'all' });
+  logger.info('Starting JobPulse Worker Process...', {
+    isOnce,
+    isDaemon,
+    company: companyArg || 'all',
+    source: sourceArg || 'all',
+    forceDue,
+  });
 
   const runner = new ScraperRunner({ concurrency: 5 });
   const syncRunner = new SyncRunner({ batchSize: 10 });
@@ -33,13 +42,51 @@ async function main() {
   if (isOnce) {
     const completeTask = shutdownManager.registerTask();
     try {
-      const runId = await runner.run({ companyIdentifier: companyArg });
-      logger.info(`Worker finished single execution run: ${runId}`);
+      let runId: string | null = null;
+
+      // 1. If targeted company or source is specified, run directly in manual mode
+      if (companyArg || sourceArg) {
+        logger.info('Executing targeted one-shot scrape run...', { company: companyArg, source: sourceArg, forceDue });
+        runId = await runner.run({
+          companyIdentifier: companyArg,
+          sourceId: sourceArg,
+          forceDue: true,
+          limitSources: limitArg ? parseInt(limitArg, 10) : undefined,
+        });
+      } else {
+        // 2. Otherwise, first attempt to claim a pending queued scrape run
+        logger.info('Checking for pending scrape runs in queue...');
+        runId = await runner.pollAndExecutePending();
+
+        if (runId) {
+          logger.info(`Claimed and executed queued scrape run: ${runId}`);
+        } else {
+          // 3. If no pending run exists, execute a scheduled run across due sources
+          logger.info('No queued scrape runs found; executing scheduled scrape run across eligible sources...');
+          runId = await runner.run({
+            executionMode: 'scheduled',
+            forceDue,
+            limitSources: limitArg ? parseInt(limitArg, 10) : undefined,
+          });
+        }
+      }
+
+      // 4. Also process any pending application sync (Google Sheets) if configured
+      try {
+        const syncedCount = await syncRunner.pollAndExecutePendingSync();
+        if (syncedCount > 0) {
+          logger.info(`One-shot worker synced ${syncedCount} applications to Google Sheets.`);
+        }
+      } catch (syncErr) {
+        logger.warn('Non-blocking application sync notice during one-shot run:', { error: String(syncErr) });
+      }
+
+      logger.info(`Worker finished one-shot execution cleanly (run ID: ${runId})`);
       completeTask();
       process.exit(0);
     } catch (error) {
       completeTask();
-      logger.error('Worker failed execution:', { error: String(error) });
+      logger.error('Worker failed one-shot execution:', { error: String(error) });
       process.exit(1);
     }
   } else {

@@ -6,6 +6,8 @@
   "main": "./dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "scrape:once": "tsx src/index.ts --once",
+    "scrape:prod": "node dist/index.js --once",
     "start": "node dist/index.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",

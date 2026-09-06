@@ -1,0 +1,76 @@
+name: JobPulse 2.0 Scheduled Scraper
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Every 6 hours
+  workflow_dispatch:
+    inputs:
+      company:
+        description: 'Specific company identifier (e.g. cloudflare, discord, stripe, openai)'
+        required: false
+        type: string
+      force_due:
+        description: 'Force scrape all active sources even if not due according to interval'
+        required: false
+        default: false
+        type: boolean
+      limit_sources:
+        description: 'Maximum number of company sources to scrape (optional)'
+        required: false
+        type: string
+
+concurrency:
+  group: jobpulse-scraper
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    name: Execute Scraper Engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Workspace Packages
+        run: pnpm --filter @jobpulse/worker... run build
+
+      - name: Run One-Shot Scraper
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.company }}" ]; then
+            ARGS="$ARGS --company=${{ inputs.company }}"
+          fi
+          if [ "${{ inputs.force_due }}" = "true" ]; then
+            ARGS="$ARGS --force-due"
+          fi
+          if [ -n "${{ inputs.limit_sources }}" ]; then
+            ARGS="$ARGS --limit=${{ inputs.limit_sources }}"
+          fi
+          echo "Starting JobPulse worker in one-shot mode with args: $ARGS"
+          pnpm worker:once $ARGS
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SECRET_KEY }}
+          WORKER_SECRET_TOKEN: ${{ secrets.WORKER_SECRET_TOKEN }}
+          NODE_ENV: production
+
+      - name: Report Failure
+        if: failure()
+        run: echo "::error::JobPulse one-shot scraper execution failed — inspect worker run logs above."

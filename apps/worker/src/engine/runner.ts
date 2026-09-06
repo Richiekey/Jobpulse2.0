@@ -26,6 +26,7 @@ export interface ScraperRunnerOptions {
   limitSources?: number;
   currentTime?: Date | string;
   executionMode?: ScrapeExecutionMode;
+  forceDue?: boolean;
 }
 
 export interface SourceRunResult {
@@ -206,17 +207,27 @@ export class ScraperRunner {
         }
       }
 
-      await this.updateSourceHealth(companySource, true, null, discoveredCount);
+      // Determine truthful source status and health
+      const isAllCandidatesFailed = discoveredCount > 0 && failed === discoveredCount;
+      const hasPartialCandidateFailures = failed > 0 && (inserted > 0 || updated > 0);
+      const sourceStatus: 'succeeded' | 'failed' = isAllCandidatesFailed ? 'failed' : 'succeeded';
+      const sourceError = isAllCandidatesFailed
+        ? `All ${failed} candidates failed ingestion`
+        : hasPartialCandidateFailures
+          ? `Partial failure: ${failed}/${discoveredCount} candidates failed ingestion`
+          : null;
+
+      await this.updateSourceHealth(companySource, !isAllCandidatesFailed, sourceError, isAllCandidatesFailed ? 0 : discoveredCount);
       await this.recordSourceTelemetry(
         runId,
         companySource,
-        'succeeded',
+        sourceStatus,
         discoveredCount,
         inserted,
         updated,
         rejected,
         failed,
-        null,
+        sourceError,
         durationMs,
         adapter.parserVersion
       );
@@ -227,14 +238,14 @@ export class ScraperRunner {
         sourceId: companySource.sourceId,
         sourceIdentifier: companySource.sourceIdentifier,
         adapterName: adapter.platformSlug,
-        status: 'succeeded',
+        status: sourceStatus,
         discovered: discoveredCount,
         inserted,
         updated,
         rejected,
         failed,
         durationMs,
-        errorMessage: null,
+        errorMessage: sourceError,
       };
     } catch (srcErr) {
       const durationMs = Date.now() - startSourceTime;
@@ -317,12 +328,31 @@ export class ScraperRunner {
                 : 'scheduled'
         );
 
+        const concurrencyScope = options.sourceId
+          ? `source:${options.sourceId}`
+          : options.companyIdentifier && options.companyIdentifier !== 'all'
+            ? `company:${options.companyIdentifier}`
+            : 'global';
+
+        // Expire stale abandoned runs in the same concurrency scope older than 15-minute lease TTL
+        const staleCutoff = new Date(Date.now() - 900 * 1000).toISOString();
+        await supabase
+          .from('scrape_runs')
+          .update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            metadata: { outcome: 'stale_ttl_timeout' },
+          })
+          .eq('concurrency_scope', concurrencyScope)
+          .in('status', ['pending', 'running'])
+          .lt('started_at', staleCutoff);
+
         const { data: scrapeRun, error: runInitError } = await supabase
           .from('scrape_runs')
           .insert({
             started_at: new Date().toISOString(),
             status: 'running',
-            concurrency_scope: 'global',
+            concurrency_scope: concurrencyScope,
             companies_attempted: 0,
             companies_succeeded: 0,
             companies_failed: 0,
@@ -334,7 +364,7 @@ export class ScraperRunner {
             metadata: {
               worker_id: workerId,
               concurrency: options.concurrency ?? this.defaultConcurrency,
-              concurrency_scope: 'global',
+              concurrency_scope: concurrencyScope,
               execution_mode: executionMode,
               company_identifier: options.companyIdentifier || 'all',
               source_id: options.sourceId,
@@ -457,8 +487,8 @@ export class ScraperRunner {
 
       // Invariant:
       // manual_global, manual_company, manual_source -> forceDue = true
-      // scheduled -> forceDue = false
-      const forceDue = executionMode !== 'scheduled';
+      // scheduled -> forceDue = false (unless explicitly overridden via options.forceDue)
+      const forceDue = options.forceDue ?? (executionMode !== 'scheduled');
 
       // Apply authoritative schedule eligibility, priority ordering, and limitSources
       const eligibleSources = SourceScheduler.filterAndOrderEligibleSources(allLoadedSources, {
@@ -539,22 +569,28 @@ export class ScraperRunner {
         .eq('id', runId)
         .single();
 
+      const hasFailures = summary.failed > 0 || summary.failedJobs > 0;
       const outcome = summary.attempted === 0
         ? 'zero_sources_due'
-        : summary.discovered === 0
-          ? 'zero_jobs_discovered'
-          : 'jobs_ingested';
+        : summary.failed === summary.attempted
+          ? 'all_sources_failed'
+          : hasFailures
+            ? 'partial_failure_jobs_ingested'
+            : summary.discovered === 0
+              ? 'zero_jobs_discovered'
+              : 'jobs_ingested';
 
       const completionMetadata = {
         ...((currentRunRecord?.metadata as Record<string, unknown>) || {}),
         worker_id: workerId,
         execution_mode: executionMode,
         outcome,
-        partial_failure: summary.failed > 0,
+        partial_failure: hasFailures,
         sources_targeted: rawSources.length,
         sources_attempted: summary.attempted,
         sources_succeeded: summary.succeeded,
         sources_failed: summary.failed,
+        failed_jobs_count: summary.failedJobs,
       };
 
       await supabase

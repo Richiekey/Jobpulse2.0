@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       metricsData = rpcMetrics;
     } else {
       // Fallback: If RPC is not registered in this database environment (PGRST202),
-      // aggregate authoritative counts directly without raw table memory inflation
+      // aggregate authoritative counts directly without raw table memory inflation or fabricated metrics
       const windowIntervalHours = range === '7d' ? 168 : range === '30d' ? 720 : 24;
       const windowStart = new Date(Date.now() - windowIntervalHours * 3600 * 1000).toISOString();
 
@@ -108,9 +108,18 @@ export async function GET(request: NextRequest) {
         newJobsRes,
         salaryJobsRes,
         skillsJobsRes,
-        sourceRunsRes,
-        sourceRunsSuccessRes,
-        sourceRunsFailedRes,
+        directApplyRes,
+        locatedJobsRes,
+        scrapeRunsRes,
+        scrapeRunsSuccessRes,
+        scrapeRunsFailedRes,
+        healthySourcesRes,
+        degradedSourcesRes,
+        failingSourcesRes,
+        disabledSourcesRes,
+        totalSourcesRes,
+        recentRunsRes,
+        resolutionMethodsRes,
       ] = await Promise.all([
         supabase.from('organization_members').select('*', { count: 'exact', head: true }).eq('role', 'worker'),
         supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('status', 'active'),
@@ -119,9 +128,18 @@ export async function GET(request: NextRequest) {
         supabase.from('jobs').select('*', { count: 'exact', head: true }).gte('created_at', windowStart),
         supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('status', 'active').eq('has_salary', true),
         supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('status', 'active').not('skills', 'is', null),
-        supabase.from('source_runs').select('*', { count: 'exact', head: true }).gte('started_at', windowStart),
-        supabase.from('source_runs').select('*', { count: 'exact', head: true }).gte('started_at', windowStart).eq('status', 'SUCCESS'),
-        supabase.from('source_runs').select('*', { count: 'exact', head: true }).gte('started_at', windowStart).eq('status', 'FAILED'),
+        supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('status', 'active').not('apply_url', 'is', null),
+        supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('status', 'active').or('location_country.not.is.null,location_city.not.is.null'),
+        supabase.from('scrape_runs').select('*', { count: 'exact', head: true }).gte('started_at', windowStart),
+        supabase.from('scrape_runs').select('*', { count: 'exact', head: true }).gte('started_at', windowStart).eq('status', 'completed'),
+        supabase.from('scrape_runs').select('*', { count: 'exact', head: true }).gte('started_at', windowStart).eq('status', 'failed'),
+        supabase.from('company_sources').select('*', { count: 'exact', head: true }).eq('health_status', 'healthy'),
+        supabase.from('company_sources').select('*', { count: 'exact', head: true }).eq('health_status', 'degraded'),
+        supabase.from('company_sources').select('*', { count: 'exact', head: true }).eq('health_status', 'failing'),
+        supabase.from('company_sources').select('*', { count: 'exact', head: true }).eq('health_status', 'disabled'),
+        supabase.from('company_sources').select('*', { count: 'exact', head: true }),
+        supabase.from('scrape_runs').select('started_at, completed_at, jobs_discovered, jobs_inserted, jobs_updated, status').gte('started_at', windowStart).limit(50),
+        supabase.from('jobs').select('url_resolution_method').eq('status', 'active').limit(500),
       ]);
 
       const totalWorkers = totalWorkersRes.count || 0;
@@ -131,14 +149,62 @@ export async function GET(request: NextRequest) {
       const newInWindow = newJobsRes.count || 0;
       const salaryJobs = salaryJobsRes.count || 0;
       const skillsJobs = skillsJobsRes.count || 0;
+      const directApplyJobs = directApplyRes.count || 0;
+      const locatedJobs = locatedJobsRes.count || 0;
 
-      const totalRuns = sourceRunsRes.count || 0;
-      const successfulRuns = sourceRunsSuccessRes.count || 0;
-      const failedRuns = sourceRunsFailedRes.count || 0;
-      const successRate = totalRuns > 0 ? Math.round((successfulRuns / totalRuns) * 1000) / 10 : 100.0;
+      const totalRuns = scrapeRunsRes.count || 0;
+      const successfulRuns = scrapeRunsSuccessRes.count || 0;
+      const failedRuns = scrapeRunsFailedRes.count || 0;
+      const successRate = totalRuns > 0 ? Math.round((successfulRuns / totalRuns) * 1000) / 10 : 0.0;
 
       const salaryTransparency = activeJobs > 0 ? Math.round((salaryJobs / activeJobs) * 1000) / 10 : 0.0;
       const skillCoverage = activeJobs > 0 ? Math.round((skillsJobs / activeJobs) * 1000) / 10 : 0.0;
+      const directApplyCoverage = activeJobs > 0 ? Math.round((directApplyJobs / activeJobs) * 1000) / 10 : 0.0;
+      const locationSpecificity = activeJobs > 0 ? Math.round((locatedJobs / activeJobs) * 1000) / 10 : 0.0;
+
+      // Real execution performance from actual window runs
+      const recentRuns = recentRunsRes.data || [];
+      const completedWithDuration = recentRuns
+        .filter((r) => r.started_at && r.completed_at)
+        .map((r) => new Date(r.completed_at!).getTime() - new Date(r.started_at).getTime())
+        .filter((d) => d >= 0);
+
+      const avgDurationMs = completedWithDuration.length > 0
+        ? Math.round(completedWithDuration.reduce((a, b) => a + b, 0) / completedWithDuration.length)
+        : 0;
+      const minDurationMs = completedWithDuration.length > 0 ? Math.min(...completedWithDuration) : 0;
+      const maxDurationMs = completedWithDuration.length > 0 ? Math.max(...completedWithDuration) : 0;
+
+      // Real yield from actual window runs
+      const completedRuns = recentRuns.filter((r) => r.status === 'completed');
+      const avgDiscovered = completedRuns.length > 0
+        ? Math.round(completedRuns.reduce((sum, r) => sum + (r.jobs_discovered || 0), 0) / completedRuns.length)
+        : 0;
+      const avgInserted = completedRuns.length > 0
+        ? Math.round(completedRuns.reduce((sum, r) => sum + (r.jobs_inserted || 0), 0) / completedRuns.length)
+        : 0;
+      const avgUpdated = completedRuns.length > 0
+        ? Math.round(completedRuns.reduce((sum, r) => sum + (r.jobs_updated || 0), 0) / completedRuns.length)
+        : 0;
+
+      // Real URL resolution methods breakdown
+      const methodsBreakdown: Record<string, number> = {};
+      let resolvedCount = 0;
+      let unresolvedCount = 0;
+      for (const row of (resolutionMethodsRes.data || [])) {
+        const m = row.url_resolution_method;
+        if (!m || m === 'unresolved') {
+          methodsBreakdown['unresolved'] = (methodsBreakdown['unresolved'] || 0) + 1;
+          unresolvedCount++;
+        } else {
+          methodsBreakdown[m] = (methodsBreakdown[m] || 0) + 1;
+          resolvedCount++;
+        }
+      }
+      const totalSampled = resolvedCount + unresolvedCount;
+      const resolutionRatePercent = totalSampled > 0
+        ? Math.round((resolvedCount / totalSampled) * 1000) / 10
+        : 0.0;
 
       metricsData = {
         timeRange: range,
@@ -196,8 +262,8 @@ export async function GET(request: NextRequest) {
           quality: {
             salaryTransparencyPercent: salaryTransparency,
             skillCoveragePercent: skillCoverage,
-            locationSpecificityPercent: 100,
-            directApplyCoveragePercent: 100,
+            locationSpecificityPercent: locationSpecificity,
+            directApplyCoveragePercent: directApplyCoverage,
           },
         },
         sourceHealth: {
@@ -208,21 +274,21 @@ export async function GET(request: NextRequest) {
             successRatePercent: successRate,
           },
           distribution: {
-            healthy: 1,
-            degraded: 0,
-            failing: 0,
-            disabled: 0,
-            total: 1,
+            healthy: healthySourcesRes.count || 0,
+            degraded: degradedSourcesRes.count || 0,
+            failing: failingSourcesRes.count || 0,
+            disabled: disabledSourcesRes.count || 0,
+            total: totalSourcesRes.count || 0,
           },
           executionPerformance: {
-            avgDurationMs: 1200,
-            minDurationMs: 400,
-            maxDurationMs: 3500,
+            avgDurationMs,
+            minDurationMs,
+            maxDurationMs,
           },
           yield: {
-            avgDiscovered: 25,
-            avgInserted: 10,
-            avgUpdated: 15,
+            avgDiscovered,
+            avgInserted,
+            avgUpdated,
           },
           failureTaxonomy: [],
         },
@@ -231,14 +297,14 @@ export async function GET(request: NextRequest) {
           missingFields: {
             missingSalary: Math.max(0, activeJobs - salaryJobs),
             missingSkills: Math.max(0, activeJobs - skillsJobs),
-            missingLocation: 0,
+            missingLocation: Math.max(0, activeJobs - locatedJobs),
             missingDescription: 0,
           },
           atsResolution: {
-            resolvedCount: activeJobs,
-            fallbackCount: 0,
-            resolutionRatePercent: 100,
-            methods: { direct: activeJobs },
+            resolvedCount,
+            fallbackCount: unresolvedCount,
+            resolutionRatePercent,
+            methods: methodsBreakdown,
           },
           compensation: {
             currencies: { USD: salaryJobs },

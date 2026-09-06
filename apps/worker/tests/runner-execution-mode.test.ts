@@ -45,6 +45,15 @@ describe('ScraperRunner Execution Modes & Manual Global Semantics (P0 / P1 Invar
     // Make query thenable returning mockSources
     (mockQueryBuilder as any).then = (resolve: any) => resolve({ data: mockSources, error: null });
 
+    const createMockUpdate = () => {
+      const chain: any = {};
+      chain.eq = vi.fn().mockReturnValue(chain);
+      chain.in = vi.fn().mockReturnValue(chain);
+      chain.lt = vi.fn().mockReturnValue(chain);
+      chain.then = (resolve: any) => resolve({ data: null, error: null });
+      return chain;
+    };
+
     vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
       if (table === 'scrape_runs') {
         return {
@@ -56,9 +65,7 @@ describe('ScraperRunner Execution Modes & Manual Global Semantics (P0 / P1 Invar
               }),
             }),
           }),
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-          }),
+          update: vi.fn().mockImplementation(() => createMockUpdate()),
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               single: vi.fn().mockResolvedValue({
@@ -109,6 +116,15 @@ describe('ScraperRunner Execution Modes & Manual Global Semantics (P0 / P1 Invar
     };
     (mockQueryBuilder as any).then = (resolve: any) => resolve({ data: mockSources, error: null });
 
+    const createMockUpdate = () => {
+      const chain: any = {};
+      chain.eq = vi.fn().mockReturnValue(chain);
+      chain.in = vi.fn().mockReturnValue(chain);
+      chain.lt = vi.fn().mockReturnValue(chain);
+      chain.then = (resolve: any) => resolve({ data: null, error: null });
+      return chain;
+    };
+
     vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
       if (table === 'scrape_runs') {
         return {
@@ -120,9 +136,7 @@ describe('ScraperRunner Execution Modes & Manual Global Semantics (P0 / P1 Invar
               }),
             }),
           }),
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-          }),
+          update: vi.fn().mockImplementation(() => createMockUpdate()),
         } as any;
       }
       return mockQueryBuilder as any;

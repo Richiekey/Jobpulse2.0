@@ -73,6 +73,8 @@ export async function GET(_request: NextRequest) {
           outcomeText = 'Completed — 0 sources due';
         } else if (jobsDiscovered === 0) {
           outcomeText = 'Completed — 0 jobs discovered';
+        } else if (rawOutcome === 'partial_failure_jobs_ingested' || Boolean(meta['partial_failure']) || sourcesFailed > 0 || jobsFailed > 0) {
+          outcomeText = `Completed with partial failures — ${jobsInserted + jobsUpdated} jobs ingested, ${sourcesFailed} sources failed`;
         } else {
           outcomeText = `Completed — ${jobsInserted + jobsUpdated} jobs ingested`;
         }
