@@ -3,14 +3,14 @@
 **Batch:** Batch U — Product UX/UI System & Experience Integrity  
 **Execution Profile:** `AUDIT`  
 **Certification Status:** **`CERTIFIED`**  
-**Execution Timestamp:** 2026-09-06T16:39:15.175Z  
-**Total Duration:** 453.23s  
+**Execution Timestamp:** 2026-09-06T17:32:38.019Z  
+**Total Duration:** 351.93s  
 
 ---
 
 ## 1. Repository & Execution Environment
 - **Repository:** `Richiekey/Jobpulse2.0`
-- **Commit Tested (HEAD SHA):** `f7420a6a74d115a0a02a41dc34fa586e1cc5630c` (point-in-time reference of code evaluated during execution)
+- **Commit Tested (HEAD SHA):** `64874bd855bcc5d62688d75bf9c32e3dc7cd19f7` (point-in-time reference of code evaluated during execution)
 - **Certification Commit:** Recorded in subsequent commit following gate run artifact generation
 - **Branch / Ref:** `main`
 - **Working Tree:** Clean (0 uncommitted changes)
@@ -24,13 +24,13 @@
 
 | Gate | Name | Command | Status | Duration | Summary |
 |---|---|---|---|---|---|
-| **Gate 1** | Typecheck Integrity | `pnpm run typecheck` | **`PASS`** | 26.80s | apps/web typecheck$ tsc --noEmit apps/worker typecheck: Done apps/web typecheck: Done |
-| **Gate 2** | Unit & Domain Test Suites | `npx vitest run tests/batch-u-component-integrity.test.tsx && pnpm run test` | **`PASS`** | 103.14s | apps/web test: [2m   Start at [22m 17:32:57 apps/web test: [2m   Duration [22m 54.96s[2m (transform 3.72s, setup 0ms, collect 25.11s, tests 72.36s, environment 14ms, prepare 12.54s)[22m apps/web test: Done |
-| **Gate 3** | Integration (Authenticated PostgREST) | `pnpm run test:authenticated` | **`PASS`** | 63.94s | [2m      Tests [22m [1m[32m18 passed[39m[22m[90m (18)[39m [2m   Start at [22m 17:33:55 [2m   Duration [22m 60.61s[2m (transform 399ms, setup 0ms, collect 1.15s, tests 110.01s, environment 1ms, prepare 665ms)[22m |
-| **Gate 4** | Production Build (Entire Workspace) | `pnpm run build` | **`PASS`** | 204.89s | apps/web build: ○  (Static)   prerendered as static content apps/web build: ƒ  (Dynamic)  server-rendered on demand apps/web build: Done |
-| **Gate 5** | Migration & Schema Integrity | `npx tsx scripts/check-schema-integrity.mjs --audit` | **`PASS`** | 12.79s | 🔍 [Gate 5 / Audit Mode] Validating live database schema state against target... ✅ Live Schema Audit: All core tables accessible, url_resolution_method confirmed NULL by default. ✅ [Gate 5] Schema & Migration Integrity passed all validations. |
-| **Gate 6** | Security & Tenant Isolation Boundary | `npx vitest run tests/batch-t-security-boundary.test.ts` | **`PASS`** | 20.60s | [2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m [2m   Start at [22m 17:38:41 [2m   Duration [22m 13.55s[2m (transform 289ms, setup 0ms, collect 569ms, tests 11.53s, environment 0ms, prepare 576ms)[22m |
-| **Gate 7** | Observability & Operational Truthfulness | `npx vitest run tests/batch-t-observability-truth.test.ts` | **`PASS`** | 19.96s | [2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m [2m   Start at [22m 17:39:00 [2m   Duration [22m 14.70s[2m (transform 158ms, setup 0ms, collect 368ms, tests 13.48s, environment 0ms, prepare 335ms)[22m |
+| **Gate 1** | Typecheck Integrity | `pnpm run typecheck` | **`PASS`** | 25.21s | apps/web typecheck$ tsc --noEmit apps/worker typecheck: Done apps/web typecheck: Done |
+| **Gate 2** | Unit & Domain Test Suites | `npx vitest run tests/batch-u-component-integrity.test.tsx && pnpm run test` | **`PASS`** | 104.97s | apps/web test: [2m   Start at [22m 18:28:02 apps/web test: [2m   Duration [22m 54.60s[2m (transform 5.51s, setup 0ms, collect 35.85s, tests 71.53s, environment 17ms, prepare 18.70s)[22m apps/web test: Done |
+| **Gate 3** | Integration (Authenticated PostgREST) | `pnpm run test:authenticated` | **`PASS`** | 63.86s | [2m      Tests [22m [1m[32m18 passed[39m[22m[90m (18)[39m [2m   Start at [22m 18:28:59 [2m   Duration [22m 61.07s[2m (transform 402ms, setup 0ms, collect 2.67s, tests 108.50s, environment 1ms, prepare 753ms)[22m |
+| **Gate 4** | Production Build (Entire Workspace) | `pnpm run build` | **`PASS`** | 107.57s | apps/web build: ○  (Static)   prerendered as static content apps/web build: ƒ  (Dynamic)  server-rendered on demand apps/web build: Done |
+| **Gate 5** | Migration & Schema Integrity | `npx tsx scripts/check-schema-integrity.mjs --audit` | **`PASS`** | 14.38s | 🔍 [Gate 5 / Audit Mode] Validating live database schema state against target... ✅ Live Schema Audit: All core tables accessible, url_resolution_method confirmed NULL by default. ✅ [Gate 5] Schema & Migration Integrity passed all validations. |
+| **Gate 6** | Security & Tenant Isolation Boundary | `npx vitest run tests/batch-t-security-boundary.test.ts` | **`PASS`** | 17.43s | [2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m [2m   Start at [22m 18:32:07 [2m   Duration [22m 12.89s[2m (transform 160ms, setup 0ms, collect 384ms, tests 11.68s, environment 0ms, prepare 326ms)[22m |
+| **Gate 7** | Observability & Operational Truthfulness | `npx vitest run tests/batch-t-observability-truth.test.ts` | **`PASS`** | 17.26s | [2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m [2m   Start at [22m 18:32:24 [2m   Duration [22m 12.74s[2m (transform 101ms, setup 0ms, collect 234ms, tests 11.78s, environment 0ms, prepare 248ms)[22m |
 | **Gate 8** | Evidence & Certification Synthesis | `internal:generate_report` | **`PASS`** | 0.01s | Synthesized report with status: CERTIFIED |
 
 ---
@@ -49,3 +49,48 @@ Zero failures detected. All evaluated gates satisfied requirements.
 
 ## 5. Certification Audit Disclaimer
 > Evidence metadata generated by automated gate harness. Commit SHA provides commit point-in-time reference. Not a cryptographic digital signature.
+
+---
+
+## 6. Manual Responsive & Accessibility Verification
+
+### 6.1 Viewport Responsiveness Audit
+- **Mobile Portrait (375px):**
+  - **Public Job Feed (`/`):** Tested single-column layout, compact metric display, full-screen accessible modal inspector on card selection, touch-friendly tap targets (minimum 44x44px), sticky search/filter controls.
+  - **Worker Dispatch (`/worker/jobs`):** Single-column stacked assignment queue, prominent action buttons, responsive metadata tags without horizontal overflow.
+  - **Admin Observatory (`/admin`):** Horizontally scrolling navigation tabs, single-column responsive stat cards, responsive table wrapper preserving data readability.
+- **Tablet (768px):**
+  - **Public Job Feed (`/`):** Responsive card grid, balanced typography, modal inspector dialog with clear visual hierarchy.
+  - **Worker Dispatch (`/worker/jobs`):** Multi-column layout for assignment metadata and review actions.
+  - **Admin Observatory (`/admin`):** Multi-column metrics cards, accessible filter controls.
+- **Desktop (1280px+):**
+  - **Public Job Feed (`/`):** Two-pane master-detail layout (interactive feed on left, sticky inspector pane on right with instant selection preview).
+  - **Worker Dispatch (`/worker/jobs`):** Full-width master queue with inline review pane.
+  - **Admin Observatory (`/admin`):** Multi-column grid, real-time observability charts, full operational intelligence panels.
+
+### 6.2 Keyboard Navigation & Focus Management Audit
+- **`TAB` / `SHIFT+TAB` Progression:** Strict logical tab order from header navigation (`My Applications`) through search/filters, feed items, and inspector actions.
+- **Focus Indicators:** Unambiguous visible focus ring (`focus-visible:ring-2 ring-emerald-500` / `ring-offset-2`) across all interactive cards, links, and buttons.
+- **Modal Focus Capture & Trapping:** Verified in `apps/web/components/ui/Modal.tsx`. Focus is automatically trapped inside the modal container while open; background elements cannot receive focus via Tab/Shift+Tab.
+- **Focus Restoration:** Closing modal dialog restores DOM focus back to the invoking card or trigger element.
+- **`ENTER` / `SPACE` Activation:** Activates focused cards, opens detail views, toggles filter chips and disclosure `<details>` elements.
+- **`ESC` Dismissal:** Closes modal dialogs instantly and safely restores focus.
+
+---
+
+## 7. Data Quality & Truthfulness Remediation
+All 10 findings from the independent review have been dispositioned and documented in:
+- [`docs/ux/DATA_QUALITY_REMEDIATION_MATRIX.md`](file:///c:/Users/HP/Documents/Jobpulse2.0/docs/ux/DATA_QUALITY_REMEDIATION_MATRIX.md)
+
+| ID | Issue | Layer | Status |
+|---|---|---|---|
+| **DQ-01** | Scraped Bracket Delimiters (`[fs3]`) | Presentation | REMEDIATED (`sanitizeDisplayName`) |
+| **DQ-02** | Aggregator Provenance Disclosure | Presentation | REMEDIATED (Explicit badges & redirect warning) |
+| **DQ-03** | Annualized Salary Ambiguity | Presentation | REMEDIATED (`Est. Annualized (2,080 hrs full-time)`) |
+| **DQ-04** | Misleading Postings Count | Presentation | REMEDIATED (`${activeRosterJobs.length} Active Opportunities`) |
+| **DQ-05** | Unverified Sync Schedule | Presentation | REMEDIATED (`Continuously Synced`) |
+| **DQ-06** | "Other" Taxonomy Transparency | Presentation | REMEDIATED (`Other (Uncategorized)`) |
+| **DQ-07** | Filter & Roster Count Consistency | Presentation | REMEDIATED (Strict roster derivation) |
+| **DQ-08** | Job Details Visual Hierarchy | Presentation | REMEDIATED (4-tier structured layout) |
+| **DQ-09** | Persona Terminology Alignment | Presentation | REMEDIATED (`My Applications` & `Work Assignments Dispatch`) |
+| **DQ-10** | Error State Diagnostic Redaction | Presentation | REMEDIATED (Collapsible disclosure & credential redaction) |
