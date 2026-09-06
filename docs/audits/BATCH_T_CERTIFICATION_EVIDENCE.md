@@ -1,19 +1,19 @@
 # JobPulse 2.0 — Batch T Quality Gate & Certification Evidence
 
 **Batch:** Batch T — Implementation Sequence & Gates Governance  
-**Execution Profile:** `PRODUCTION`  
+**Execution Profile:** `AUDIT`  
 **Certification Status:** **`CERTIFIED`**  
-**Execution Timestamp:** 2026-09-06T15:09:11.296Z  
-**Total Duration:** 281.82s  
+**Execution Timestamp:** 2026-09-06T15:16:25.415Z  
+**Total Duration:** 310.17s  
 
 ---
 
 ## 1. Repository & Execution Environment
 - **Repository:** `Richiekey/Jobpulse2.0`
-- **Commit Tested (HEAD SHA):** `1bc8f1932102f4ae96ad1a689647b18bd1ba1e78` (point-in-time reference of code evaluated during execution)
+- **Commit Tested (HEAD SHA):** `1eaa336d2627b7706550cc2e6931194266e700e0` (point-in-time reference of code evaluated during execution)
 - **Certification Commit:** Recorded in subsequent commit following gate run artifact generation
 - **Branch / Ref:** `main`
-- **Working Tree:** Dirty (5 uncommitted changes)
+- **Working Tree:** Clean (0 uncommitted changes)
 - **Runtime:** Node `v24.14.0`, pnpm `10.32.1`
 - **Environment Safety:** PERMITTED (Target ref: `wvyrivmvpcrhwinzmcyy`)
 - **Batch Sequence:** VALID (All prerequisites satisfied for batch T.)
@@ -24,13 +24,13 @@
 
 | Gate | Name | Command | Status | Duration | Summary |
 |---|---|---|---|---|---|
-| **Gate 1** | Typecheck Integrity | `pnpm run typecheck` | **`PASS`** | 25.31s | apps/web typecheck$ tsc --noEmit apps/worker typecheck: Done apps/web typecheck: Done |
-| **Gate 2** | Unit & Domain Test Suites | `pnpm run test` | **`PASS`** | 84.61s | apps/web test: [2m   Start at [22m 16:05:27 apps/web test: [2m   Duration [22m 53.17s[2m (transform 3.49s, setup 0ms, collect 29.11s, tests 70.33s, environment 14ms, prepare 12.42s)[22m apps/web test: Done |
-| **Gate 3** | Integration (Authenticated PostgREST) | `pnpm run test:authenticated` | **`PASS`** | 55.39s | [2m      Tests [22m [1m[32m18 passed[39m[22m[90m (18)[39m [2m   Start at [22m 16:06:22 [2m   Duration [22m 52.94s[2m (transform 337ms, setup 0ms, collect 1.01s, tests 98.07s, environment 1ms, prepare 623ms)[22m |
-| **Gate 4** | Production Build | `pnpm --filter @jobpulse/web build` | **`PASS`** | 78.17s |  ○  (Static)   prerendered as static content ƒ  (Dynamic)  server-rendered on demand |
-| **Gate 5** | Migration & Schema Integrity | `npx tsx scripts/check-schema-integrity.mjs` | **`PASS`** | 3.94s | ✅ Schema Invariant R-H01 verified: url_resolution_method has NO fabricated default. ✅ Schema Invariant R-H02 verified: error_class column and taxonomy classifier present. ✅ [Gate 5] Schema & Migration Integrity passed all validations. |
-| **Gate 6** | Security & Tenant Isolation Boundary | `npx vitest run tests/batch-t-security-boundary.test.ts` | **`PASS`** | 16.14s | [2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m [2m   Start at [22m 16:08:41 [2m   Duration [22m 12.61s[2m (transform 118ms, setup 0ms, collect 223ms, tests 11.65s, environment 0ms, prepare 267ms)[22m |
-| **Gate 7** | Observability & Operational Truthfulness | `npx vitest run tests/batch-t-observability-truth.test.ts` | **`PASS`** | 16.88s | [2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m [2m   Start at [22m 16:08:57 [2m   Duration [22m 13.53s[2m (transform 117ms, setup 0ms, collect 303ms, tests 12.50s, environment 0ms, prepare 241ms)[22m |
+| **Gate 1** | Typecheck Integrity | `pnpm run typecheck` | **`PASS`** | 24.05s | apps/web typecheck$ tsc --noEmit apps/worker typecheck: Done apps/web typecheck: Done |
+| **Gate 2** | Unit & Domain Test Suites | `pnpm run test` | **`PASS`** | 98.19s | apps/web test: [2m   Start at [22m 16:12:12 apps/web test: [2m   Duration [22m 65.90s[2m (transform 3.00s, setup 0ms, collect 21.16s, tests 82.24s, environment 13ms, prepare 11.73s)[22m apps/web test: Done |
+| **Gate 3** | Integration (Authenticated PostgREST) | `pnpm run test:authenticated` | **`PASS`** | 74.73s | [2m      Tests [22m [1m[32m18 passed[39m[22m[90m (18)[39m [2m   Start at [22m 16:13:20 [2m   Duration [22m 72.12s[2m (transform 345ms, setup 0ms, collect 1.04s, tests 123.84s, environment 1ms, prepare 687ms)[22m |
+| **Gate 4** | Production Build | `pnpm --filter @jobpulse/web build` | **`PASS`** | 66.59s |  ○  (Static)   prerendered as static content ƒ  (Dynamic)  server-rendered on demand |
+| **Gate 5** | Migration & Schema Integrity | `npx tsx scripts/check-schema-integrity.mjs --audit` | **`PASS`** | 12.59s | 🔍 [Gate 5 / Audit Mode] Validating live database schema state against target... ✅ Live Schema Audit: All core tables accessible, url_resolution_method confirmed NULL by default. ✅ [Gate 5] Schema & Migration Integrity passed all validations. |
+| **Gate 6** | Security & Tenant Isolation Boundary | `npx vitest run tests/batch-t-security-boundary.test.ts` | **`PASS`** | 16.50s | [2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m [2m   Start at [22m 16:15:55 [2m   Duration [22m 12.91s[2m (transform 132ms, setup 0ms, collect 263ms, tests 11.92s, environment 0ms, prepare 257ms)[22m |
+| **Gate 7** | Observability & Operational Truthfulness | `npx vitest run tests/batch-t-observability-truth.test.ts` | **`PASS`** | 16.57s | [2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m [2m   Start at [22m 16:16:11 [2m   Duration [22m 13.41s[2m (transform 96ms, setup 0ms, collect 215ms, tests 12.52s, environment 0ms, prepare 214ms)[22m |
 | **Gate 8** | Evidence & Certification Synthesis | `internal:generate_report` | **`PASS`** | 0.01s | Synthesized report with status: CERTIFIED |
 
 ---
