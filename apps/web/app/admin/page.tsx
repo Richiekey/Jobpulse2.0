@@ -22,6 +22,7 @@ import {
   CheckSquare,
   RotateCw,
   BarChart3,
+  TrendingUp,
 } from 'lucide-react';
 import { AdminMetricsOverview, AdminMetricsData } from '@/components/admin/AdminMetricsOverview';
 import { SourceManagementTable, AdminCompanySource } from '@/components/admin/SourceManagementTable';
@@ -32,6 +33,7 @@ import { WorkersManagement } from '@/components/admin/WorkersManagement';
 import { JobAssignmentDispatcher } from '@/components/admin/JobAssignmentDispatcher';
 import { VerificationReviewQueue } from '@/components/admin/VerificationReviewQueue';
 import { SyncEngineObservatory } from '@/components/admin/SyncEngineObservatory';
+import { OperationalIntelligenceView } from '@/components/admin/OperationalIntelligenceView';
 import type { AdminScrapeRunItem } from '@/app/api/admin/scrape/runs/route';
 import { createClient } from '@/lib/supabase/client';
 
@@ -401,11 +403,11 @@ function AdminDashboard({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Command Center Navigation Tabs (Batch Q 5 operational pillars)
-  type CommandCenterTab = 'workers' | 'assignments' | 'verifications' | 'sync' | 'observatory';
+  // Command Center Navigation Tabs (Batch Q & Batch R operational pillars)
+  type CommandCenterTab = 'workers' | 'assignments' | 'verifications' | 'sync' | 'observatory' | 'intelligence';
   const tabParam = searchParams.get('tab') as CommandCenterTab | null;
   const [activeTab, setActiveTab] = useState<CommandCenterTab>(
-    tabParam && ['workers', 'assignments', 'verifications', 'sync', 'observatory'].includes(tabParam)
+    tabParam && ['workers', 'assignments', 'verifications', 'sync', 'observatory', 'intelligence'].includes(tabParam)
       ? tabParam
       : 'workers'
   );
@@ -773,6 +775,15 @@ function AdminDashboard({
             <BarChart3 size={16} />
             <span>Source & Platform Observatory</span>
           </button>
+
+          <button
+            onClick={() => handleTabChange('intelligence')}
+            className={`btn ${activeTab === 'intelligence' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
+          >
+            <TrendingUp size={16} />
+            <span>Operational Intelligence</span>
+          </button>
         </div>
 
         {/* Tab 1: Workers Management */}
@@ -890,6 +901,15 @@ function AdminDashboard({
               />
             )}
           </div>
+        )}
+
+        {/* Tab 6: Operational Intelligence (Batch R) */}
+        {activeTab === 'intelligence' && (
+          <OperationalIntelligenceView
+            organizationId={selectedOrgId}
+            organizationName={selectedOrg?.name}
+            isPlatformAdmin={isPlatformAdmin}
+          />
         )}
       </main>
     </div>
