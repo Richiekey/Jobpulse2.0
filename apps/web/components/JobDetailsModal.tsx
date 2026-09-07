@@ -518,14 +518,26 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             gap: '12px',
             borderTop: '1px solid var(--border-subtle)',
             paddingTop: '18px',
+            flexWrap: 'wrap',
           }}
         >
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {onToggleSave && (
               <button
+                type="button"
                 onClick={() => onToggleSave(job.id)}
                 className="btn btn-secondary"
-                style={{ color: isSaved ? 'var(--brand-primary)' : 'inherit' }}
+                style={{
+                  height: '38px',
+                  padding: '0 16px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  boxSizing: 'border-box',
+                  color: isSaved ? 'var(--brand-primary)' : 'inherit',
+                }}
               >
                 <Bookmark size={16} fill={isSaved ? 'currentColor' : 'none'} />
                 <span>{isSaved ? 'Saved' : 'Save'}</span>
@@ -533,7 +545,21 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             )}
 
             {onTrackApplication && (
-              <button onClick={() => onTrackApplication(job)} className="btn btn-secondary">
+              <button
+                type="button"
+                onClick={() => onTrackApplication(job)}
+                className="btn btn-secondary"
+                style={{
+                  height: '38px',
+                  padding: '0 16px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  boxSizing: 'border-box',
+                }}
+              >
                 <CheckSquare size={16} />
                 <span>Track Application</span>
               </button>
@@ -548,15 +574,17 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 rel="noopener noreferrer"
                 className="btn btn-secondary"
                 style={{
+                  height: '38px',
+                  padding: '0 14px',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  padding: '9px 16px',
                   fontSize: '0.875rem',
                   fontWeight: 600,
                   backgroundColor: 'var(--bg-surface-elevated)',
                   border: '1px solid var(--border-default)',
                   color: 'var(--text-primary)',
+                  boxSizing: 'border-box',
                 }}
                 title="View original Jobright listing"
               >
@@ -571,13 +599,33 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-primary"
-                style={{ padding: '9px 20px', fontSize: '0.875rem', fontWeight: 700 }}
+                style={{
+                  height: '38px',
+                  padding: '0 18px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.875rem',
+                  fontWeight: 700,
+                  boxSizing: 'border-box',
+                }}
               >
                 <span>{applyButtonLabel}</span>
                 {isResolving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
               </a>
             ) : (
-              <button disabled className="btn btn-secondary" style={{ padding: '9px 16px', fontSize: '0.875rem' }}>
+              <button
+                disabled
+                className="btn btn-secondary"
+                style={{
+                  height: '38px',
+                  padding: '0 16px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  fontSize: '0.875rem',
+                  boxSizing: 'border-box',
+                }}
+              >
                 No Direct Link
               </button>
             )}

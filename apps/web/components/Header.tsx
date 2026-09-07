@@ -28,18 +28,20 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header
       style={{
+        height: '56px',
         borderBottom: '1px solid var(--border-subtle)',
         backgroundColor: 'var(--bg-app)',
         position: 'sticky',
         top: 0,
         zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
       }}
     >
       <div
         style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          padding: '12px 20px',
+          width: '100%',
+          padding: '0 20px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -50,8 +52,8 @@ export const Header: React.FC<HeaderProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
-              width: '34px',
-              height: '34px',
+              width: '32px',
+              height: '32px',
               borderRadius: 'var(--radius-md)',
               backgroundColor: 'var(--brand-primary)',
               display: 'flex',
@@ -61,13 +63,13 @@ export const Header: React.FC<HeaderProps> = ({
               flexShrink: 0,
             }}
           >
-            <Briefcase size={18} strokeWidth={2.5} />
+            <Briefcase size={17} strokeWidth={2.5} />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span
                 style={{
-                  fontSize: '1.125rem',
+                  fontSize: '1.0625rem',
                   fontWeight: 800,
                   letterSpacing: '-0.03em',
                   color: 'var(--text-primary)',
@@ -108,36 +110,54 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => handleSelectTab('feed')}
-            className={`btn ${activeTab === 'feed' ? 'btn-secondary' : 'btn-ghost'}`}
+            className="btn"
             style={{
+              height: '34px',
+              padding: '0 12px',
+              fontSize: '0.8125rem',
               fontWeight: activeTab === 'feed' ? 700 : 500,
               backgroundColor: activeTab === 'feed' ? 'var(--bg-surface-elevated)' : 'transparent',
               borderColor: activeTab === 'feed' ? 'var(--border-default)' : 'transparent',
+              color: activeTab === 'feed' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            <Layers size={16} />
+            <Layers size={15} />
             <span>Jobs</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleSelectTab('saved')}
-            className={`btn ${activeTab === 'saved' ? 'btn-secondary' : 'btn-ghost'}`}
+            className="btn"
             style={{
+              height: '34px',
+              padding: '0 12px',
+              fontSize: '0.8125rem',
               fontWeight: activeTab === 'saved' ? 700 : 500,
               backgroundColor: activeTab === 'saved' ? 'var(--bg-surface-elevated)' : 'transparent',
               borderColor: activeTab === 'saved' ? 'var(--border-default)' : 'transparent',
+              color: activeTab === 'saved' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            <Bookmark size={16} />
+            <Bookmark size={15} />
             <span>Saved</span>
             {savedCount > 0 && (
               <span
                 style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '18px',
+                  padding: '0 6px',
                   backgroundColor: 'var(--border-strong)',
                   color: 'var(--text-primary)',
                   borderRadius: 'var(--radius-full)',
-                  padding: '1px 7px',
                   fontSize: '0.6875rem',
                   fontWeight: 700,
                   marginLeft: '2px',
@@ -151,23 +171,34 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => handleSelectTab('applications')}
-            className={`btn ${activeTab === 'applications' ? 'btn-secondary' : 'btn-ghost'}`}
+            className="btn"
             style={{
+              height: '34px',
+              padding: '0 12px',
+              fontSize: '0.8125rem',
               fontWeight: activeTab === 'applications' ? 700 : 500,
               backgroundColor: activeTab === 'applications' ? 'var(--bg-surface-elevated)' : 'transparent',
               borderColor: activeTab === 'applications' ? 'var(--border-default)' : 'transparent',
+              color: activeTab === 'applications' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            <CheckSquare size={16} />
+            <CheckSquare size={15} />
             <span>My Applications</span>
             {applicationCount > 0 && (
               <span
                 style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '18px',
+                  padding: '0 6px',
                   backgroundColor: 'var(--brand-surface)',
                   color: 'var(--brand-text)',
                   border: '1px solid var(--brand-border)',
                   borderRadius: 'var(--radius-full)',
-                  padding: '1px 7px',
                   fontSize: '0.6875rem',
                   fontWeight: 700,
                   marginLeft: '2px',
@@ -181,14 +212,21 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => handleSelectTab('alerts')}
-            className={`btn ${activeTab === 'alerts' ? 'btn-secondary' : 'btn-ghost'}`}
+            className="btn"
             style={{
+              height: '34px',
+              padding: '0 12px',
+              fontSize: '0.8125rem',
               fontWeight: activeTab === 'alerts' ? 700 : 500,
               backgroundColor: activeTab === 'alerts' ? 'var(--bg-surface-elevated)' : 'transparent',
               borderColor: activeTab === 'alerts' ? 'var(--border-default)' : 'transparent',
+              color: activeTab === 'alerts' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            <Bell size={16} />
+            <Bell size={15} />
             <span>Alerts</span>
           </button>
 
@@ -206,12 +244,16 @@ export const Header: React.FC<HeaderProps> = ({
               href="/worker/jobs"
               className="btn btn-ghost"
               style={{
+                height: '34px',
+                padding: '0 12px',
                 fontSize: '0.8125rem',
+                fontWeight: 600,
                 color: 'var(--brand-text)',
-                padding: '8px 12px',
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
+                textDecoration: 'none',
+                borderRadius: 'var(--radius-md)',
               }}
               title="Worker Command Center"
             >
@@ -225,9 +267,16 @@ export const Header: React.FC<HeaderProps> = ({
               href="/admin"
               className="btn btn-ghost"
               style={{
+                height: '34px',
+                padding: '0 12px',
                 fontSize: '0.8125rem',
+                fontWeight: 600,
                 color: 'var(--text-muted)',
-                padding: '8px 12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                textDecoration: 'none',
+                borderRadius: 'var(--radius-md)',
               }}
               title="Admin Control Plane"
             >
@@ -246,31 +295,52 @@ export const Header: React.FC<HeaderProps> = ({
                   margin: '0 4px',
                 }}
               />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  height: '34px',
+                  padding: '0 8px 0 10px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <User size={13} color="var(--text-muted)" />
                 <span
                   style={{
                     fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
+                    color: 'var(--text-secondary)',
                     maxWidth: '140px',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    fontWeight: 500,
                   }}
+                  title={user.email}
                 >
                   {user.email}
                 </span>
                 <button
                   type="button"
                   onClick={signOut}
-                  className="btn btn-ghost"
                   style={{
-                    fontSize: '0.8125rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'none',
+                    border: 'none',
                     color: 'var(--text-muted)',
-                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    borderRadius: 'var(--radius-xs)',
+                    transition: 'color 0.15s ease',
                   }}
                   title="Sign out"
                 >
-                  <LogOut size={15} />
+                  <LogOut size={14} />
                 </button>
               </div>
             </>

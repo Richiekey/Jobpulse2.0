@@ -87,10 +87,10 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
       <div
         className="job-inspector-pane"
         style={{
-          flex: '1.4',
-          height: 'calc(100vh - 120px)',
+          flex: 1,
+          minWidth: 0,
+          height: '100%',
           backgroundColor: 'var(--bg-surface)',
-          borderLeft: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -217,21 +217,19 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
     <div
       className="job-inspector-pane"
       style={{
-        flex: '1.4',
-        height: 'calc(100vh - 120px)',
+        flex: 1,
+        minWidth: 0,
+        height: '100%',
         backgroundColor: 'var(--bg-surface)',
-        borderLeft: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
         overflowY: 'auto',
-        position: 'sticky',
-        top: '120px',
       }}
     >
       {/* Sticky Action Header */}
       <div
         style={{
-          padding: '16px 24px',
+          padding: '12px 20px',
           borderBottom: '1px solid var(--border-subtle)',
           backgroundColor: 'var(--bg-surface)',
           position: 'sticky',
@@ -243,7 +241,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
           gap: '12px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', overflowX: 'auto' }}>
           {primaryApplyUrl ? (
             <a
               href={primaryApplyUrl}
@@ -253,21 +251,34 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '8px',
-                padding: '9px 18px',
+                gap: '6px',
+                height: '34px',
+                padding: '0 16px',
                 fontSize: '13px',
                 fontWeight: 700,
                 textDecoration: 'none',
                 borderRadius: 'var(--radius-md)',
                 backgroundColor: 'var(--brand-primary)',
                 color: '#ffffff',
+                whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
               }}
             >
               <span>{applyButtonLabel}</span>
               {isResolving ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
             </a>
           ) : (
-            <button disabled className="btn btn-secondary" style={{ padding: '9px 16px', fontSize: '13px' }}>
+            <button
+              disabled
+              className="btn btn-secondary"
+              style={{
+                height: '34px',
+                padding: '0 14px',
+                fontSize: '13px',
+                whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
+              }}
+            >
               No Direct Link
             </button>
           )}
@@ -278,11 +289,13 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               href={jobrightUrl}
               target="_blank"
               rel="noopener noreferrer"
+              className="btn btn-secondary"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '9px 14px',
+                height: '34px',
+                padding: '0 12px',
                 fontSize: '13px',
                 fontWeight: 600,
                 textDecoration: 'none',
@@ -290,6 +303,8 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
                 backgroundColor: 'var(--bg-surface-elevated)',
                 border: '1px solid var(--border-default)',
                 color: 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
                 transition: 'all 0.15s ease',
               }}
               title="View original Jobright listing"
@@ -306,7 +321,8 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '9px 14px',
+              height: '34px',
+              padding: '0 12px',
               fontSize: '13px',
               fontWeight: 600,
               backgroundColor: isApplied ? 'var(--success-surface)' : 'var(--bg-surface-elevated)',
@@ -314,6 +330,8 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               color: isApplied ? 'var(--success-text)' : 'var(--text-primary)',
               borderRadius: 'var(--radius-md)',
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              boxSizing: 'border-box',
             }}
           >
             <CheckSquare size={15} />
@@ -321,33 +339,44 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           <button
             onClick={() => onToggleSave && onToggleSave(job.id)}
             style={{
-              padding: '8px',
+              height: '34px',
+              width: '34px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               borderRadius: 'var(--radius-md)',
               border: '1px solid var(--border-subtle)',
               backgroundColor: isSaved ? 'var(--brand-surface)' : 'var(--bg-surface-elevated)',
               color: isSaved ? 'var(--brand-text)' : 'var(--text-secondary)',
               cursor: 'pointer',
+              boxSizing: 'border-box',
             }}
             title={isSaved ? 'Saved' : 'Save Job'}
           >
-            <Bookmark size={16} fill={isSaved ? 'currentColor' : 'none'} />
+            <Bookmark size={15} fill={isSaved ? 'currentColor' : 'none'} />
           </button>
 
           {hasPrev && (
             <button
               onClick={onPrevJob}
               style={{
-                padding: '8px 12px',
+                height: '34px',
+                padding: '0 12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--border-subtle)',
                 backgroundColor: 'var(--bg-surface-elevated)',
                 color: 'var(--text-secondary)',
                 fontSize: '12px',
+                fontWeight: 600,
                 cursor: 'pointer',
+                boxSizing: 'border-box',
               }}
               title="Previous job (↑)"
             >
@@ -358,13 +387,19 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
             <button
               onClick={onNextJob}
               style={{
-                padding: '8px 12px',
+                height: '34px',
+                padding: '0 12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--border-subtle)',
                 backgroundColor: 'var(--bg-surface-elevated)',
                 color: 'var(--text-secondary)',
                 fontSize: '12px',
+                fontWeight: 600,
                 cursor: 'pointer',
+                boxSizing: 'border-box',
               }}
               title="Next job (↓)"
             >

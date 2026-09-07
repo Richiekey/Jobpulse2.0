@@ -171,15 +171,15 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
     <aside
       className={`filters-sidebar-pane ${isOpenMobile ? 'open-mobile' : ''}`}
       style={{
-        width: '100%',
-        maxWidth: '300px',
+        width: '280px',
+        minWidth: '280px',
+        maxWidth: '280px',
+        flexShrink: 0,
         backgroundColor: 'var(--bg-surface)',
         borderRight: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
-        height: 'calc(100vh - 120px)',
-        position: 'sticky',
-        top: '120px',
+        height: '100%',
         overflowY: 'auto',
       }}
     >

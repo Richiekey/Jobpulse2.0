@@ -473,7 +473,7 @@ export default function HomePage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-app)' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-app)', overflow: 'hidden' }}>
       {/* Toast Notification */}
       {toast && (
         <div
@@ -514,8 +514,17 @@ export default function HomePage() {
         applicationCount={applications.length}
       />
 
-      {/* Primary 3-Pane Container */}
-      <div style={{ flex: 1, display: 'flex', maxWidth: '1800px', margin: '0 auto', width: '100%' }}>
+      {/* Primary 3-Pane Container (Zero gaps, full height calc(100vh - 56px)) */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          width: '100%',
+          height: 'calc(100vh - 56px)',
+          overflow: 'hidden',
+          backgroundColor: 'var(--bg-app)',
+        }}
+      >
         {activeTab === 'feed' && (
           <>
             {/* Left Pane: Filters & Taxonomy */}
@@ -547,15 +556,18 @@ export default function HomePage() {
             <main
               className="job-feed-stream"
               style={{
-                flex: '1',
-                minWidth: '380px',
-                maxWidth: '650px',
-                height: 'calc(100vh - 120px)',
+                width: '460px',
+                minWidth: '400px',
+                maxWidth: '480px',
+                flexShrink: 0,
+                height: '100%',
                 overflowY: 'auto',
                 padding: '16px 20px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
+                borderRight: '1px solid var(--border-subtle)',
+                backgroundColor: 'var(--bg-app)',
               }}
             >
               {/* Stream Sub-Header: Controls & Status */}
@@ -571,12 +583,31 @@ export default function HomePage() {
                 }}
               >
                 <div>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {isLoading ? 'Scanning Feed...' : `${activeRosterJobs.length} Active Opportunities`}
-                  </span>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Direct ATS & Aggregated Sources • Deduplicated • Continuously Synced
-                    {appliedJobIds.size > 0 && ` • (${appliedJobIds.size} applied excluded)`}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                      {isLoading ? 'Scanning Feed...' : `${jobs.length} Jobs Loaded`}
+                    </span>
+                    {!isLoading && jobs.length > 0 && (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 'var(--radius-full)',
+                          backgroundColor: 'var(--brand-surface)',
+                          color: 'var(--brand-text)',
+                          border: '1px solid var(--brand-border)',
+                        }}
+                      >
+                        {activeRosterJobs.length} active
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {filterOptions?.total_active_jobs
+                      ? `${filterOptions.total_active_jobs.toLocaleString()} total verified opportunities in database`
+                      : 'Direct ATS & Aggregated Sources • Continuously Synced'}
+                    {appliedJobIds.size > 0 && ` • (${appliedJobIds.size} applied hidden)`}
                   </p>
                 </div>
 
@@ -717,7 +748,7 @@ export default function HomePage() {
 
         {/* Saved Jobs Tab */}
         {activeTab === 'saved' && (
-          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto' }}>
+          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto', height: '100%', overflowY: 'auto' }}>
             <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>Saved Jobs ({savedJobs.length})</h2>
             <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
               Your bookmarked opportunities across all integrated ATS platforms.
@@ -753,7 +784,7 @@ export default function HomePage() {
 
         {/* Application Tracker Tab */}
         {activeTab === 'applications' && (
-          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto' }}>
+          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto', height: '100%', overflowY: 'auto' }}>
             <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>My Applications ({applications.length})</h2>
             <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
               Track the status of your direct applications and pipeline stages.
@@ -812,7 +843,7 @@ export default function HomePage() {
 
         {/* Alerts Tab */}
         {activeTab === 'alerts' && (
-          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto' }}>
+          <div style={{ flex: 1, padding: '32px 40px', maxWidth: '1000px', margin: '0 auto', height: '100%', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
                 <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '4px' }}>Job Alerts</h2>
