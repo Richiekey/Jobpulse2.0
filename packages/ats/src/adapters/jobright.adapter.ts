@@ -41,7 +41,7 @@ export interface JobrightParsedRow {
 
 export class JobrightAdapter implements ATSAdapter {
   public readonly platformSlug = 'jobright';
-  public readonly parserVersion = 'jobright_v2';
+  public readonly parserVersion: string = 'jobright_v2';
 
   public detect(url: string): ATSDetectionResult {
     const ghPattern = /(?:github\.com|raw\.githubusercontent\.com)\/jobright-ai\/([^/?#]+)/i;
@@ -78,9 +78,6 @@ export class JobrightAdapter implements ATSAdapter {
     };
   }
 
-  /**
-   * Fetches the raw README.md for a given repository with master -> main fallback.
-   */
   private async fetchReadmeContent(repoName: string): Promise<{ content: string; url: string; branch: string }> {
     const cleanRepo = repoName.trim().replace(/^jobright-ai\//i, '');
     const masterUrl = `https://raw.githubusercontent.com/jobright-ai/${cleanRepo}/master/README.md`;
@@ -198,7 +195,6 @@ export class JobrightAdapter implements ATSAdapter {
   }
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
-    // Strictly require candidate payload from GitHub repository discovery — 0 network requests
     if (!candidate.payload || typeof candidate.payload !== 'object' || Object.keys(candidate.payload).length === 0) {
       throw new Error(
         `Jobright fetch failed: Candidate ${candidate.externalJobId} is missing candidate.payload. ` +
@@ -207,15 +203,9 @@ export class JobrightAdapter implements ATSAdapter {
     }
 
     const payload = { ...candidate.payload };
-    if (!payload['discoveryUrl'] && candidate.discoveryUrl) {
-      payload['discoveryUrl'] = candidate.discoveryUrl;
-    }
-    if (!payload['sourceJobUrl'] && candidate.sourceJobUrl) {
-      payload['sourceJobUrl'] = candidate.sourceJobUrl;
-    }
-    if (!payload['externalJobId'] && candidate.externalJobId) {
-      payload['externalJobId'] = candidate.externalJobId;
-    }
+    if (!payload['discoveryUrl'] && candidate.discoveryUrl) payload['discoveryUrl'] = candidate.discoveryUrl;
+    if (!payload['sourceJobUrl'] && candidate.sourceJobUrl) payload['sourceJobUrl'] = candidate.sourceJobUrl;
+    if (!payload['externalJobId'] && candidate.externalJobId) payload['externalJobId'] = candidate.externalJobId;
 
     const payloadHash = DeduplicationEngine.hashPayload(payload);
 
@@ -231,7 +221,6 @@ export class JobrightAdapter implements ATSAdapter {
 
   public async parse(rawPayload: RawJobPayload): Promise<RawJob> {
     const data = rawPayload.payload as unknown as JobrightParsedRow;
-
     const externalId = (data.externalJobId || data.id || '') as string;
     const title = (data.title || 'Untitled Role') as string;
     const company = (data.companyName || data.company_name || 'Unknown Employer') as string;
@@ -281,55 +270,26 @@ export class JobrightAdapter implements ATSAdapter {
   public async normalize(rawJob: RawJob, payloadHash: string): Promise<NormalizedJob> {
     const candidates: UrlCandidate[] = [];
 
-    // 1. Explicit employer application URL (highest confidence)
     if (rawJob.sourceMetadata?.['original_apply_url']) {
-      candidates.push({
-        url: rawJob.sourceMetadata['original_apply_url'] as string,
-        sourceType: 'explicit_employer_apply',
-        suggestedConfidence: 0.98,
-      });
+      candidates.push({ url: rawJob.sourceMetadata['original_apply_url'] as string, sourceType: 'explicit_employer_apply', suggestedConfidence: 0.98 });
     }
-
-    // 2. Explicit direct ATS form / URL
     if (rawJob.sourceMetadata?.['ats_url']) {
-      candidates.push({
-        url: rawJob.sourceMetadata['ats_url'] as string,
-        sourceType: 'explicit_ats_form',
-        suggestedConfidence: 0.95,
-      });
+      candidates.push({ url: rawJob.sourceMetadata['ats_url'] as string, sourceType: 'explicit_ats_form', suggestedConfidence: 0.95 });
     }
-
-    // 3. Embedded URLs found in Markdown row
     if (Array.isArray(rawJob.sourceMetadata?.['embedded_urls'])) {
       for (const u of rawJob.sourceMetadata['embedded_urls']) {
         if (typeof u === 'string' && u) {
           const isAts = URLResolver.isDirectAtsUrl(u);
-          candidates.push({
-            url: u,
-            sourceType: isAts ? 'known_ats_url' : 'other_valid_url',
-            suggestedConfidence: isAts ? 0.75 : 0.60,
-          });
+          candidates.push({ url: u, sourceType: isAts ? 'known_ats_url' : 'other_valid_url', suggestedConfidence: isAts ? 0.75 : 0.60 });
         }
       }
     }
-
-    // 4. Raw apply URL from parser if not already included
     if (rawJob.rawApplyUrl && !rawJob.sourceMetadata?.['original_apply_url'] && !rawJob.sourceMetadata?.['ats_url']) {
       const isAts = URLResolver.isDirectAtsUrl(rawJob.rawApplyUrl);
-      candidates.push({
-        url: rawJob.rawApplyUrl,
-        sourceType: isAts ? 'explicit_ats_form' : 'other_valid_url',
-        suggestedConfidence: isAts ? 0.95 : 0.60,
-      });
+      candidates.push({ url: rawJob.rawApplyUrl, sourceType: isAts ? 'explicit_ats_form' : 'other_valid_url', suggestedConfidence: isAts ? 0.95 : 0.60 });
     }
-
-    // 5. Jobright Fallback (Strictly low confidence 0.40 - fallback only)
     if (rawJob.sourceJobUrl) {
-      candidates.push({
-        url: rawJob.sourceJobUrl,
-        sourceType: 'fallback_source',
-        suggestedConfidence: 0.40,
-      });
+      candidates.push({ url: rawJob.sourceJobUrl, sourceType: 'fallback_source', suggestedConfidence: 0.40 });
     }
 
     const resolvedUrls = URLResolver.resolve({
@@ -346,14 +306,10 @@ export class JobrightAdapter implements ATSAdapter {
   }
 
   public async resolveApplicationUrl(candidate: JobCandidate, raw: RawJob): Promise<string> {
-    // INVARIANT: Never synthesize application URLs.
     if (raw.rawApplyUrl) return raw.rawApplyUrl;
     return raw.sourceJobUrl || candidate.sourceJobUrl || '';
   }
 
-  /**
-   * Robust Markdown table parser supporting both New Grad and H1B Jobright table layouts.
-   */
   public parseMarkdownTable(
     markdownText: string,
     repoName: string,
@@ -363,18 +319,9 @@ export class JobrightAdapter implements ATSAdapter {
     const lines = markdownText.split(/\r?\n/);
     const candidates: JobrightParsedRow[] = [];
     const seenJobIds = new Set<string>();
-
     let lastCompany = '';
     let lastCompanyWebsite = '';
-    let headerIndices: {
-      company: number;
-      title: number;
-      location: number;
-      workplace: number;
-      link: number;
-      date: number;
-    } | null = null;
-
+    let headerIndices: { company: number; title: number; location: number; workplace: number; link: number; date: number } | null = null;
     let rowsParsed = 0;
     let rowsRejected = 0;
 
@@ -384,10 +331,8 @@ export class JobrightAdapter implements ATSAdapter {
 
       const cells = line.split('|').map((c) => c.trim()).slice(1, -1);
       if (cells.length < 3) continue;
-
       const lowerCells = cells.map((c) => c.toLowerCase());
 
-      // Header row detection
       if (lowerCells.some((c) => c.includes('company')) && lowerCells.some((c) => c.includes('title') || c.includes('job title'))) {
         headerIndices = {
           company: lowerCells.findIndex((c) => c.includes('company')),
@@ -399,56 +344,38 @@ export class JobrightAdapter implements ATSAdapter {
         };
         continue;
       }
-
-      // Skip markdown divider row (| --- | --- |)
       if (cells.every((c) => /^[-: ]+$/.test(c))) continue;
 
       if (!headerIndices) {
-        headerIndices = {
-          company: 0,
-          title: 1,
-          location: 2,
-          workplace: 3,
-          link: -1,
-          date: 4,
-        };
+        headerIndices = { company: 0, title: 1, location: 2, workplace: 3, link: -1, date: 4 };
       }
 
-      // Extract Jobright Link and External ID (handle query parameters like ?utm_campaign=...)
       const allTextInRow = cells.join(' ');
       const linkMatch = allTextInRow.match(/https:\/\/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/);
-
-      if (!linkMatch || !linkMatch[1]) {
+      if (!linkMatch?.[1]) {
         rowsRejected++;
         continue;
       }
 
       const externalJobId = linkMatch[1];
       const sourceJobUrl = `https://jobright.ai/jobs/info/${externalJobId}`;
-
-      // Prevent duplicates within the same README file
-      if (seenJobIds.has(externalJobId)) {
-        continue;
-      }
+      if (seenJobIds.has(externalJobId)) continue;
       seenJobIds.add(externalJobId);
 
-      // Parse Company with inheritance support (↳)
       const rawCompanyCell = cells[headerIndices.company] || '';
       let companyName = '';
       let companyWebsite = '';
-
       if (rawCompanyCell.includes('↳')) {
         companyName = lastCompany;
         companyWebsite = lastCompanyWebsite;
       } else {
-        const compLinkMatch = rawCompanyCell.match(/\[(.*?)\]\((.*?)\)/);
-        if (compLinkMatch && compLinkMatch[1]) {
+        const compLinkMatch = rawCompanyCell.match(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/);
+        if (compLinkMatch) {
           companyName = compLinkMatch[1].replace(/[*_]/g, '').trim();
-          companyWebsite = compLinkMatch[2] ? compLinkMatch[2].trim() : '';
+          companyWebsite = compLinkMatch[2].trim();
         } else {
-          companyName = rawCompanyCell.replace(/[*_]/g, '').trim();
+          companyName = rawCompanyCell.replace(/[*_]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
         }
-
         if (companyName && companyName !== '↳') {
           lastCompany = companyName;
           lastCompanyWebsite = companyWebsite;
@@ -463,62 +390,44 @@ export class JobrightAdapter implements ATSAdapter {
         continue;
       }
 
-      // Parse Title
       const rawTitleCell = cells[headerIndices.title] || '';
-      let title = '';
-      const titleLinkMatch = rawTitleCell.match(/\[(.*?)\]/);
-      if (titleLinkMatch && titleLinkMatch[1]) {
-        title = titleLinkMatch[1].replace(/[*_]/g, '').trim();
-      } else {
-        title = rawTitleCell.replace(/[*_]/g, '').trim();
-      }
-      title = title.replace(/\s+/g, ' ').trim();
-
+      const titleLinkMatch = rawTitleCell.match(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/);
+      const title = (titleLinkMatch ? titleLinkMatch[1] : rawTitleCell)
+        .replace(/[*_]/g, '')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/\s+/g, ' ')
+        .trim();
       if (!title) {
         rowsRejected++;
         continue;
       }
 
-      // Parse Location
       const rawLocationCell = headerIndices.location !== -1 && cells[headerIndices.location] ? cells[headerIndices.location]! : '';
       const location = rawLocationCell.replace(/[*_]/g, '').trim();
-
-      // Normalize Workplace Type
       let workplaceType: 'remote' | 'hybrid' | 'onsite' | 'unspecified' = 'unspecified';
       const rawWorkplaceCell = headerIndices.workplace !== -1 && cells[headerIndices.workplace] ? cells[headerIndices.workplace]! : '';
       const wpLower = `${rawWorkplaceCell} ${location} ${title}`.toLowerCase();
-      if (wpLower.includes('remote')) {
-        workplaceType = 'remote';
-      } else if (wpLower.includes('hybrid')) {
-        workplaceType = 'hybrid';
-      } else if (wpLower.includes('on site') || wpLower.includes('on-site') || wpLower.includes('onsite')) {
-        workplaceType = 'onsite';
-      }
+      if (wpLower.includes('remote')) workplaceType = 'remote';
+      else if (wpLower.includes('hybrid')) workplaceType = 'hybrid';
+      else if (wpLower.includes('on site') || wpLower.includes('on-site') || wpLower.includes('onsite')) workplaceType = 'onsite';
 
-      // Parse Posted Date (relative to crawl date with rollover support)
       const rawDateCell = headerIndices.date !== -1 && cells[headerIndices.date] ? cells[headerIndices.date]! : '';
       const postedAt = this.parseDate(rawDateCell, crawlDate);
 
-      // Extract all external URLs and decode Markdown links across all cells
       const rowMarkdownLinks: Array<{ text: string; url: string }> = [];
       const markdownRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
       for (const cell of cells) {
         let match: RegExpExecArray | null;
-        while ((match = markdownRegex.exec(cell)) !== null) {
-          rowMarkdownLinks.push({ text: match[1]!.trim(), url: match[2]!.trim() });
-        }
+        while ((match = markdownRegex.exec(cell)) !== null) rowMarkdownLinks.push({ text: match[1]!.trim(), url: match[2]!.trim() });
       }
 
-      // Extract bare HTTPS URLs from the row
       const bareUrls: string[] = [];
       const bareUrlRegex = /https?:\/\/[^\s)\]>"',]+/g;
       for (const cell of cells) {
         let match: RegExpExecArray | null;
         while ((match = bareUrlRegex.exec(cell)) !== null) {
           const clean = match[0].replace(/[.,;:!?]+$/, '');
-          if (!clean.includes('jobright.ai/jobs/info') && clean !== companyWebsite) {
-            bareUrls.push(clean);
-          }
+          if (!clean.includes('jobright.ai/jobs/info') && clean !== companyWebsite) bareUrls.push(clean);
         }
       }
 
@@ -526,36 +435,21 @@ export class JobrightAdapter implements ATSAdapter {
       let directAtsUrl: string | undefined;
       const otherEmbeddedUrls: string[] = [];
 
-      // Evaluate markdown links for explicit apply links and ATS destinations
       for (const ml of rowMarkdownLinks) {
-        if (ml.url.includes('jobright.ai/jobs/info') || ml.url === companyWebsite) {
-          continue;
-        }
-
+        if (ml.url.includes('jobright.ai/jobs/info') || ml.url === companyWebsite) continue;
         const isAts = URLResolver.isDirectAtsUrl(ml.url);
         const textLower = ml.text.toLowerCase();
         const isApplyText = textLower.includes('apply') || textLower.includes('application') || textLower.includes('apply now');
-
-        if (isApplyText && isAts && !explicitApplyUrl) {
-          explicitApplyUrl = ml.url;
-        } else if (isAts && !directAtsUrl) {
-          directAtsUrl = ml.url;
-        } else {
-          otherEmbeddedUrls.push(ml.url);
-        }
+        if (isApplyText && isAts && !explicitApplyUrl) explicitApplyUrl = ml.url;
+        else if (isAts && !directAtsUrl) directAtsUrl = ml.url;
+        else otherEmbeddedUrls.push(ml.url);
       }
 
-      // Evaluate bare URLs
       for (const bu of bareUrls) {
-        if (bu === explicitApplyUrl || bu === directAtsUrl || otherEmbeddedUrls.includes(bu)) {
-          continue;
-        }
+        if (bu === explicitApplyUrl || bu === directAtsUrl || otherEmbeddedUrls.includes(bu)) continue;
         const isAts = URLResolver.isDirectAtsUrl(bu);
-        if (isAts && !directAtsUrl && !explicitApplyUrl) {
-          directAtsUrl = bu;
-        } else {
-          otherEmbeddedUrls.push(bu);
-        }
+        if (isAts && !directAtsUrl && !explicitApplyUrl) directAtsUrl = bu;
+        else otherEmbeddedUrls.push(bu);
       }
 
       candidates.push({
@@ -576,45 +470,32 @@ export class JobrightAdapter implements ATSAdapter {
         ats_url: directAtsUrl,
         embedded_urls: otherEmbeddedUrls.length > 0 ? otherEmbeddedUrls : undefined,
       });
-
       rowsParsed++;
     }
 
     return { candidates, rowsParsed, rowsRejected };
   }
 
-  /**
-   * Parses flexible date strings (e.g. "Sep 03", "2026-05-06") relative to crawl time.
-   */
   public parseDate(rawDate: string, crawlDate: Date = new Date()): string {
     const clean = rawDate.replace(/[*_]/g, '').trim();
     if (!clean) return crawlDate.toISOString();
-
-    // ISO format: YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
       const d = new Date(`${clean}T00:00:00Z`);
       if (!isNaN(d.getTime())) return d.toISOString();
     }
-
-    // Month Day format: "Sep 03", "Sep 3", "August 15"
     const monthDayMatch = clean.match(/^([a-zA-Z]+)\s+(\d{1,2})$/);
-    if (monthDayMatch && monthDayMatch[1] && monthDayMatch[2]) {
+    if (monthDayMatch?.[1] && monthDayMatch[2]) {
       const monthStr = monthDayMatch[1].toLowerCase();
       const day = parseInt(monthDayMatch[2], 10);
       const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
       const mIdx = months.findIndex((m) => monthStr.startsWith(m));
-
       if (mIdx !== -1) {
         let year = crawlDate.getUTCFullYear();
-        // Year rollover: if crawl date is early in year (Jan/Feb) and posting date is Nov/Dec
-        if (crawlDate.getUTCMonth() < 2 && mIdx > 9) {
-          year -= 1;
-        }
+        if (crawlDate.getUTCMonth() < 2 && mIdx > 9) year -= 1;
         const d = new Date(Date.UTC(year, mIdx, day, 12, 0, 0));
         if (!isNaN(d.getTime())) return d.toISOString();
       }
     }
-
     return crawlDate.toISOString();
   }
 }
