@@ -52,8 +52,18 @@ export class RetentionService {
       };
     }
 
+    logger.info('Retention cleanup started', {
+      jobRetentionDays,
+      payloadRetentionDays,
+      jobBatchSize,
+      payloadBatchSize,
+      maxBatches,
+    });
+
     let jobsDeleted = 0;
     let jobsProtected = 0;
+    let protectedApplicationLinkedCount = 0;
+    let protectedAssignmentLinkedCount = 0;
     let payloadsDeleted = 0;
 
     // 1. Purge stale jobs (Application-aware)
@@ -72,6 +82,8 @@ export class RetentionService {
       } else if (jobPurgeData) {
         jobsDeleted = jobPurgeData.deleted_jobs_count || 0;
         jobsProtected = jobPurgeData.protected_jobs_count || 0;
+        protectedApplicationLinkedCount = jobPurgeData.protected_application_linked_count || 0;
+        protectedAssignmentLinkedCount = jobPurgeData.protected_assignment_linked_count || 0;
       }
     } catch (err) {
       logger.warn('Retention purge exception for jobs:', { error: String(err) });
@@ -112,9 +124,16 @@ export class RetentionService {
 
     const durationMs = Date.now() - startTime;
 
-    logger.info('Retention cleanup completed successfully', {
+    // Section 8 required structured telemetry logs
+    logger.info(`Expired jobs deleted: ${jobsDeleted}`, { count: jobsDeleted });
+    logger.info(`Protected application-linked jobs: ${protectedApplicationLinkedCount}`, { count: protectedApplicationLinkedCount });
+    logger.info(`Protected assignment-linked jobs: ${protectedAssignmentLinkedCount}`, { count: protectedAssignmentLinkedCount });
+    logger.info(`Raw payloads deleted: ${payloadsDeleted}`, { count: payloadsDeleted });
+    logger.info('Retention cleanup completed', {
       jobsDeleted,
       jobsProtected,
+      protectedApplicationLinkedCount,
+      protectedAssignmentLinkedCount,
       payloadsDeleted,
       durationMs,
       storageMetrics,

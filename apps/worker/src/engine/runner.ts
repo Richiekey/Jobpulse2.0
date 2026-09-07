@@ -622,12 +622,24 @@ export class ScraperRunner {
         finalStatus,
       });
 
-      // 7. Execute automated database retention cleanup pass
-      try {
-        await RetentionService.executeRetentionCleanup();
-      } catch (retentionErr) {
-        logger.warn('Non-blocking retention cleanup notice post-scrape:', {
-          error: retentionErr instanceof Error ? retentionErr.message : String(retentionErr),
+      // 7. Execute automated database retention cleanup pass ONLY on completely successful scrape runs
+      const isCompletelySuccessful = finalStatus === 'completed' && !hasFailures && summary.attempted > 0;
+
+      if (isCompletelySuccessful) {
+        try {
+          await RetentionService.executeRetentionCleanup();
+        } catch (retentionErr) {
+          logger.warn('Non-blocking retention cleanup notice post-scrape:', {
+            error: retentionErr instanceof Error ? retentionErr.message : String(retentionErr),
+          });
+        }
+      } else {
+        logger.info('Retention cleanup skipped: scrape run completed with failures or had no attempted sources', {
+          finalStatus,
+          hasFailures,
+          attempted: summary.attempted,
+          failedSources: summary.failed,
+          failedJobs: summary.failedJobs,
         });
       }
 

@@ -18,6 +18,7 @@ import {
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
 import { Modal } from '@/components/ui';
+import { getApplicationDisplayState } from '@/lib/application-status';
 
 interface JobDetailsModalProps {
   job: any | null;
@@ -38,7 +39,8 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 }) => {
   const [job, setJob] = useState<any>(initialJob);
   const [isResolving, setIsResolving] = useState<boolean>(false);
-  const hasApplied = isApplied || Boolean(job?.is_applied) || Boolean(job?.application_status);
+  const appStatus = job?.application_status || (job?.has_application ? 'applied' : (isApplied ? 'applied' : null));
+  const appState = getApplicationDisplayState(appStatus);
 
   useEffect(() => {
     setJob(initialJob);
@@ -561,13 +563,13 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   fontSize: '0.875rem',
                   fontWeight: 600,
                   boxSizing: 'border-box',
-                  backgroundColor: hasApplied ? 'var(--success-surface)' : undefined,
-                  borderColor: hasApplied ? 'var(--success-border)' : undefined,
-                  color: hasApplied ? 'var(--success-text)' : undefined,
+                  backgroundColor: appState.hasApplication ? appState.backgroundColor : undefined,
+                  borderColor: appState.hasApplication ? appState.borderColor : undefined,
+                  color: appState.hasApplication ? appState.color : undefined,
                 }}
               >
                 <CheckSquare size={16} />
-                <span>{hasApplied ? 'Application Recorded' : 'Track Application'}</span>
+                <span>{appState.hasApplication ? appState.actionLabel : 'Track Application'}</span>
               </button>
             )}
           </div>

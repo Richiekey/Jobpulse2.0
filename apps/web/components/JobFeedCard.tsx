@@ -16,6 +16,7 @@ import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
 import { Badge } from '@/components/ui';
 import { sanitizeCompanyName, sanitizeJobTitle, sanitizeLocation } from '@/lib/job-cleaner';
+import { getApplicationDisplayState } from '@/lib/application-status';
 
 interface JobFeedCardProps {
   job: any;
@@ -38,6 +39,9 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
 }) => {
   const companyName = sanitizeCompanyName(job.companies?.name);
   const companyLogo = job.companies?.logo_url;
+
+  const appStatus = job.application_status || (job.has_application ? 'applied' : (isApplied ? 'applied' : null));
+  const appState = getApplicationDisplayState(appStatus);
 
   const rawSalaryObj = {
     min: job.salary_min,
@@ -232,9 +236,18 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {isApplied || job.is_applied || job.application_status ? (
-            <span style={{ fontSize: '11px', color: 'var(--success-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
-              ✓ Applied
+          {appState.hasApplication ? (
+            <span
+              style={{
+                fontSize: '11px',
+                color: appState.color,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+              }}
+            >
+              {appState.badgeLabel}
             </span>
           ) : (
             <button

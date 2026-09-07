@@ -238,7 +238,7 @@ export default function HomePage() {
         if (data.data) {
           // Synchronize appliedJobIds with authoritative application state returned from feed
           const appliedFromFeed = (data.data as any[])
-            .filter((j) => j.is_applied || j.application_status)
+            .filter((j) => j.has_application || j.is_applied || j.application_status)
             .map((j) => j.id);
           if (appliedFromFeed.length > 0) {
             setAppliedJobIds((prev) => {

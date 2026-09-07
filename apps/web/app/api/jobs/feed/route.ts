@@ -341,11 +341,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const enrichedItems = resultItems.map((item: any) => ({
-      ...item,
-      application_status: applicationMap.get(item.id) || null,
-      is_applied: applicationMap.has(item.id),
-    }));
+    const enrichedItems = resultItems.map((item: any) => {
+      const appStatus = applicationMap.get(item.id) || null;
+      return {
+        ...item,
+        application_status: appStatus,
+        has_application: applicationMap.has(item.id),
+        is_applied: appStatus === 'applied',
+      };
+    });
 
     // Calculate Currency-Isolated Salary Distribution Facets
     const salariesByCurrency: Record<

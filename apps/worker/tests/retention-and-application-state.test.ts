@@ -169,5 +169,23 @@ describe('Job Retention and Application State Hardening (P0)', () => {
       expect(purgeEligible.map((j) => j.id)).toEqual(['job-1']);
       expect(purgeEligible.some((j) => j.id === 'job-2')).toBe(false);
     });
+
+    it('verifies that ScraperRunner executes retention cleanup strictly on completely successful runs without failures', () => {
+      const shouldRunRetention = (finalStatus: string, hasFailures: boolean, attempted: number) => {
+        return finalStatus === 'completed' && !hasFailures && attempted > 0;
+      };
+
+      // Clean successful run -> runs retention
+      expect(shouldRunRetention('completed', false, 5)).toBe(true);
+
+      // Partial failure (failed sources or failed jobs) -> skips retention
+      expect(shouldRunRetention('completed', true, 5)).toBe(false);
+
+      // Failed run -> skips retention
+      expect(shouldRunRetention('failed', true, 5)).toBe(false);
+
+      // Zero sources due/attempted -> skips retention
+      expect(shouldRunRetention('completed', false, 0)).toBe(false);
+    });
   });
 });

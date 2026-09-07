@@ -225,24 +225,29 @@ DECLARE
     v_batches_run INT := 0;
     v_batch_deleted INT := 0;
     v_protected_count INT := 0;
+    v_protected_apps_count INT := 0;
+    v_protected_assignments_count INT := 0;
     v_cutoff TIMESTAMPTZ := now() - (p_retention_days || ' days')::interval;
 BEGIN
     -- Authorization check: service_role or admin
-    IF current_user != 'service_role' 
+    IF current_user NOT IN ('service_role', 'postgres', 'supabase_admin') 
        AND coalesce(current_setting('request.jwt.claim.role', true), '') != 'service_role' 
        AND NOT public.is_admin() THEN
         RAISE EXCEPTION 'FORBIDDEN: Administrative privileges required to execute job retention purge.';
     END IF;
 
     -- Count total expired jobs protected due to user applications or active assignments
-    SELECT count(DISTINCT j.id) INTO v_protected_count
+    SELECT count(DISTINCT j.id) INTO v_protected_apps_count
     FROM public.jobs j
     WHERE j.status = 'expired'
-      AND (
-          EXISTS (SELECT 1 FROM public.applications a WHERE a.job_id = j.id)
-          OR
-          EXISTS (SELECT 1 FROM public.job_assignments ja WHERE ja.job_id = j.id)
-      );
+      AND EXISTS (SELECT 1 FROM public.applications a WHERE a.job_id = j.id);
+
+    SELECT count(DISTINCT j.id) INTO v_protected_assignments_count
+    FROM public.jobs j
+    WHERE j.status = 'expired'
+      AND EXISTS (SELECT 1 FROM public.job_assignments ja WHERE ja.job_id = j.id);
+
+    v_protected_count := v_protected_apps_count + v_protected_assignments_count;
 
     -- Loop in bounded batches to avoid transaction lock amplification and memory limits
     FOR v_batches_run IN 1..p_max_batches LOOP
@@ -272,6 +277,8 @@ BEGIN
     RETURN jsonb_build_object(
         'deleted_jobs_count', v_total_deleted,
         'protected_jobs_count', v_protected_count,
+        'protected_application_linked_count', v_protected_apps_count,
+        'protected_assignment_linked_count', v_protected_assignments_count,
         'batches_executed', v_batches_run,
         'retention_cutoff', v_cutoff
     );

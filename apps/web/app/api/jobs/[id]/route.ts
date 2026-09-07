@@ -175,7 +175,8 @@ export async function GET(
     const enrichedJob = {
       ...job,
       application_status: applicationStatus,
-      is_applied: Boolean(applicationStatus),
+      has_application: Boolean(applicationStatus),
+      is_applied: applicationStatus === 'applied',
     };
 
     return ApiResponse.success(enrichedJob);
