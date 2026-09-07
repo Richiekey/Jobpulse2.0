@@ -24,6 +24,7 @@ interface JobDetailsModalProps {
   onClose: () => void;
   isSaved?: boolean;
   onToggleSave?: (jobId: string) => void;
+  isApplied?: boolean;
   onTrackApplication?: (job: any) => void;
 }
 
@@ -32,10 +33,12 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   onClose,
   isSaved = false,
   onToggleSave,
+  isApplied = false,
   onTrackApplication,
 }) => {
   const [job, setJob] = useState<any>(initialJob);
   const [isResolving, setIsResolving] = useState<boolean>(false);
+  const hasApplied = isApplied || Boolean(job?.is_applied) || Boolean(job?.application_status);
 
   useEffect(() => {
     setJob(initialJob);
@@ -558,10 +561,13 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   fontSize: '0.875rem',
                   fontWeight: 600,
                   boxSizing: 'border-box',
+                  backgroundColor: hasApplied ? 'var(--success-surface)' : undefined,
+                  borderColor: hasApplied ? 'var(--success-border)' : undefined,
+                  color: hasApplied ? 'var(--success-text)' : undefined,
                 }}
               >
                 <CheckSquare size={16} />
-                <span>Track Application</span>
+                <span>{hasApplied ? 'Application Recorded' : 'Track Application'}</span>
               </button>
             )}
           </div>

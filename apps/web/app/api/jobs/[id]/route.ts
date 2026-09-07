@@ -158,7 +158,27 @@ export async function GET(
       }
     }
 
-    return ApiResponse.success(job);
+    let applicationStatus: string | null = null;
+    if (authResult.user?.id) {
+      const { data: appRecord } = await supabase
+        .from('applications')
+        .select('status')
+        .eq('user_id', authResult.user.id)
+        .eq('job_id', job.id)
+        .maybeSingle();
+
+      if (appRecord) {
+        applicationStatus = appRecord.status;
+      }
+    }
+
+    const enrichedJob = {
+      ...job,
+      application_status: applicationStatus,
+      is_applied: Boolean(applicationStatus),
+    };
+
+    return ApiResponse.success(enrichedJob);
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred.', err, 500);
   }

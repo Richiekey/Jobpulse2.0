@@ -9,6 +9,7 @@ import { getAdapterForSource } from '@jobpulse/ats';
 import { logger } from '@jobpulse/shared';
 import { supabase } from '../db.js';
 import { IngestionPipeline } from './pipeline.js';
+import { RetentionService } from './retention.js';
 
 export type ScrapeExecutionMode =
   | 'scheduled'
@@ -620,6 +621,15 @@ export class ScraperRunner {
         ...summary,
         finalStatus,
       });
+
+      // 7. Execute automated database retention cleanup pass
+      try {
+        await RetentionService.executeRetentionCleanup();
+      } catch (retentionErr) {
+        logger.warn('Non-blocking retention cleanup notice post-scrape:', {
+          error: retentionErr instanceof Error ? retentionErr.message : String(retentionErr),
+        });
+      }
 
       if (!runId) {
         throw new Error('Uninitialized run ID');

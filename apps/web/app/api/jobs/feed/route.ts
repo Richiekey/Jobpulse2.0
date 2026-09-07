@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
   try {
     const authResult = await AuthGuard.requireAuthenticatedUser();
     if ('errorResponse' in authResult) return authResult.errorResponse;
+    const { user } = authResult;
 
     const { searchParams } = new URL(request.url);
 
@@ -132,7 +133,9 @@ export async function GET(request: NextRequest) {
         status,
         canonical_url,
         apply_url,
+        original_apply_url,
         url_resolution_confidence,
+        source_metadata,
         ats_platform_slug,
         job_function_slug,
         job_function_confidence,
@@ -320,6 +323,30 @@ export async function GET(request: NextRequest) {
     const hasMore = items.length > limit;
     const resultItems = hasMore ? items.slice(0, limit) : items;
 
+    // Batch query user's applications for these jobs to ensure authoritative application state
+    const jobIds = resultItems.map((item: any) => item.id);
+    const applicationMap = new Map<string, string>();
+
+    if (user?.id && jobIds.length > 0) {
+      const { data: userApplications } = await supabase
+        .from('applications')
+        .select('job_id, status')
+        .eq('user_id', user.id)
+        .in('job_id', jobIds);
+
+      if (userApplications) {
+        for (const app of userApplications) {
+          applicationMap.set(app.job_id, app.status);
+        }
+      }
+    }
+
+    const enrichedItems = resultItems.map((item: any) => ({
+      ...item,
+      application_status: applicationMap.get(item.id) || null,
+      is_applied: applicationMap.has(item.id),
+    }));
+
     // Calculate Currency-Isolated Salary Distribution Facets
     const salariesByCurrency: Record<
       string,
@@ -333,7 +360,7 @@ export async function GET(request: NextRequest) {
       }
     > = {};
 
-    for (const item of resultItems as any[]) {
+    for (const item of enrichedItems as any[]) {
       const curr = item.salary_currency && item.salary_currency.trim() ? item.salary_currency.trim().toUpperCase() : 'UNKNOWN';
       if (!salariesByCurrency[curr]) {
         salariesByCurrency[curr] = {
@@ -362,18 +389,18 @@ export async function GET(request: NextRequest) {
     }
 
     let nextCursor: string | null = null;
-    if (hasMore && resultItems.length > 0) {
-      const lastItem = resultItems[resultItems.length - 1];
+    if (hasMore && enrichedItems.length > 0) {
+      const lastItem = enrichedItems[enrichedItems.length - 1];
       if (lastItem) {
         nextCursor = encodeCursor(lastItem.posted_at, lastItem.id);
       }
     }
 
-    return ApiResponse.success(resultItems, {
+    return ApiResponse.success(enrichedItems, {
       pagination: {
         next_cursor: nextCursor,
         has_more: hasMore,
-        count: resultItems.length,
+        count: enrichedItems.length,
       },
       facets: {
         facet_scope: 'page',

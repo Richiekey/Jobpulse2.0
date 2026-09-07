@@ -236,6 +236,18 @@ export default function HomePage() {
         }
 
         if (data.data) {
+          // Synchronize appliedJobIds with authoritative application state returned from feed
+          const appliedFromFeed = (data.data as any[])
+            .filter((j) => j.is_applied || j.application_status)
+            .map((j) => j.id);
+          if (appliedFromFeed.length > 0) {
+            setAppliedJobIds((prev) => {
+              const next = new Set(prev);
+              appliedFromFeed.forEach((id) => next.add(id));
+              return next;
+            });
+          }
+
           if (resetCursor) {
             setJobs(data.data || []);
             if (data.data.length > 0 && !selectedJobId) {
@@ -707,7 +719,7 @@ export default function HomePage() {
                         }}
                         isSaved={savedJobIds.has(job.id)}
                         onToggleSave={(e, id) => handleToggleSave(id)}
-                        isApplied={appliedJobIds.has(job.id)}
+                        isApplied={appliedJobIds.has(job.id) || Boolean(job.is_applied) || Boolean(job.application_status)}
                         onTrackApplication={(e, j) => handleTrackApplication(j)}
                       />
                     ))}
@@ -736,7 +748,7 @@ export default function HomePage() {
               job={selectedJob}
               isSaved={selectedJob ? savedJobIds.has(selectedJob.id) : false}
               onToggleSave={handleToggleSave}
-              isApplied={selectedJob ? appliedJobIds.has(selectedJob.id) : false}
+              isApplied={selectedJob ? (appliedJobIds.has(selectedJob.id) || Boolean(selectedJob.is_applied) || Boolean(selectedJob.application_status)) : false}
               onTrackApplication={handleTrackApplication}
               onNextJob={handleNextJob}
               onPrevJob={handlePrevJob}
@@ -772,7 +784,7 @@ export default function HomePage() {
                       onSelect={() => setModalJob(job)}
                       isSaved={true}
                       onToggleSave={(e, id) => handleToggleSave(id)}
-                      isApplied={appliedJobIds.has(job.id)}
+                      isApplied={appliedJobIds.has(job.id) || Boolean(job.is_applied) || Boolean(job.application_status)}
                       onTrackApplication={(e, j) => handleTrackApplication(j)}
                     />
                   );
@@ -903,6 +915,7 @@ export default function HomePage() {
           job={modalJob}
           onClose={() => setModalJob(null)}
           isSaved={savedJobIds.has(modalJob.id)}
+          isApplied={appliedJobIds.has(modalJob.id) || Boolean(modalJob.is_applied) || Boolean(modalJob.application_status)}
           onToggleSave={handleToggleSave}
           onTrackApplication={handleTrackApplication}
         />

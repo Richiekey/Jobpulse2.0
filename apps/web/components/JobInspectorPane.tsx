@@ -203,6 +203,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
 
   const primaryApplyUrl = directAtsUrl || jobrightUrl || job.apply_url || job.canonical_url || '';
   const isDirectAts = Boolean(directAtsUrl);
+  const hasApplied = isApplied || Boolean(job.is_applied) || Boolean(job.application_status);
 
   let applyButtonLabel = 'Apply on Company Site';
   if (isResolving) {
@@ -325,9 +326,9 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               padding: '0 12px',
               fontSize: '13px',
               fontWeight: 600,
-              backgroundColor: isApplied ? 'var(--success-surface)' : 'var(--bg-surface-elevated)',
-              border: isApplied ? '1px solid var(--success-border)' : '1px solid var(--border-default)',
-              color: isApplied ? 'var(--success-text)' : 'var(--text-primary)',
+              backgroundColor: hasApplied ? 'var(--success-surface)' : 'var(--bg-surface-elevated)',
+              border: hasApplied ? '1px solid var(--success-border)' : '1px solid var(--border-default)',
+              color: hasApplied ? 'var(--success-text)' : 'var(--text-primary)',
               borderRadius: 'var(--radius-md)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
@@ -335,7 +336,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
             }}
           >
             <CheckSquare size={15} />
-            <span>{isApplied ? 'Application Recorded' : 'Mark Applied'}</span>
+            <span>{hasApplied ? 'Application Recorded' : 'Mark Applied'}</span>
           </button>
         </div>
 

@@ -232,7 +232,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {isApplied ? (
+          {isApplied || job.is_applied || job.application_status ? (
             <span style={{ fontSize: '11px', color: 'var(--success-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
               ✓ Applied
             </span>
