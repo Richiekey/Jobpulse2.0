@@ -78,22 +78,44 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     }
   }
 
-  // Detect ATS Name
-  const isJobright = job.ats_platform_slug === 'jobright';
+  // Source & Link resolution
+  const atsPlatform = job.ats_platform_slug || 'direct';
+  const isJobrightSource =
+    atsPlatform === 'jobright' ||
+    job.source === 'jobright' ||
+    job.source_metadata?.originalSource === 'jobright_github_markdown' ||
+    Boolean(job.source_metadata?.jobright_reference_url) ||
+    Boolean(job.apply_url?.includes('jobright.ai'));
+
   let atsName = 'Direct Employer ATS';
   if (job.apply_url?.includes('greenhouse.io')) atsName = 'Greenhouse ATS';
   else if (job.apply_url?.includes('lever.co')) atsName = 'Lever ATS';
   else if (job.apply_url?.includes('ashbyhq.com')) atsName = 'Ashby ATS';
   else if (job.apply_url?.includes('myworkdayjobs.com')) atsName = 'Workday ATS';
-  else if (isJobright) atsName = 'Jobright Aggregator';
+  else if (isJobrightSource) atsName = 'Jobright Aggregator';
 
-  const applyUrl = job.apply_url || job.canonical_url || `/api/jobs/${job.id}/apply`;
-  const isDirectAts = applyUrl && !applyUrl.includes('jobright.ai');
-  let applyButtonLabel = `Apply on ${companyName} Careers`;
+  const directAtsUrl =
+    (job.apply_url && !job.apply_url.includes('jobright.ai') ? job.apply_url : null) ||
+    (job.original_apply_url && !job.original_apply_url.includes('jobright.ai') ? job.original_apply_url : null) ||
+    (job.canonical_url && !job.canonical_url.includes('jobright.ai') ? job.canonical_url : null) ||
+    (job.source_metadata?.ats_url && !job.source_metadata.ats_url.includes('jobright.ai') ? job.source_metadata.ats_url : null) ||
+    null;
+
+  const jobrightUrl =
+    job.source_metadata?.jobright_reference_url ||
+    (job.apply_url?.includes('jobright.ai') ? job.apply_url : null) ||
+    (job.original_apply_url?.includes('jobright.ai') ? job.original_apply_url : null) ||
+    (job.job_sources?.find((s: any) => s.source_job_url?.includes('jobright.ai'))?.source_job_url) ||
+    null;
+
+  const primaryApplyUrl = directAtsUrl || jobrightUrl || job.apply_url || job.canonical_url || '';
+  const isDirectAts = Boolean(directAtsUrl);
+
+  let applyButtonLabel = 'Apply on Company Site';
   if (isDirectAts) {
-    applyButtonLabel = `Apply via ${atsName}`;
-  } else if (isJobright) {
-    applyButtonLabel = 'View on Jobright (Aggregator)';
+    applyButtonLabel = 'Apply on company site';
+  } else if (isJobrightSource || (primaryApplyUrl && primaryApplyUrl.includes('jobright.ai'))) {
+    applyButtonLabel = 'View on Jobright';
   }
 
   return (
@@ -328,6 +350,86 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </div>
         )}
 
+        {/* Dedicated Direct ATS & Jobright Links Section (Employer Reference Layout) */}
+        {(directAtsUrl || jobrightUrl) && (
+          <div
+            style={{
+              padding: '16px 20px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-default)',
+              marginBottom: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
+          >
+            {directAtsUrl && (
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                  }}
+                >
+                  ORIGINAL APPLY (COMPANY / ATS)
+                </div>
+                <a
+                  href={directAtsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: '#38bdf8',
+                    fontSize: '13px',
+                    wordBreak: 'break-all',
+                    textDecoration: 'underline',
+                    lineHeight: 1.45,
+                    display: 'inline-block',
+                  }}
+                >
+                  {directAtsUrl}
+                </a>
+              </div>
+            )}
+
+            {jobrightUrl && (
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                  }}
+                >
+                  JOBRIGHT LISTING
+                </div>
+                <a
+                  href={jobrightUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: '#38bdf8',
+                    fontSize: '13px',
+                    wordBreak: 'break-all',
+                    textDecoration: 'underline',
+                    lineHeight: 1.45,
+                    display: 'inline-block',
+                  }}
+                >
+                  {jobrightUrl}
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Job Description */}
         <div style={{ marginBottom: '28px' }}>
           <h2
@@ -396,16 +498,48 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             )}
           </div>
 
-          <a
-            href={applyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-primary"
-            style={{ padding: '9px 20px', fontSize: '0.875rem' }}
-          >
-            <span>{applyButtonLabel}</span>
-            <ExternalLink size={15} />
-          </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {jobrightUrl && directAtsUrl && (
+              <a
+                href={jobrightUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 16px',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-default)',
+                  color: 'var(--text-primary)',
+                }}
+                title="View original Jobright listing"
+              >
+                <span>Jobright</span>
+                <ExternalLink size={14} color="var(--text-muted)" />
+              </a>
+            )}
+
+            {primaryApplyUrl ? (
+              <a
+                href={primaryApplyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary"
+                style={{ padding: '9px 20px', fontSize: '0.875rem', fontWeight: 700 }}
+              >
+                <span>{applyButtonLabel}</span>
+                <ExternalLink size={15} />
+              </a>
+            ) : (
+              <button disabled className="btn btn-secondary" style={{ padding: '9px 16px', fontSize: '0.875rem' }}>
+                No Direct Link
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </Modal>

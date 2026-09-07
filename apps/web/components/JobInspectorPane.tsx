@@ -127,27 +127,49 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   }
 
   const atsPlatform = job.ats_platform_slug || 'direct';
-  const isJobright = atsPlatform === 'jobright';
+  const isJobrightSource =
+    atsPlatform === 'jobright' ||
+    job.source === 'jobright' ||
+    job.source_metadata?.originalSource === 'jobright_github_markdown' ||
+    Boolean(job.source_metadata?.jobright_reference_url) ||
+    Boolean(job.apply_url?.includes('jobright.ai'));
+
   const atsNameMap: Record<string, string> = {
     greenhouse: 'Greenhouse ATS',
     lever: 'Lever ATS',
     ashby: 'Ashby ATS',
-    workday: 'Workday CXS',
+    workday: 'Workday ATS',
     smartrecruiters: 'SmartRecruiters',
-    icims: 'iCIMS Portal',
+    icims: 'iCIMS',
     successfactors: 'SAP SuccessFactors',
     oracle: 'Oracle Cloud HCM',
     jobright: 'Jobright Aggregator',
   };
 
-  const applyUrl = job.apply_url || job.canonical_url || '';
-  const isDirectAts = applyUrl && !applyUrl.includes('jobright.ai');
+  // Direct ATS / Employer Link
+  const directAtsUrl =
+    (job.apply_url && !job.apply_url.includes('jobright.ai') ? job.apply_url : null) ||
+    (job.original_apply_url && !job.original_apply_url.includes('jobright.ai') ? job.original_apply_url : null) ||
+    (job.canonical_url && !job.canonical_url.includes('jobright.ai') ? job.canonical_url : null) ||
+    (job.source_metadata?.ats_url && !job.source_metadata.ats_url.includes('jobright.ai') ? job.source_metadata.ats_url : null) ||
+    null;
+
+  // Jobright Reference URL
+  const jobrightUrl =
+    job.source_metadata?.jobright_reference_url ||
+    (job.apply_url?.includes('jobright.ai') ? job.apply_url : null) ||
+    (job.original_apply_url?.includes('jobright.ai') ? job.original_apply_url : null) ||
+    (job.job_sources?.find((s: any) => s.source_job_url?.includes('jobright.ai'))?.source_job_url) ||
+    null;
+
+  const primaryApplyUrl = directAtsUrl || jobrightUrl || job.apply_url || job.canonical_url || '';
+  const isDirectAts = Boolean(directAtsUrl);
 
   let applyButtonLabel = 'Apply on Company Site';
   if (isDirectAts) {
-    applyButtonLabel = `Apply on ${atsNameMap[atsPlatform] || 'Company Site'}`;
-  } else if (isJobright || (applyUrl && applyUrl.includes('jobright.ai'))) {
-    applyButtonLabel = 'View on Jobright (Aggregator Link)';
+    applyButtonLabel = 'Apply on company site';
+  } else if (isJobrightSource || (primaryApplyUrl && primaryApplyUrl.includes('jobright.ai'))) {
+    applyButtonLabel = 'View on Jobright';
   }
 
   return (
@@ -180,40 +202,60 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
           gap: '12px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {applyUrl ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <a
-                href={applyUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-primary"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '9px 18px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  textDecoration: 'none',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: isJobright && !isDirectAts ? 'var(--status-info-border)' : 'var(--brand-primary)',
-                  color: '#ffffff',
-                }}
-              >
-                <span>{applyButtonLabel}</span>
-                <ExternalLink size={14} />
-              </a>
-              {!isDirectAts && isJobright && (
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                  Aggregated source • external redirect
-                </span>
-              )}
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {primaryApplyUrl ? (
+            <a
+              href={primaryApplyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 18px',
+                fontSize: '13px',
+                fontWeight: 700,
+                textDecoration: 'none',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--brand-primary)',
+                color: '#ffffff',
+              }}
+            >
+              <span>{applyButtonLabel}</span>
+              <ExternalLink size={14} />
+            </a>
           ) : (
             <button disabled className="btn btn-secondary" style={{ padding: '9px 16px', fontSize: '13px' }}>
               No Direct Link
             </button>
+          )}
+
+          {/* Secondary Jobright Button if direct apply exists and job originated from Jobright */}
+          {jobrightUrl && directAtsUrl && (
+            <a
+              href={jobrightUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 14px',
+                fontSize: '13px',
+                fontWeight: 600,
+                textDecoration: 'none',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-primary)',
+                transition: 'all 0.15s ease',
+              }}
+              title="View original Jobright listing"
+            >
+              <span>Jobright</span>
+              <ExternalLink size={13} color="var(--text-muted)" />
+            </a>
           )}
 
           <button
@@ -350,6 +392,27 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
 
           {/* Metadata Badges */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {isJobrightSource && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  padding: '3px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                  border: '1px solid rgba(56, 189, 248, 0.28)',
+                  color: '#38bdf8',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                JOBRIGHT
+              </span>
+            )}
+
             <span
               style={{
                 display: 'inline-flex',
@@ -359,14 +422,14 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
                 fontWeight: 600,
                 padding: '4px 10px',
                 borderRadius: 'var(--radius-sm)',
-                backgroundColor: isJobright ? 'var(--status-info-bg)' : 'rgba(16, 185, 129, 0.12)',
-                border: isJobright ? '1px solid var(--status-info-border)' : '1px solid rgba(16, 185, 129, 0.25)',
-                color: isJobright ? 'var(--status-info-text)' : '#34d399',
+                backgroundColor: isDirectAts ? 'rgba(16, 185, 129, 0.12)' : 'var(--status-info-bg)',
+                border: isDirectAts ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--status-info-border)',
+                color: isDirectAts ? '#34d399' : 'var(--status-info-text)',
               }}
-              title={isJobright ? 'Aggregated via Jobright Collection (External Redirect)' : `Direct ATS (${atsNameMap[atsPlatform] || atsPlatform})`}
+              title={isDirectAts ? `Direct ATS (${atsNameMap[atsPlatform] || 'Verified Employer Board'})` : 'Aggregated listing'}
             >
               <ShieldCheck size={14} />
-              {isJobright ? 'Jobright Aggregator' : (atsNameMap[atsPlatform] || 'Verified ATS')}
+              {isDirectAts ? (atsNameMap[atsPlatform] || 'Verified Direct ATS') : 'Jobright Aggregator'}
             </span>
 
             {job.job_function_slug && (
@@ -496,6 +559,85 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
           </div>
         )}
 
+        {/* Dedicated Direct ATS & Jobright Links Section (Employer Reference Layout) */}
+        {(directAtsUrl || jobrightUrl) && (
+          <div
+            style={{
+              padding: '16px 20px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-default)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
+          >
+            {directAtsUrl && (
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                  }}
+                >
+                  ORIGINAL APPLY (COMPANY / ATS)
+                </div>
+                <a
+                  href={directAtsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: '#38bdf8',
+                    fontSize: '13px',
+                    wordBreak: 'break-all',
+                    textDecoration: 'underline',
+                    lineHeight: 1.45,
+                    display: 'inline-block',
+                  }}
+                >
+                  {directAtsUrl}
+                </a>
+              </div>
+            )}
+
+            {jobrightUrl && (
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                  }}
+                >
+                  JOBRIGHT LISTING
+                </div>
+                <a
+                  href={jobrightUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: '#38bdf8',
+                    fontSize: '13px',
+                    wordBreak: 'break-all',
+                    textDecoration: 'underline',
+                    lineHeight: 1.45,
+                    display: 'inline-block',
+                  }}
+                >
+                  {jobrightUrl}
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Job Description */}
         <div>
           <h4 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '12px' }}>
@@ -547,7 +689,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
             <div>
               <span style={{ color: 'var(--text-muted)' }}>Job Source: </span>
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                {isJobright ? 'Jobright GitHub Collection' : (job.source || 'Direct ATS')}
+                {isJobrightSource ? 'Jobright GitHub Collection' : (job.source || 'Direct ATS')}
               </span>
             </div>
             <div>
@@ -559,7 +701,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
             <div>
               <span style={{ color: 'var(--text-muted)' }}>Application Link: </span>
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                {isDirectAts ? 'Direct Employer ATS' : (isJobright ? 'Aggregator Redirect' : 'Standard Link')}
+                {isDirectAts ? 'Direct Employer ATS' : (isJobrightSource ? 'Aggregator Redirect' : 'Standard Link')}
               </span>
             </div>
           </div>

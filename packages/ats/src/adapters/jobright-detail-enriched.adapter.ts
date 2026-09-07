@@ -31,15 +31,31 @@ function extractHelperPayload(html: string): Record<string, unknown> | null {
   const match = html.match(
     /<script[^>]*id=["']jobright-helper-job-detail-info["'][^>]*>([\s\S]*?)<\/script>/i
   );
-  if (!match?.[1]) return null;
-
-  try {
-    const parsed = JSON.parse(match[1].trim()) as Record<string, unknown>;
-    const jobResult = parsed['jobResult'];
-    return jobResult && typeof jobResult === 'object' ? jobResult as Record<string, unknown> : null;
-  } catch {
-    return null;
+  if (match?.[1]) {
+    try {
+      const parsed = JSON.parse(match[1].trim()) as Record<string, unknown>;
+      const jobResult = parsed['jobResult'];
+      if (jobResult && typeof jobResult === 'object') return jobResult as Record<string, unknown>;
+    } catch {
+      // Fall through to __NEXT_DATA__
+    }
   }
+
+  const nextDataMatch = html.match(
+    /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i
+  );
+  if (nextDataMatch?.[1]) {
+    try {
+      const parsed = JSON.parse(nextDataMatch[1].trim()) as Record<string, unknown>;
+      const pageProps = (parsed['props'] as any)?.pageProps;
+      const jr = pageProps?.dataSource?.jobResult || pageProps?.jobResult;
+      if (jr && typeof jr === 'object') return jr as Record<string, unknown>;
+    } catch {
+      // Ignore
+    }
+  }
+
+  return null;
 }
 
 function extractJsonLdUrl(html: string): string | undefined {
@@ -156,7 +172,7 @@ async function fetchDetailPage(jobId: string, sessionId?: string): Promise<strin
   }
 }
 
-async function resolveOriginalJobUrl(jobId: string): Promise<string | undefined> {
+export async function resolveOriginalJobUrl(jobId: string): Promise<string | undefined> {
   // First try the detail page without credentials. Some Jobright pages expose the
   // helper payload/JSON-LD publicly; this avoids making credentials mandatory.
   const publicHtml = await fetchDetailPage(jobId);
