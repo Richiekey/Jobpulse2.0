@@ -15,6 +15,7 @@ import {
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
 import { Badge } from '@/components/ui';
+import { sanitizeCompanyName, sanitizeJobTitle, sanitizeLocation } from '@/lib/job-cleaner';
 
 interface JobFeedCardProps {
   job: any;
@@ -35,8 +36,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
   isApplied = false,
   onTrackApplication,
 }) => {
-  const rawCompanyName = job.companies?.name || 'Verified Employer';
-  const companyName = rawCompanyName.replace(/^\[(.*)\]$/, '$1').trim();
+  const companyName = sanitizeCompanyName(job.companies?.name);
   const companyLogo = job.companies?.logo_url;
 
   const rawSalaryObj = {
@@ -75,11 +75,10 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
     job.location_city && job.location_country
       ? `${job.location_city}, ${job.location_country}`
       : job.locations && job.locations.length > 0
-      ? job.locations[0]
+      ? sanitizeLocation(job.locations[0])
       : 'Unspecified';
 
-  const rawTitle = job.canonical_title || job.display_title || 'Untitled Role';
-  const cleanTitle = rawTitle.replace(/^\[(.*)\]$/, '$1').trim();
+  const cleanTitle = sanitizeJobTitle(job.canonical_title || job.display_title);
 
   return (
     <div

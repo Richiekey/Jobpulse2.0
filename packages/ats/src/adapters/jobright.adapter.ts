@@ -169,10 +169,33 @@ export class JobrightAdapter implements ATSAdapter {
     let rowsParsed = 0;
     let rowsRejected = 0;
 
+    const splitMarkdownRow = (rawLineText: string): string[] => {
+      const cells: string[] = [];
+      let current = '';
+      let inBracket = 0;
+      let inParen = 0;
+      for (let i = 0; i < rawLineText.length; i++) {
+        const ch = rawLineText[i];
+        if (ch === '[') inBracket++;
+        else if (ch === ']') inBracket = Math.max(0, inBracket - 1);
+        else if (ch === '(') inParen++;
+        else if (ch === ')') inParen = Math.max(0, inParen - 1);
+
+        if (ch === '|' && inBracket === 0 && inParen === 0) {
+          cells.push(current.trim());
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      cells.push(current.trim());
+      return cells.slice(1, -1);
+    };
+
     for (const rawLine of lines) {
       const line = rawLine.trim();
       if (!line.startsWith('|') || !line.endsWith('|')) continue;
-      const cells = line.split('|').map((c) => c.trim()).slice(1, -1);
+      const cells = splitMarkdownRow(line);
       if (cells.length < 3) continue;
       const lowerCells = cells.map((c) => c.toLowerCase());
       if (lowerCells.some((c) => c.includes('company')) && lowerCells.some((c) => c.includes('title') || c.includes('job title'))) {

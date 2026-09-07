@@ -172,21 +172,74 @@ async function fetchDetailPage(jobId: string, sessionId?: string): Promise<strin
   }
 }
 
-export async function resolveOriginalJobUrl(jobId: string): Promise<string | undefined> {
-  // First try the detail page without credentials. Some Jobright pages expose the
-  // helper payload/JSON-LD publicly; this avoids making credentials mandatory.
-  const publicHtml = await fetchDetailPage(jobId);
-  if (publicHtml) {
-    const directUrl = extractDirectUrl(publicHtml);
-    if (directUrl) return directUrl;
+export interface JobrightResolvedDetail {
+  directUrl?: string;
+  cleanTitle?: string;
+  companyName?: string;
+}
+
+export function extractJobrightDetail(html: string): JobrightResolvedDetail {
+  const helper = extractHelperPayload(html);
+  let directUrl: string | undefined;
+  let cleanTitle: string | undefined;
+  let companyName: string | undefined;
+
+  if (helper) {
+    const rawJobTitle = typeof helper['jobTitle'] === 'string' ? helper['jobTitle'].trim() : undefined;
+    if (rawJobTitle && rawJobTitle.length > 2 && !rawJobTitle.includes('](') && !rawJobTitle.startsWith('http')) {
+      cleanTitle = rawJobTitle;
+    }
+
+    const rawCompany = typeof helper['companyName'] === 'string' ? helper['companyName'].trim() : undefined;
+    if (rawCompany && rawCompany.length > 1 && !rawCompany.startsWith('[')) {
+      companyName = rawCompany;
+    }
+
+    const preferredFields = [
+      'originalUrl',
+      'applyLink',
+      'applyUrl',
+      'jobApplyUrl',
+      'externalUrl',
+      'companyJobUrl',
+      'sourceUrl',
+      'directUrl',
+      'applicationUrl',
+      'externalApplyUrl',
+    ];
+
+    const candidates = preferredFields
+      .map((field) => chooseDirectUrl(helper[field]))
+      .filter((value): value is string => Boolean(value));
+
+    const atsUrl = candidates.find((value) => URLResolver.isDirectAtsUrl(value));
+    directUrl = atsUrl || candidates[0];
   }
 
-  // Fall back to the authenticated legacy path when the public page is gated.
+  if (!directUrl) {
+    directUrl = extractJsonLdUrl(html);
+  }
+
+  return { directUrl, cleanTitle, companyName };
+}
+
+export async function resolveJobrightDetail(jobId: string): Promise<JobrightResolvedDetail | undefined> {
+  const publicHtml = await fetchDetailPage(jobId);
+  if (publicHtml) {
+    const detail = extractJobrightDetail(publicHtml);
+    if (detail.directUrl || detail.cleanTitle) return detail;
+  }
+
   const sessionId = await ensureJobrightSession();
   if (!sessionId) return undefined;
 
   const authenticatedHtml = await fetchDetailPage(jobId, sessionId);
-  return authenticatedHtml ? extractDirectUrl(authenticatedHtml) : undefined;
+  return authenticatedHtml ? extractJobrightDetail(authenticatedHtml) : undefined;
+}
+
+export async function resolveOriginalJobUrl(jobId: string): Promise<string | undefined> {
+  const detail = await resolveJobrightDetail(jobId);
+  return detail?.directUrl;
 }
 
 /**

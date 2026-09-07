@@ -20,6 +20,13 @@ import {
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
+import {
+  sanitizeCompanyName,
+  sanitizeJobTitle,
+  isJobrightOrigin,
+  getDirectAtsUrl,
+  getJobrightReferenceUrl,
+} from '@/lib/job-cleaner';
 
 interface JobInspectorPaneProps {
   job: any | null;
@@ -54,15 +61,25 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   useEffect(() => {
     if (!job) return;
 
-    const isJobright =
-      job.ats_platform_slug === 'jobright' ||
-      job.source === 'jobright' ||
-      job.source_metadata?.originalSource === 'jobright_github_markdown' ||
-      job.apply_url?.includes('jobright.ai');
+    const isJobright = isJobrightOrigin(job);
+    const isEnriched = job.source_metadata?.enrichment_status === 'enriched';
 
-    const hasDirectAts = job.apply_url && !job.apply_url.includes('jobright.ai');
+    const rawTitle = job.canonical_title || job.display_title || '';
+    const rawCompany = job.companies?.name || '';
+    const isMalformed =
+      rawTitle.includes('](') ||
+      rawTitle.includes(']') ||
+      rawCompany.startsWith('[') ||
+      (rawTitle.length > 0 && rawTitle.length <= 2);
 
-    if (isJobright && !hasDirectAts && job.source_metadata?.enrichment_status !== 'enriched') {
+    const hasDirectAts =
+      Boolean(job.apply_url) &&
+      !job.apply_url.includes('jobright.ai') &&
+      job.ats_platform_slug !== 'jobright';
+
+    const needsResolution = (isJobright && (!hasDirectAts || !isEnriched)) || isMalformed;
+
+    if (needsResolution && !isResolving) {
       let isMounted = true;
       setIsResolving(true);
       fetch(`/api/jobs/${job.id}`)
@@ -122,14 +139,12 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
     );
   }
 
-  const rawCompanyName = job.companies?.name || 'Verified Employer';
-  const companyName = rawCompanyName.replace(/^\[(.*)\]$/, '$1').trim();
+  const companyName = sanitizeCompanyName(job.companies?.name);
   const companyLogo = job.companies?.logo_url;
   const companyWebsite = job.companies?.website;
   const companyIndustry = job.companies?.industry;
 
-  const rawTitle = job.display_title || job.canonical_title || 'Untitled Opportunity';
-  const cleanTitle = rawTitle.replace(/^\[(.*)\]$/, '$1').trim();
+  const cleanTitle = sanitizeJobTitle(job.display_title || job.canonical_title);
 
   const rawSalaryObj = {
     min: job.salary_min,
@@ -166,12 +181,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   }
 
   const atsPlatform = job.ats_platform_slug || 'direct';
-  const isJobrightSource =
-    atsPlatform === 'jobright' ||
-    job.source === 'jobright' ||
-    job.source_metadata?.originalSource === 'jobright_github_markdown' ||
-    Boolean(job.source_metadata?.jobright_reference_url) ||
-    Boolean(job.apply_url?.includes('jobright.ai'));
+  const isJobrightSource = isJobrightOrigin(job);
 
   const atsNameMap: Record<string, string> = {
     greenhouse: 'Greenhouse ATS',
@@ -186,29 +196,19 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   };
 
   // Direct ATS / Employer Link
-  const directAtsUrl =
-    (job.apply_url && !job.apply_url.includes('jobright.ai') ? job.apply_url : null) ||
-    (job.original_apply_url && !job.original_apply_url.includes('jobright.ai') ? job.original_apply_url : null) ||
-    (job.canonical_url && !job.canonical_url.includes('jobright.ai') ? job.canonical_url : null) ||
-    (job.source_metadata?.ats_url && !job.source_metadata.ats_url.includes('jobright.ai') ? job.source_metadata.ats_url : null) ||
-    null;
+  const directAtsUrl = getDirectAtsUrl(job);
 
   // Jobright Reference URL
-  const jobrightUrl =
-    job.source_metadata?.jobright_reference_url ||
-    (job.apply_url?.includes('jobright.ai') ? job.apply_url : null) ||
-    (job.original_apply_url?.includes('jobright.ai') ? job.original_apply_url : null) ||
-    (job.job_sources?.find((s: any) => s.source_job_url?.includes('jobright.ai'))?.source_job_url) ||
-    null;
+  const jobrightUrl = getJobrightReferenceUrl(job);
 
   const primaryApplyUrl = directAtsUrl || jobrightUrl || job.apply_url || job.canonical_url || '';
   const isDirectAts = Boolean(directAtsUrl);
 
   let applyButtonLabel = 'Apply on Company Site';
-  if (isDirectAts) {
-    applyButtonLabel = 'Apply on company site';
-  } else if (isResolving) {
+  if (isResolving) {
     applyButtonLabel = 'Resolving Direct ATS...';
+  } else if (isDirectAts) {
+    applyButtonLabel = 'Apply on company site';
   } else if (isJobrightSource || (primaryApplyUrl && primaryApplyUrl.includes('jobright.ai'))) {
     applyButtonLabel = 'View on Jobright';
   }

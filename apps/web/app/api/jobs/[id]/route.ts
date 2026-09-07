@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
 import { AuthGuard } from '@/lib/auth-guard';
-import { resolveOriginalJobUrl } from '@jobpulse/ats';
+import { resolveJobrightDetail, resolveOriginalJobUrl } from '@jobpulse/ats';
 import { URLResolver } from '@jobpulse/url-resolution';
 
 export async function GET(
@@ -25,28 +25,19 @@ export async function GET(
       .from('jobs')
       .select(`
         *,
-        companies (
+        companies:company_id (
           id,
           name,
-          normalized_name,
-          logo_url,
           website,
-          careers_url,
+          logo_url,
           industry
         ),
         job_sources (
           id,
           source_id,
-          discovery_url,
+          external_job_id,
           source_job_url,
-          first_seen_at,
-          last_seen_at,
-          sources (
-            id,
-            name,
-            adapter_name,
-            domain
-          )
+          first_seen_at
         )
       `)
       .eq('id', id)
@@ -56,70 +47,110 @@ export async function GET(
       return ApiResponse.error('Job posting not found.', error, 404);
     }
 
-    // On-demand enrichment: if this is a Jobright job and direct ATS URL has not yet been resolved
+    // On-demand enrichment: if this is a Jobright job needing direct ATS URL or clean title
     const isJobright =
       job.ats_platform_slug === 'jobright' ||
       job.apply_url?.includes('jobright.ai') ||
+      job.canonical_url?.includes('jobright.ai') ||
       (job.source_metadata as any)?.originalSource === 'jobright_github_markdown';
+
+    const hasMalformedTitle =
+      job.display_title?.includes('](') ||
+      job.display_title?.endsWith(']') ||
+      job.display_title?.length <= 2;
+
+    const isCompanyHomepageApply =
+      job.apply_url &&
+      (job.apply_url.replace(/\/$/, '') === (job.companies?.website || '').replace(/\/$/, '') ||
+       job.apply_url.replace(/\/$/, '') === ((job.source_metadata as any)?.companyWebsite || '').replace(/\/$/, ''));
 
     const needsEnrichment =
       isJobright &&
-      (!job.apply_url || job.apply_url.includes('jobright.ai')) &&
-      (job.source_metadata as any)?.enrichment_status !== 'enriched';
+      (hasMalformedTitle ||
+       isCompanyHomepageApply ||
+       !job.apply_url ||
+       job.apply_url.includes('jobright.ai') ||
+       job.ats_platform_slug === 'jobright');
 
     if (needsEnrichment) {
       const externalIdMatch =
         job.apply_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/) ||
-        job.canonical_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/);
+        job.canonical_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/) ||
+        job.source_job_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/) ||
+        (job.locations && job.locations[0]?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/));
       const externalJobId =
         externalIdMatch?.[1] ||
         (job.job_sources as any)?.[0]?.external_job_id;
 
       if (externalJobId) {
         try {
-          const directUrl = await resolveOriginalJobUrl(externalJobId);
-          if (directUrl) {
-            const isDirectAts = URLResolver.isDirectAtsUrl(directUrl);
-            const detectedSlug = isDirectAts
-              ? (directUrl.includes('myworkdayjobs.com') ? 'workday'
-                : directUrl.includes('greenhouse.io') ? 'greenhouse'
-                : directUrl.includes('lever.co') ? 'lever'
-                : directUrl.includes('ashbyhq.com') ? 'ashby'
-                : directUrl.includes('icims.com') ? 'icims'
-                : directUrl.includes('smartrecruiters.com') ? 'smartrecruiters'
-                : 'direct')
-              : 'direct';
+          const detail = await resolveJobrightDetail(externalJobId);
+          if (detail) {
+            const directUrl = detail.directUrl;
+            const isDirectAts = directUrl ? URLResolver.isDirectAtsUrl(directUrl) : false;
+            const detectedSlug = directUrl
+              ? (isDirectAts
+                  ? (directUrl.includes('myworkdayjobs.com') ? 'workday'
+                    : directUrl.includes('greenhouse.io') ? 'greenhouse'
+                    : directUrl.includes('lever.co') ? 'lever'
+                    : directUrl.includes('ashbyhq.com') ? 'ashby'
+                    : directUrl.includes('bamboohr.com') ? 'bamboohr'
+                    : directUrl.includes('icims.com') ? 'icims'
+                    : directUrl.includes('smartrecruiters.com') ? 'smartrecruiters'
+                    : 'direct')
+                  : 'direct')
+              : job.ats_platform_slug;
 
             const currentJobrightRef = job.apply_url?.includes('jobright.ai')
               ? job.apply_url
               : `https://jobright.ai/jobs/info/${externalJobId}`;
 
-            const updatedSourceMetadata = {
-              ...((job.source_metadata as any) || {}),
-              jobright_reference_url: currentJobrightRef,
-              enrichment_status: 'enriched',
-              enriched_at: new Date().toISOString(),
+            const updateFields: Record<string, any> = {
+              source_metadata: {
+                ...((job.source_metadata as any) || {}),
+                jobright_reference_url: currentJobrightRef,
+                enrichment_status: 'enriched',
+                enriched_at: new Date().toISOString(),
+              },
+              updated_at: new Date().toISOString(),
             };
+
+            if (directUrl) {
+              updateFields.apply_url = directUrl;
+              updateFields.original_apply_url = directUrl;
+              updateFields.canonical_url = directUrl;
+              updateFields.ats_platform_slug = detectedSlug;
+              updateFields.url_resolution_method = isDirectAts ? 'direct_ats' : 'employer_application';
+              updateFields.url_resolution_confidence = isDirectAts ? 0.95 : 0.85;
+
+              job.apply_url = directUrl;
+              job.original_apply_url = directUrl;
+              job.canonical_url = directUrl;
+              job.ats_platform_slug = detectedSlug;
+            }
+
+            if (detail.cleanTitle) {
+              updateFields.canonical_title = detail.cleanTitle;
+              updateFields.display_title = detail.cleanTitle;
+
+              job.canonical_title = detail.cleanTitle;
+              job.display_title = detail.cleanTitle;
+            }
+
+            if (detail.companyName && job.companies?.name?.startsWith('[')) {
+              await supabase
+                .from('companies')
+                .update({ name: detail.companyName })
+                .eq('id', job.company_id);
+              if (job.companies) job.companies.name = detail.companyName;
+            }
 
             await supabase
               .from('jobs')
-              .update({
-                apply_url: directUrl,
-                original_apply_url: directUrl,
-                canonical_url: directUrl,
-                ats_platform_slug: detectedSlug,
-                url_resolution_method: isDirectAts ? 'direct_ats' : 'employer_application',
-                url_resolution_confidence: isDirectAts ? 0.95 : 0.85,
-                source_metadata: updatedSourceMetadata,
-                updated_at: new Date().toISOString(),
-              })
+              .update(updateFields)
               .eq('id', job.id);
 
-            job.apply_url = directUrl;
-            job.original_apply_url = directUrl;
-            job.canonical_url = directUrl;
-            job.ats_platform_slug = detectedSlug;
-            job.source_metadata = updatedSourceMetadata;
+            job.source_metadata = updateFields.source_metadata;
           }
         } catch (enrichErr) {
           console.warn('[Jobright OnDemand] Failed to enrich on the fly:', enrichErr);
