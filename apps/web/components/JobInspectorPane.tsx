@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Building2,
   MapPin,
@@ -16,6 +16,7 @@ import {
   Share2,
   ChevronRight,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
@@ -33,7 +34,7 @@ interface JobInspectorPaneProps {
 }
 
 export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
-  job,
+  job: initialJob,
   isSaved = false,
   onToggleSave,
   isApplied = false,
@@ -43,6 +44,44 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   hasNext = false,
   hasPrev = false,
 }) => {
+  const [job, setJob] = useState<any>(initialJob);
+  const [isResolving, setIsResolving] = useState<boolean>(false);
+
+  useEffect(() => {
+    setJob(initialJob);
+  }, [initialJob?.id, initialJob?.apply_url]);
+
+  useEffect(() => {
+    if (!job) return;
+
+    const isJobright =
+      job.ats_platform_slug === 'jobright' ||
+      job.source === 'jobright' ||
+      job.source_metadata?.originalSource === 'jobright_github_markdown' ||
+      job.apply_url?.includes('jobright.ai');
+
+    const hasDirectAts = job.apply_url && !job.apply_url.includes('jobright.ai');
+
+    if (isJobright && !hasDirectAts && job.source_metadata?.enrichment_status !== 'enriched') {
+      let isMounted = true;
+      setIsResolving(true);
+      fetch(`/api/jobs/${job.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (isMounted && data.success && data.data) {
+            setJob((prev: any) => (prev?.id === data.data.id ? { ...prev, ...data.data } : prev));
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (isMounted) setIsResolving(false);
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [job?.id]);
   if (!job) {
     return (
       <div
@@ -168,6 +207,8 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   let applyButtonLabel = 'Apply on Company Site';
   if (isDirectAts) {
     applyButtonLabel = 'Apply on company site';
+  } else if (isResolving) {
+    applyButtonLabel = 'Resolving Direct ATS...';
   } else if (isJobrightSource || (primaryApplyUrl && primaryApplyUrl.includes('jobright.ai'))) {
     applyButtonLabel = 'View on Jobright';
   }
@@ -223,7 +264,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               }}
             >
               <span>{applyButtonLabel}</span>
-              <ExternalLink size={14} />
+              {isResolving ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
             </a>
           ) : (
             <button disabled className="btn btn-secondary" style={{ padding: '9px 16px', fontSize: '13px' }}>

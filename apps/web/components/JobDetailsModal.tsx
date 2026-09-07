@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Building2,
@@ -13,6 +13,7 @@ import {
   CheckSquare,
   Globe,
   Zap,
+  Loader2,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
@@ -27,12 +28,51 @@ interface JobDetailsModalProps {
 }
 
 export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
-  job,
+  job: initialJob,
   onClose,
   isSaved = false,
   onToggleSave,
   onTrackApplication,
 }) => {
+  const [job, setJob] = useState<any>(initialJob);
+  const [isResolving, setIsResolving] = useState<boolean>(false);
+
+  useEffect(() => {
+    setJob(initialJob);
+  }, [initialJob?.id, initialJob?.apply_url]);
+
+  useEffect(() => {
+    if (!job) return;
+
+    const isJobright =
+      job.ats_platform_slug === 'jobright' ||
+      job.source === 'jobright' ||
+      job.source_metadata?.originalSource === 'jobright_github_markdown' ||
+      job.apply_url?.includes('jobright.ai');
+
+    const hasDirectAts = job.apply_url && !job.apply_url.includes('jobright.ai');
+
+    if (isJobright && !hasDirectAts && job.source_metadata?.enrichment_status !== 'enriched') {
+      let isMounted = true;
+      setIsResolving(true);
+      fetch(`/api/jobs/${job.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (isMounted && data.success && data.data) {
+            setJob((prev: any) => (prev?.id === data.data.id ? { ...prev, ...data.data } : prev));
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (isMounted) setIsResolving(false);
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [job?.id]);
+
   if (!job) return null;
 
   const rawCompanyName = job.companies?.name || 'Verified Employer';
@@ -114,6 +154,8 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   let applyButtonLabel = 'Apply on Company Site';
   if (isDirectAts) {
     applyButtonLabel = 'Apply on company site';
+  } else if (isResolving) {
+    applyButtonLabel = 'Resolving Direct ATS...';
   } else if (isJobrightSource || (primaryApplyUrl && primaryApplyUrl.includes('jobright.ai'))) {
     applyButtonLabel = 'View on Jobright';
   }
@@ -532,7 +574,7 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 style={{ padding: '9px 20px', fontSize: '0.875rem', fontWeight: 700 }}
               >
                 <span>{applyButtonLabel}</span>
-                <ExternalLink size={15} />
+                {isResolving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
               </a>
             ) : (
               <button disabled className="btn btn-secondary" style={{ padding: '9px 16px', fontSize: '0.875rem' }}>
