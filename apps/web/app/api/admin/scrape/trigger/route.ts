@@ -85,15 +85,84 @@ export async function POST(request: NextRequest) {
       return ApiResponse.error(result.message || 'Could not schedule scrape run.', undefined, 400);
     }
 
+    // 4. Attempt automated GitHub Actions workflow dispatch if token is configured
+    const githubToken = process.env.GITHUB_DISPATCH_TOKEN || process.env.GITHUB_TOKEN;
+    const githubRepo = process.env.GITHUB_REPOSITORY || 'Richiekey/Jobpulse2.0';
+    const githubWorkflow = process.env.GITHUB_SCRAPER_WORKFLOW || 'jobpulse-scraper.yml';
+    const githubRef = process.env.GITHUB_DISPATCH_REF || 'main';
+
+    let githubDispatched = false;
+    let dispatchMessage = 'Queued in database. Awaiting worker execution.';
+
+    if (githubToken) {
+      try {
+        const dispatchUrl = `https://api.github.com/repos/${githubRepo}/actions/workflows/${githubWorkflow}/dispatches`;
+        const dispatchRes = await fetch(dispatchUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'Authorization': `Bearer ${githubToken}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+            'User-Agent': 'JobPulse-Web-Dispatcher',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ref: githubRef,
+            inputs: {
+              run_id: result.run_id,
+              company: companyIdentifier || '',
+              force_due: 'true',
+            },
+          }),
+        });
+
+        if (dispatchRes.ok || dispatchRes.status === 204) {
+          githubDispatched = true;
+          dispatchMessage = 'GitHub Actions scraper workflow dispatched successfully.';
+
+          // Update run metadata with github_dispatched flag
+          const { data: currentRun } = await supabase
+            .from('scrape_runs')
+            .select('metadata')
+            .eq('id', result.run_id)
+            .single();
+
+          const currentMeta = (currentRun?.metadata as Record<string, unknown>) || {};
+          await supabase
+            .from('scrape_runs')
+            .update({
+              metadata: {
+                ...currentMeta,
+                github_dispatched: true,
+                github_dispatched_at: new Date().toISOString(),
+                github_repo: githubRepo,
+              },
+            })
+            .eq('id', result.run_id);
+        } else {
+          const errText = await dispatchRes.text().catch(() => '');
+          console.warn(`GitHub workflow dispatch returned status ${dispatchRes.status}: ${errText}`);
+          dispatchMessage = `Crawl queued in database, but GitHub dispatch returned status ${dispatchRes.status}.`;
+        }
+      } catch (dispatchErr) {
+        console.warn('GitHub workflow dispatch error:', dispatchErr);
+        dispatchMessage = 'Crawl queued in database, but an error occurred dispatching GitHub Actions.';
+      }
+    }
+
     return ApiResponse.success(
       {
-        message: 'Scrape run successfully scheduled and queued for execution.',
+        message: githubDispatched
+          ? 'Scrape run scheduled and GitHub Actions worker dispatched!'
+          : 'Scrape run successfully scheduled and queued for execution.',
         runId: result.run_id,
         status: result.status,
         executionMode: result.execution_mode || executionMode,
         companyIdentifier: result.company_identifier,
         sourceId: result.source_id,
         scheduledAt: result.scheduled_at,
+        githubDispatched,
+        dispatchMessage,
       },
       undefined,
       { status: 202 }

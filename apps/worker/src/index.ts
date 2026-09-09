@@ -12,16 +12,18 @@ async function main() {
   }
 
   const args = process.argv.slice(2);
+  const runIdArg = args.find((a) => a.startsWith('--run-id='))?.split('=')[1] || (args.includes('--run-id') ? args[args.indexOf('--run-id') + 1] : undefined);
   const companyArg = args.find((a) => a.startsWith('--company='))?.split('=')[1] || (args.includes('--company') ? args[args.indexOf('--company') + 1] : undefined);
   const sourceArg = args.find((a) => a.startsWith('--source='))?.split('=')[1] || (args.includes('--source') ? args[args.indexOf('--source') + 1] : undefined);
   const limitArg = args.find((a) => a.startsWith('--limit='))?.split('=')[1] || (args.includes('--limit') ? args[args.indexOf('--limit') + 1] : undefined);
   const forceDue = args.includes('--force-due') || args.includes('--force');
-  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg);
+  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg) || Boolean(runIdArg);
   const isDaemon = args.includes('--daemon') || !isOnce;
 
   logger.info('Starting JobPulse Worker Process...', {
     isOnce,
     isDaemon,
+    runId: runIdArg || 'auto',
     company: companyArg || 'all',
     source: sourceArg || 'all',
     forceDue,
@@ -44,8 +46,23 @@ async function main() {
     try {
       let runId: string | null = null;
 
-      // 1. If targeted company or source is specified, run directly in manual mode
-      if (companyArg || sourceArg) {
+      // 1. If explicit runId is provided, adopt and execute that specific run
+      if (runIdArg) {
+        logger.info(`Executing targeted one-shot scrape run adopting runId: ${runIdArg}...`, {
+          runId: runIdArg,
+          company: companyArg,
+          source: sourceArg,
+          forceDue: true,
+        });
+        runId = await runner.run({
+          runId: runIdArg,
+          companyIdentifier: companyArg,
+          sourceId: sourceArg,
+          forceDue: true,
+          limitSources: limitArg ? parseInt(limitArg, 10) : undefined,
+        });
+      } else if (companyArg || sourceArg) {
+        // 2. If targeted company or source is specified, run directly in manual mode
         logger.info('Executing targeted one-shot scrape run...', { company: companyArg, source: sourceArg, forceDue });
         runId = await runner.run({
           companyIdentifier: companyArg,
@@ -54,14 +71,14 @@ async function main() {
           limitSources: limitArg ? parseInt(limitArg, 10) : undefined,
         });
       } else {
-        // 2. Otherwise, first attempt to claim a pending queued scrape run
+        // 3. Otherwise, first attempt to claim a pending queued scrape run
         logger.info('Checking for pending scrape runs in queue...');
         runId = await runner.pollAndExecutePending();
 
         if (runId) {
           logger.info(`Claimed and executed queued scrape run: ${runId}`);
         } else {
-          // 3. If no pending run exists, execute a scheduled run across due sources
+          // 4. If no pending run exists, execute a scheduled run across due sources
           logger.info('No queued scrape runs found; executing scheduled scrape run across eligible sources...');
           runId = await runner.run({
             executionMode: 'scheduled',

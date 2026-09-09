@@ -67,6 +67,7 @@ export async function GET(_request: NextRequest) {
       let outcomeText = 'In progress';
       const startedAgeMs = now - new Date(r.started_at).getTime();
       const isStalePending = r.status === 'pending' && startedAgeMs > 15 * 60 * 1000;
+      const isGitHubDispatched = Boolean(meta['github_dispatched']);
 
       if (r.status === 'completed') {
         if (rawOutcome === 'zero_sources_due' || (sourcesAttempted === 0 && sourcesTargeted > 0)) {
@@ -78,10 +79,20 @@ export async function GET(_request: NextRequest) {
         } else {
           outcomeText = `Completed — ${jobsInserted + jobsUpdated} jobs ingested`;
         }
-      } else if (r.status === 'failed' || isStalePending) {
-        outcomeText = 'Failed — worker unavailable';
+      } else if (isStalePending) {
+        outcomeText = 'Failed — worker unavailable (timed out)';
+      } else if (r.status === 'failed') {
+        if (rawOutcome === 'all_sources_failed') {
+          outcomeText = 'Failed — all sources failed';
+        } else if (rawOutcome === 'stale_ttl_timeout') {
+          outcomeText = 'Failed — execution timed out';
+        } else if (Array.isArray(r.error_summary) && r.error_summary.length > 0 && (r.error_summary[0] as any)?.error) {
+          outcomeText = `Failed — ${(r.error_summary[0] as any).error}`;
+        } else {
+          outcomeText = 'Failed — execution error';
+        }
       } else if (r.status === 'pending') {
-        outcomeText = 'Queued — waiting for worker';
+        outcomeText = isGitHubDispatched ? 'Queued — GitHub Action running...' : 'Queued — waiting for worker';
       } else if (r.status === 'running') {
         outcomeText = 'Running — processing sources...';
       }

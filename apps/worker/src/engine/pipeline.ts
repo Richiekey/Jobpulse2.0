@@ -176,7 +176,10 @@ export class IngestionPipeline {
         workplaceType: normalizedJob.workplaceType,
         postedAt: normalizedJob.postedAt,
         skills: normalizedJob.skills,
-        sourceMetadata: normalizedJob.sourceMetadata,
+        sourceMetadata: {
+          ...normalizedJob.sourceMetadata,
+          isDirectATS: adapter.platformSlug !== 'jobright',
+        },
       });
 
       if (!eligibility.eligible) {

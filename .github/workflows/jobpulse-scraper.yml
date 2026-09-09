@@ -5,6 +5,10 @@ on:
     - cron: '0 */6 * * *' # Every 6 hours
   workflow_dispatch:
     inputs:
+      run_id:
+        description: 'Specific scrape run ID to adopt and execute (optional)'
+        required: false
+        type: string
       company:
         description: 'Specific company identifier (e.g. cloudflare, discord, stripe, openai)'
         required: false
@@ -53,6 +57,9 @@ jobs:
       - name: Run One-Shot Scraper
         run: |
           ARGS=""
+          if [ -n "${{ inputs.run_id }}" ]; then
+            ARGS="$ARGS --run-id=${{ inputs.run_id }}"
+          fi
           if [ -n "${{ inputs.company }}" ]; then
             ARGS="$ARGS --company=${{ inputs.company }}"
           fi

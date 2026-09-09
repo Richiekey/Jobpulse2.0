@@ -314,5 +314,158 @@ describe('Admin Crawl Trigger & Atomic Concurrency Guard (Batch F P0/P1)', () =>
       const res = await getRunsRoute(req);
       expect(res.status).toBe(401);
     });
+
+    it('formats failed and stale runs with accurate status descriptions', async () => {
+      const mockRuns = [
+        {
+          id: 'run_failed_all',
+          started_at: new Date(Date.now() - 60000).toISOString(),
+          completed_at: new Date().toISOString(),
+          status: 'failed',
+          companies_attempted: 1,
+          companies_succeeded: 0,
+          companies_failed: 1,
+          jobs_discovered: 3,
+          jobs_inserted: 0,
+          jobs_updated: 0,
+          jobs_rejected: 0,
+          jobs_failed: 3,
+          error_summary: [{ error: 'All 3 candidates failed ingestion' }],
+          metadata: {
+            execution_mode: 'manual_company',
+            outcome: 'all_sources_failed',
+          },
+        },
+        {
+          id: 'run_stale_pending',
+          started_at: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+          completed_at: null,
+          status: 'pending',
+          companies_attempted: 0,
+          companies_succeeded: 0,
+          companies_failed: 0,
+          jobs_discovered: 0,
+          jobs_inserted: 0,
+          jobs_updated: 0,
+          jobs_rejected: 0,
+          jobs_failed: 0,
+          error_summary: [],
+          metadata: {
+            execution_mode: 'manual_global',
+          },
+        },
+      ];
+
+      const mockSupabase = {
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({
+                data: mockRuns,
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      };
+
+      vi.spyOn(AuthGuard, 'requireAdmin').mockResolvedValue({
+        user: { id: validAdmin.id },
+        profile: validAdmin as any,
+        supabase: mockSupabase as any,
+      } as any);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/scrape/runs');
+      const res = await getRunsRoute(req);
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.data.runs[0].outcomeText).toBe('Failed — all sources failed');
+      expect(json.data.runs[1].outcomeText).toBe('Failed — worker unavailable (timed out)');
+    });
+  });
+
+  describe('Automated GitHub Actions Scraper Dispatcher', () => {
+    it('dispatches GitHub Actions workflow when GITHUB_DISPATCH_TOKEN is configured', async () => {
+      const originalToken = process.env.GITHUB_DISPATCH_TOKEN;
+      process.env.GITHUB_DISPATCH_TOKEN = 'ghp_mock_token_12345';
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+        text: () => Promise.resolve(''),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+
+      const mockSupabase = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            success: true,
+            conflict: false,
+            run_id: 'run_dispatch_test_123',
+            status: 'pending',
+            company_identifier: 'openai',
+            source_id: null,
+            scheduled_at: new Date().toISOString(),
+          },
+          error: null,
+        }),
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { metadata: {} },
+                error: null,
+              }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        }),
+      };
+
+      vi.spyOn(AuthGuard, 'requireAdmin').mockResolvedValue({
+        user: { id: validAdmin.id },
+        profile: validAdmin as any,
+        supabase: mockSupabase as any,
+      } as any);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/scrape/trigger', {
+        method: 'POST',
+        body: JSON.stringify({ companyIdentifier: 'openai' }),
+      });
+
+      const res = await triggerScrapeRoute(req);
+      expect(res.status).toBe(202);
+
+      const json = await res.json();
+      expect(json.data.githubDispatched).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.github.com/repos/Richiekey/Jobpulse2.0/actions/workflows/jobpulse-scraper.yml/dispatches',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer ghp_mock_token_12345',
+          }),
+          body: JSON.stringify({
+            ref: 'main',
+            inputs: {
+              run_id: 'run_dispatch_test_123',
+              company: 'openai',
+              force_due: 'true',
+            },
+          }),
+        })
+      );
+
+      // Cleanup
+      if (originalToken) {
+        process.env.GITHUB_DISPATCH_TOKEN = originalToken;
+      } else {
+        delete process.env.GITHUB_DISPATCH_TOKEN;
+      }
+      vi.unstubAllGlobals();
+    });
   });
 });

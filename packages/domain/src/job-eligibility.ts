@@ -192,13 +192,13 @@ export class JobEligibilityPolicy {
       return this.createIneligibleResult('MISSING_REQUIRED_DATA', 'non_technical', 'UNKNOWN', 'NOT_REMOTE', 'unspecified');
     }
 
-    // 1. AGE CHECK (Soft — only reject for aggregator sources, not direct ATS boards)
+    // 1. AGE CHECK (Soft — only reject for aggregator sources and unflagged candidates, not direct ATS boards)
     // Direct ATS sources (Greenhouse, Ashby, Lever, Workday, etc.) list only active jobs,
     // so being present on the board IS proof the job is current even if postedAt is > 30d.
     // The ingest_job_transaction RPC already sets status='expired' for stale jobs.
     // Only reject at the eligibility gate for aggregator sources where postedAt is the
     // sole freshness signal.
-    if (job.postedAt && job.sourceMetadata?.originalSource === 'jobright_github_markdown') {
+    if (job.postedAt && job.sourceMetadata?.isDirectATS !== true) {
       const postedTime = new Date(job.postedAt).getTime();
       const cutoffTime = now.getTime() - this.MAX_RETENTION_DAYS * 24 * 60 * 60 * 1000;
       if (!isNaN(postedTime) && postedTime < cutoffTime) {
