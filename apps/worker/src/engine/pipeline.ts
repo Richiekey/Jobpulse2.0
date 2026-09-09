@@ -8,6 +8,7 @@ import {
   SalaryExtractor,
   JobFunctionTaxonomy,
   LocationParser,
+  JobEligibilityPolicy,
 } from '@jobpulse/domain';
 import type { ATSAdapter } from '@jobpulse/ats';
 import { logger } from '@jobpulse/shared';
@@ -162,6 +163,33 @@ export class IngestionPipeline {
           candidateId: candidate.externalJobId,
           status: 'rejected',
           error: validation.issues.map((i) => `${i.field}: ${i.message}`).join('; '),
+        };
+      }
+
+      // 4b. Job Eligibility Gate (Invariant: Only fresh <=30d technical jobs in US/CA/Europe/Worldwide remote enter corpus)
+      const eligibility = JobEligibilityPolicy.evaluate({
+        title: normalizedJob.canonicalTitle,
+        displayTitle: normalizedJob.displayTitle,
+        canonicalTitle: normalizedJob.canonicalTitle,
+        description: normalizedJob.description,
+        locations: normalizedJob.locations,
+        workplaceType: normalizedJob.workplaceType,
+        postedAt: normalizedJob.postedAt,
+        skills: normalizedJob.skills,
+        sourceMetadata: normalizedJob.sourceMetadata,
+      });
+
+      if (!eligibility.eligible) {
+        logger.info(`Candidate ${candidate.externalJobId} rejected by Job Eligibility Gate: ${eligibility.reason}`, {
+          reason: eligibility.reason,
+          title: normalizedJob.canonicalTitle,
+          locations: normalizedJob.locations,
+          candidateId: candidate.externalJobId,
+        });
+        return {
+          candidateId: candidate.externalJobId,
+          status: 'rejected',
+          error: `Ineligible job: ${eligibility.reason}`,
         };
       }
 

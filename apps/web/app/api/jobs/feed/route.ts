@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
       dbQuery = dbQuery.contains('locations', [location.trim()]);
     }
 
-    // 13. Date Preset / Posted After Filter
+    // 13. Date Preset / Posted After Filter with Hard 30-Day Product Invariant
     let effectivePostedAfter = explicitPostedAfter;
     if (date_preset && date_preset !== 'all') {
       const hoursMap: Record<string, number> = {
@@ -282,8 +282,31 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (effectivePostedAfter) {
-      dbQuery = dbQuery.gte('posted_at', effectivePostedAfter);
+    // Hard Invariant: Public feed must NEVER expose a job older than 30 days
+    const hardMaxCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const finalPostedAfter =
+      effectivePostedAfter && new Date(effectivePostedAfter).getTime() > new Date(hardMaxCutoff).getTime()
+        ? effectivePostedAfter
+        : hardMaxCutoff;
+
+    dbQuery = dbQuery.gte('posted_at', finalPostedAfter);
+
+    // 13b. Geography Defense-in-Depth: Exclude explicit excluded countries unless caller requested
+    if (!countryParam || countryParam === 'all') {
+      dbQuery = dbQuery.not(
+        'location_country',
+        'in',
+        '("Nigeria","India","Pakistan","China","Philippines","Indonesia","Brazil","Mexico","Argentina","Colombia","Chile","Peru","United Arab Emirates","Saudi Arabia","Egypt","South Africa","Kenya","Ghana","Australia","New Zealand")'
+      );
+    }
+
+    // 13c. Role Taxonomy Defense-in-Depth: Exclude non-technical categories if not specifically requested
+    if (!functionSlugParam || functionSlugParam === 'all') {
+      dbQuery = dbQuery.not(
+        'job_function_slug',
+        'in',
+        '("sales-marketing","finance-accounting","hr-people","legal","healthcare","education","customer-support")'
+      );
     }
 
     // 14. Full-Text Search Query

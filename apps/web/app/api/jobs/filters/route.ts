@@ -23,10 +23,12 @@ export async function GET(_request: NextRequest) {
     }
 
     // 2. Fetch Aggregated Statistics for Functions, Platforms, Locations, Workplace, Employment
+    const hardMaxCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data: jobStats, error: statsError } = await supabase
       .from('jobs')
       .select('ats_platform_slug, job_function_slug, workplace_type, employment_type, location_country, is_remote')
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .gte('posted_at', hardMaxCutoff);
 
     if (statsError) {
       return ApiResponse.error('Failed to load job filter facets.', statsError, 500);

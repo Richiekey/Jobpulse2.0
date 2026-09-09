@@ -12,6 +12,7 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     canonical_fingerprint: string;
     title: string;
     status: 'active' | 'expired';
+    posted_at: string;
     first_seen_at: string;
     last_seen_at: string;
   }
@@ -26,7 +27,7 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
 
   /**
    * Simulates the exact status-agnostic matching algorithm of ingest_job_transaction
-   * introduced in 20260907000001_job_retention_and_application_hardening.sql.
+   * introduced in 20260907000002_job_age_and_eligibility_invariants.sql.
    */
   function simulateIngestJobTransaction(
     existingJobs: JobRecord[],
@@ -34,8 +35,15 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
       canonical_url: string;
       canonical_fingerprint: string;
       title: string;
-    }
-  ): { status: 'inserted' | 'updated'; jobId: string } {
+      posted_at?: string;
+    },
+    clockNow: Date = new Date()
+  ): { status: 'inserted' | 'updated'; jobId: string; isStale: boolean } {
+    const cutoff = clockNow.getTime() - 30 * 24 * 60 * 60 * 1000;
+    const postedTime = incoming.posted_at ? new Date(incoming.posted_at).getTime() : clockNow.getTime();
+    const isStale = postedTime < cutoff;
+    const targetStatus: 'active' | 'expired' = isStale ? 'expired' : 'active';
+
     // 1. Match on canonical_url across all jobs regardless of status (active or expired)
     let match = existingJobs.find(
       (j) => j.canonical_url.toLowerCase() === incoming.canonical_url.toLowerCase()
@@ -49,10 +57,11 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     }
 
     if (match) {
-      // Re-activate job, preserve ID and first_seen_at, update last_seen_at
-      match.status = 'active';
-      match.last_seen_at = new Date().toISOString();
-      return { status: 'updated', jobId: match.id };
+      // Update job, preserve ID and first_seen_at, set target status (active or expired)
+      match.status = targetStatus;
+      match.last_seen_at = clockNow.toISOString();
+      if (incoming.posted_at) match.posted_at = incoming.posted_at;
+      return { status: 'updated', jobId: match.id, isStale };
     } else {
       const newId = `job-new-${Date.now()}`;
       const newJob: JobRecord = {
@@ -60,12 +69,13 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
         canonical_url: incoming.canonical_url,
         canonical_fingerprint: incoming.canonical_fingerprint,
         title: incoming.title,
-        status: 'active',
-        first_seen_at: new Date().toISOString(),
-        last_seen_at: new Date().toISOString(),
+        status: targetStatus,
+        posted_at: incoming.posted_at || clockNow.toISOString(),
+        first_seen_at: clockNow.toISOString(),
+        last_seen_at: clockNow.toISOString(),
       };
       existingJobs.push(newJob);
-      return { status: 'inserted', jobId: newId };
+      return { status: 'inserted', jobId: newId, isStale };
     }
   }
 
@@ -95,6 +105,54 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     });
   }
 
+  /**
+   * Simulates the database query layer of /api/jobs/feed enforcing:
+   * status = 'active' AND posted_at >= now() - 30 days
+   */
+  function simulatePublicFeedQuery(
+    jobs: JobRecord[],
+    clockNow: Date = new Date()
+  ): JobRecord[] {
+    const cutoff = clockNow.getTime() - 30 * 24 * 60 * 60 * 1000;
+    return jobs.filter((j) => {
+      const postedTime = new Date(j.posted_at).getTime();
+      return j.status === 'active' && postedTime >= cutoff;
+    });
+  }
+
+  /**
+   * Simulates purge_stale_job_records WHERE clause and application protection.
+   */
+  function simulatePurgeStaleJobRecords(
+    jobs: JobRecord[],
+    applications: ApplicationRecord[],
+    clockNow: Date = new Date()
+  ): { deletedCount: number; protectedCount: number } {
+    const cutoff = clockNow.getTime() - 30 * 24 * 60 * 60 * 1000;
+    let deletedCount = 0;
+    let protectedCount = 0;
+
+    for (let i = jobs.length - 1; i >= 0; i--) {
+      const job = jobs[i]!;
+      const postedTime = new Date(job.posted_at).getTime();
+      const lastSeenTime = new Date(job.last_seen_at).getTime();
+      const isEligible = postedTime < cutoff || (job.status === 'expired' && lastSeenTime < cutoff);
+
+      if (isEligible) {
+        const hasApp = applications.some((a) => a.job_id === job.id);
+        if (hasApp) {
+          protectedCount++;
+          job.status = 'expired'; // Auto transition protected old jobs to expired
+        } else {
+          jobs.splice(i, 1);
+          deletedCount++;
+        }
+      }
+    }
+
+    return { deletedCount, protectedCount };
+  }
+
   it('executes full 6-step regression: active -> applied -> expired -> re-scraped -> same job ID & application preserved with user isolation', () => {
     const jobsDatabase: JobRecord[] = [];
     const applicationsDatabase: ApplicationRecord[] = [];
@@ -102,14 +160,15 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     const userA = 'user-uuid-alice-1111';
     const userB = 'user-uuid-bob-2222';
 
-    // Step 1: Create/identify a job (Job X, status = active)
+    // Step 1: Create/identify a job (Job X, status = active, fresh posted_at)
     const initialJob: JobRecord = {
       id: 'job-uuid-stripe-eng-001',
       canonical_url: 'https://stripe.com/jobs/001',
       canonical_fingerprint: 'stripe-staff-software-engineer-sf',
       title: 'Staff Software Engineer',
       status: 'active',
-      first_seen_at: '2026-08-01T00:00:00.000Z',
+      posted_at: '2026-08-10T00:00:00.000Z',
+      first_seen_at: '2026-08-10T00:00:00.000Z',
       last_seen_at: '2026-08-15T00:00:00.000Z',
     };
     jobsDatabase.push(initialJob);
@@ -124,7 +183,7 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
       user_id: userA,
       job_id: initialJob.id,
       status: 'interview',
-      applied_at: '2026-08-10T12:00:00.000Z',
+      applied_at: '2026-08-12T12:00:00.000Z',
     };
     applicationsDatabase.push(userAApplication);
 
@@ -136,15 +195,15 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     initialJob.status = 'expired';
     expect(jobsDatabase[0]!.status).toBe('expired');
 
-    // Step 4: The same job is scraped again.
-    // Ingestion logic MUST identify the existing canonical job and keep the same ID.
+    // Step 4: The same job is scraped again with fresh posted_at within 30 days
     const incomingScrape = {
       canonical_url: 'https://stripe.com/jobs/001',
       canonical_fingerprint: 'stripe-staff-software-engineer-sf',
       title: 'Staff Software Engineer',
+      posted_at: '2026-08-25T00:00:00.000Z',
     };
 
-    const ingestResult = simulateIngestJobTransaction(jobsDatabase, incomingScrape);
+    const ingestResult = simulateIngestJobTransaction(jobsDatabase, incomingScrape, new Date('2026-09-01T00:00:00.000Z'));
 
     // Expected: jobs.id remains X; It MUST NOT create jobs.id = Y
     expect(ingestResult.status).toBe('updated');
@@ -154,7 +213,6 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     expect(jobsDatabase[0]!.status).toBe('active');
 
     // Step 5: Verify application relationship
-    // Expected: applications.job_id = X still exists and is untouched
     const aliceApp = applicationsDatabase.find((a) => a.user_id === userA);
     expect(aliceApp).toBeDefined();
     expect(aliceApp!.job_id).toBe(initialJob.id);
@@ -168,7 +226,6 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     expect(userAFeedItem.id).toBe(initialJob.id);
     expect(userAFeedItem.has_application).toBe(true);
     expect(userAFeedItem.application_status).toBe('interview');
-    // Crucial semantic check: is_applied is strictly false because status is 'interview'
     expect(userAFeedItem.is_applied).toBe(false);
 
     // UI semantic verification: getApplicationDisplayState displays 'Interview', NEVER 'Applied'
@@ -189,42 +246,202 @@ describe('Job Re-Scrape Application Preservation & Isolation Regression (P0)', (
     expect(userBFeedItem.application_status).toBeNull();
     expect(userBFeedItem.is_applied).toBe(false);
 
-    // UI semantic verification for User B: Displays 'Mark Applied'
     const uiDisplayB = getApplicationDisplayState(userBFeedItem.application_status);
     expect(uiDisplayB.hasApplication).toBe(false);
     expect(uiDisplayB.actionLabel).toBe('Mark Applied');
     expect(uiDisplayB.badgeVariant).toBe('neutral');
   });
 
-  it('verifies retention deletion policy strictly preserves the expired job while an application exists', () => {
-    const expiredJobWithApp: JobRecord = {
-      id: 'job-expired-with-app-999',
-      canonical_url: 'https://example.com/job/999',
-      canonical_fingerprint: 'fp-999',
-      title: 'DevOps Engineer',
-      status: 'expired',
-      first_seen_at: '2026-06-01T00:00:00.000Z',
-      last_seen_at: '2026-06-15T00:00:00.000Z', // 80+ days ago
-    };
+  // ============================================================================
+  // MANDATORY CRITICAL REGRESSION TESTS (TESTS A - F)
+  // ============================================================================
 
-    const applications: ApplicationRecord[] = [
+  const FIXED_NOW = new Date('2026-09-07T12:00:00.000Z');
+
+  it('Test A — Old active job (posted_at = 60 days ago, status = active): cannot appear in /api/jobs/feed', () => {
+    const jobs: JobRecord[] = [
       {
-        id: 'app-999',
-        user_id: 'user-charlie',
-        job_id: expiredJobWithApp.id,
-        status: 'applied',
-        applied_at: '2026-06-10T00:00:00.000Z',
+        id: 'job-old-active-001',
+        canonical_url: 'https://company.com/job/001',
+        canonical_fingerprint: 'company-eng-001',
+        title: 'Backend Engineer',
+        status: 'active',
+        posted_at: '2026-07-09T12:00:00.000Z', // 60 days ago
+        first_seen_at: '2026-07-09T12:00:00.000Z',
+        last_seen_at: '2026-07-15T12:00:00.000Z',
       },
     ];
 
-    const retentionCutoff = new Date('2026-08-01T00:00:00.000Z').getTime();
+    const visibleJobs = simulatePublicFeedQuery(jobs, FIXED_NOW);
+    expect(visibleJobs).toHaveLength(0);
+  });
 
-    // Simulating purge_stale_job_records WHERE clause
-    const isEligibleForPurge =
-      expiredJobWithApp.status === 'expired' &&
-      new Date(expiredJobWithApp.last_seen_at).getTime() < retentionCutoff &&
-      !applications.some((a) => a.job_id === expiredJobWithApp.id);
+  it('Test B — Old continuously scraped job (posted_at = 60 days ago, last_seen_at = now, status = active): not exposed in feed, eligible for cleanup', () => {
+    const jobs: JobRecord[] = [
+      {
+        id: 'job-old-continuously-scraped-002',
+        canonical_url: 'https://company.com/job/002',
+        canonical_fingerprint: 'company-eng-002',
+        title: 'Staff Platform Engineer',
+        status: 'active',
+        posted_at: '2026-07-09T12:00:00.000Z', // 60 days ago
+        first_seen_at: '2026-07-09T12:00:00.000Z',
+        last_seen_at: FIXED_NOW.toISOString(), // Scraped today!
+      },
+    ];
+    const applications: ApplicationRecord[] = [];
 
-    expect(isEligibleForPurge).toBe(false);
+    // 1. Invariant: Must NOT appear in public feed despite status = 'active' and fresh last_seen_at
+    const visibleJobs = simulatePublicFeedQuery(jobs, FIXED_NOW);
+    expect(visibleJobs).toHaveLength(0);
+
+    // 2. Invariant: Must be eligible for physical cleanup in purge_stale_job_records
+    const purgeResult = simulatePurgeStaleJobRecords(jobs, applications, FIXED_NOW);
+    expect(purgeResult.deletedCount).toBe(1);
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('Test C — Fresh job (posted_at = 10 days ago): remains visible in public feed', () => {
+    const jobs: JobRecord[] = [
+      {
+        id: 'job-fresh-003',
+        canonical_url: 'https://company.com/job/003',
+        canonical_fingerprint: 'company-eng-003',
+        title: 'Full Stack Engineer',
+        status: 'active',
+        posted_at: '2026-08-28T12:00:00.000Z', // 10 days ago
+        first_seen_at: '2026-08-28T12:00:00.000Z',
+        last_seen_at: FIXED_NOW.toISOString(),
+      },
+    ];
+
+    const visibleJobs = simulatePublicFeedQuery(jobs, FIXED_NOW);
+    expect(visibleJobs).toHaveLength(1);
+    expect(visibleJobs[0]!.id).toBe('job-fresh-003');
+  });
+
+  it('Test D — Boundary behavior around exactly 30 days using a deterministic clock', () => {
+    const thirtyDaysAgo = new Date(FIXED_NOW.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const thirtyDaysAndOneSecAgo = new Date(FIXED_NOW.getTime() - (30 * 24 * 60 * 60 * 1000 + 1000)).toISOString();
+
+    const jobs: JobRecord[] = [
+      {
+        id: 'job-exact-30d',
+        canonical_url: 'https://company.com/job/exact-30d',
+        canonical_fingerprint: 'company-eng-30d',
+        title: 'Senior Engineer (Exact 30d)',
+        status: 'active',
+        posted_at: thirtyDaysAgo,
+        first_seen_at: thirtyDaysAgo,
+        last_seen_at: thirtyDaysAgo,
+      },
+      {
+        id: 'job-over-30d',
+        canonical_url: 'https://company.com/job/over-30d',
+        canonical_fingerprint: 'company-eng-over-30d',
+        title: 'Senior Engineer (Over 30d)',
+        status: 'active',
+        posted_at: thirtyDaysAndOneSecAgo,
+        first_seen_at: thirtyDaysAndOneSecAgo,
+        last_seen_at: thirtyDaysAndOneSecAgo,
+      },
+    ];
+
+    const visibleJobs = simulatePublicFeedQuery(jobs, FIXED_NOW);
+    expect(visibleJobs).toHaveLength(1);
+    expect(visibleJobs[0]!.id).toBe('job-exact-30d');
+  });
+
+  it('Test E — Application protection: old job with application is protected from physical deletion, but NOT in normal public job feed', () => {
+    const jobs: JobRecord[] = [
+      {
+        id: 'job-old-with-app-005',
+        canonical_url: 'https://company.com/job/005',
+        canonical_fingerprint: 'company-eng-005',
+        title: 'Lead SRE',
+        status: 'active',
+        posted_at: '2026-07-09T12:00:00.000Z', // 60 days ago
+        first_seen_at: '2026-07-09T12:00:00.000Z',
+        last_seen_at: '2026-08-01T12:00:00.000Z',
+      },
+    ];
+    const applications: ApplicationRecord[] = [
+      {
+        id: 'app-005',
+        user_id: 'user-charlie',
+        job_id: 'job-old-with-app-005',
+        status: 'interview',
+        applied_at: '2026-07-15T12:00:00.000Z',
+      },
+    ];
+
+    // 1. Must NOT appear in public feed
+    const visibleJobs = simulatePublicFeedQuery(jobs, FIXED_NOW);
+    expect(visibleJobs).toHaveLength(0);
+
+    // 2. Retention purge execution
+    const purgeResult = simulatePurgeStaleJobRecords(jobs, applications, FIXED_NOW);
+    expect(purgeResult.deletedCount).toBe(0);
+    expect(purgeResult.protectedCount).toBe(1);
+
+    // Job remains in database for application tracking, but transitioned to status = 'expired'
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.id).toBe('job-old-with-app-005');
+    expect(jobs[0]!.status).toBe('expired');
+
+    // 3. Application still intact and visible to the applicant
+    const charlieApp = applications.find((a) => a.user_id === 'user-charlie');
+    expect(charlieApp).toBeDefined();
+    expect(charlieApp!.job_id).toBe('job-old-with-app-005');
+  });
+
+  it('Test F — Re-scrape of existing job with application preserves same jobs.id, preserves application, and does NOT reactivate as active if older than 30 days', () => {
+    const jobs: JobRecord[] = [
+      {
+        id: 'job-canonical-006',
+        canonical_url: 'https://company.com/job/006',
+        canonical_fingerprint: 'company-eng-006',
+        title: 'Solutions Architect',
+        status: 'expired',
+        posted_at: '2026-07-09T12:00:00.000Z', // 60 days ago
+        first_seen_at: '2026-07-09T12:00:00.000Z',
+        last_seen_at: '2026-07-15T12:00:00.000Z',
+      },
+    ];
+    const applications: ApplicationRecord[] = [
+      {
+        id: 'app-006',
+        user_id: 'user-dave',
+        job_id: 'job-canonical-006',
+        status: 'offer',
+        applied_at: '2026-07-12T12:00:00.000Z',
+      },
+    ];
+
+    // Scraper sees the exact same job again, but its posted_at is still 60 days ago
+    const incomingScrape = {
+      canonical_url: 'https://company.com/job/006',
+      canonical_fingerprint: 'company-eng-006',
+      title: 'Solutions Architect',
+      posted_at: '2026-07-09T12:00:00.000Z',
+    };
+
+    const ingestResult = simulateIngestJobTransaction(jobs, incomingScrape, FIXED_NOW);
+
+    // Invariant 1: Same jobs.id preserved (no duplicate jobs created)
+    expect(ingestResult.status).toBe('updated');
+    expect(ingestResult.jobId).toBe('job-canonical-006');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.id).toBe('job-canonical-006');
+
+    // Invariant 2: Old job MUST NOT be reactivated as active
+    expect(ingestResult.isStale).toBe(true);
+    expect(jobs[0]!.status).toBe('expired');
+
+    // Invariant 3: Application remains linked to same job ID
+    const daveApp = applications.find((a) => a.user_id === 'user-dave');
+    expect(daveApp).toBeDefined();
+    expect(daveApp!.job_id).toBe('job-canonical-006');
+    expect(daveApp!.status).toBe('offer');
   });
 });

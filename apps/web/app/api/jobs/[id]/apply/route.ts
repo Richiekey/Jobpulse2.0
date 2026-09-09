@@ -61,12 +61,19 @@ export async function GET(
     // 1. Fetch Job Record and Destination URL
     const { data: job, error: jobError } = await supabase
       .from('jobs')
-      .select('id, display_title, company_id, apply_url, canonical_url, url_resolution_confidence, companies(name)')
+      .select('id, display_title, company_id, apply_url, canonical_url, posted_at, status, url_resolution_confidence, companies(name)')
       .eq('id', jobId)
       .single();
 
     if (jobError || !job) {
       return ApiResponse.error('Job not found or inactive.', jobError, 404);
+    }
+
+    const isStale = job.posted_at
+      ? new Date(job.posted_at).getTime() < Date.now() - 30 * 24 * 60 * 60 * 1000
+      : false;
+    if (isStale || job.status !== 'active') {
+      return ApiResponse.error('Job posting has expired and is no longer accepting applications.', null, 410);
     }
 
     const targetUrl = job.apply_url || job.canonical_url;
@@ -140,12 +147,19 @@ export async function POST(
     // 1. Fetch Job Record and Destination URL
     const { data: job, error: jobError } = await supabase
       .from('jobs')
-      .select('id, display_title, company_id, apply_url, canonical_url, url_resolution_confidence, companies(name)')
+      .select('id, display_title, company_id, apply_url, canonical_url, posted_at, status, url_resolution_confidence, companies(name)')
       .eq('id', jobId)
       .single();
 
     if (jobError || !job) {
       return ApiResponse.error('Job not found or inactive.', jobError, 404);
+    }
+
+    const isStale = job.posted_at
+      ? new Date(job.posted_at).getTime() < Date.now() - 30 * 24 * 60 * 60 * 1000
+      : false;
+    if (isStale || job.status !== 'active') {
+      return ApiResponse.error('Job posting has expired and is no longer accepting applications.', null, 410);
     }
 
     const targetUrl = job.apply_url || job.canonical_url;

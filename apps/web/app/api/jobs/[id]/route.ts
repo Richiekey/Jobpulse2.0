@@ -172,6 +172,17 @@ export async function GET(
       }
     }
 
+    // Hard Age & Lifecycle Invariant: If the job is older than 30 days or not active,
+    // only expose it if the requesting user has an application record for it.
+    const isStale = job.posted_at
+      ? new Date(job.posted_at).getTime() < Date.now() - 30 * 24 * 60 * 60 * 1000
+      : false;
+    const isInactive = job.status !== 'active';
+
+    if ((isStale || isInactive) && !applicationStatus) {
+      return ApiResponse.error('Job posting has expired or is no longer available.', null, 404);
+    }
+
     const enrichedJob = {
       ...job,
       application_status: applicationStatus,

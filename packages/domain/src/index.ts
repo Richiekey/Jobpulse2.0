@@ -26,4 +26,5 @@ export * from './security/encryption.js';
 export * from './entities/sync-event.js';
 export * from './integrations/application-sync.js';
 export * from './seed/catalog-seed.js';
+export * from './job-eligibility.js';
 
