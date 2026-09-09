@@ -224,17 +224,32 @@ export function extractJobrightDetail(html: string): JobrightResolvedDetail {
 }
 
 export async function resolveJobrightDetail(jobId: string): Promise<JobrightResolvedDetail | undefined> {
+  let publicDetail: JobrightResolvedDetail | undefined;
+
   const publicHtml = await fetchDetailPage(jobId);
   if (publicHtml) {
-    const detail = extractJobrightDetail(publicHtml);
-    if (detail.directUrl || detail.cleanTitle) return detail;
+    publicDetail = extractJobrightDetail(publicHtml);
+    // Only skip authenticated fetch if we already have the direct URL
+    if (publicDetail.directUrl) return publicDetail;
   }
 
+  // Public page didn't have directUrl (Jobright now hides it from unauthenticated users).
+  // Always try the authenticated endpoint to get the ATS link.
   const sessionId = await ensureJobrightSession();
-  if (!sessionId) return undefined;
+  if (!sessionId) return publicDetail; // Return public data (cleanTitle) if we can't auth
 
   const authenticatedHtml = await fetchDetailPage(jobId, sessionId);
-  return authenticatedHtml ? extractJobrightDetail(authenticatedHtml) : undefined;
+  if (authenticatedHtml) {
+    const authDetail = extractJobrightDetail(authenticatedHtml);
+    // Merge: prefer authenticated data, fall back to public data
+    return {
+      directUrl: authDetail.directUrl || publicDetail?.directUrl,
+      cleanTitle: authDetail.cleanTitle || publicDetail?.cleanTitle,
+      companyName: authDetail.companyName || publicDetail?.companyName,
+    };
+  }
+
+  return publicDetail;
 }
 
 export async function resolveOriginalJobUrl(jobId: string): Promise<string | undefined> {

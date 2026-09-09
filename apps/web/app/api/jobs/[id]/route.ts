@@ -111,6 +111,7 @@ export async function GET(
                 jobright_reference_url: currentJobrightRef,
                 enrichment_status: 'enriched',
                 enriched_at: new Date().toISOString(),
+                ...(directUrl ? { direct_ats_url: directUrl } : {}),
               },
               updated_at: new Date().toISOString(),
             };
