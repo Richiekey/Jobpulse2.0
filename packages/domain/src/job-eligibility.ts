@@ -107,9 +107,13 @@ const EXCLUDED_REGION_PATTERNS = [
 
 // Whitelist regional patterns
 const US_PATTERNS = /\b(united\s+states|usa?\b|u\.s\.a?\b|america)\b/i;
-const CANADA_PATTERNS = /\b(canada|can\b|ontario|toronto|vancouver|quebec|montreal|british\s+columbia|alberta)\b/i;
+const CANADA_PATTERNS = /\b(canada|can\b|ontario|toronto|vancouver|quebec|montreal|british\s+columbia|alberta|calgary|ottawa|edmonton|winnipeg)\b/i;
 const EUROPE_PATTERNS = /\b(europe|emea|united\s+kingdom|uk\b|u\.k\b|london|england|ireland|germany|berlin|france|paris|netherlands|amsterdam|spain|madrid|barcelona|sweden|stockholm|poland|warsaw|switzerland|zurich)\b/i;
 const WORLDWIDE_PATTERNS = /\b(worldwide|anywhere|global|all\s+locations)\b/i;
+
+// Common US cities & state abbreviations (fallback when country is not explicitly mentioned)
+const US_CITY_PATTERNS = /\b(san\s+francisco|new\s+york|los\s+angeles|seattle|austin|chicago|boston|denver|portland|atlanta|miami|dallas|houston|phoenix|philadelphia|san\s+diego|san\s+jose|washington\s*,?\s*d\.?c\.?|pittsburgh|minneapolis|detroit|charlotte|raleigh|salt\s+lake|nashville|columbus|indianapolis|madison|boulder|palo\s+alto|mountain\s+view|menlo\s+park|redwood\s+city|sunnyvale|cupertino|santa\s+clara|san\s+mateo|redmond|bellevue|brooklyn|manhattan|jersey\s+city|arlington|cambridge|somerville|oakland|berkeley|burlington)\b/i;
+const US_STATE_PATTERNS = /\b(california|new\s+york|texas|washington|massachusetts|colorado|georgia|florida|illinois|pennsylvania|virginia|north\s+carolina|ohio|michigan|minnesota|oregon|maryland|connecticut|new\s+jersey|arizona|tennessee|utah|wisconsin|indiana|missouri|\bCA\b|\bNY\b|\bTX\b|\bWA\b|\bMA\b|\bCO\b|\bGA\b|\bFL\b|\bIL\b|\bPA\b|\bVA\b|\bNC\b|\bOH\b|\bOR\b|\bMD\b|\bCT\b|\bNJ\b|\bAZ\b|\bTN\b|\bUT\b|\bWI\b|\bMN\b)\b/i;
 
 // Pseudo-technical patterns that MUST BE EXCLUDED even if containing the word "technical"
 const PSEUDO_TECHNICAL_EXCLUSIONS = [
@@ -188,8 +192,13 @@ export class JobEligibilityPolicy {
       return this.createIneligibleResult('MISSING_REQUIRED_DATA', 'non_technical', 'UNKNOWN', 'NOT_REMOTE', 'unspecified');
     }
 
-    // 1. HARD 30-DAY AGE INVARIANT
-    if (job.postedAt) {
+    // 1. AGE CHECK (Soft — only reject for aggregator sources, not direct ATS boards)
+    // Direct ATS sources (Greenhouse, Ashby, Lever, Workday, etc.) list only active jobs,
+    // so being present on the board IS proof the job is current even if postedAt is > 30d.
+    // The ingest_job_transaction RPC already sets status='expired' for stale jobs.
+    // Only reject at the eligibility gate for aggregator sources where postedAt is the
+    // sole freshness signal.
+    if (job.postedAt && job.sourceMetadata?.originalSource === 'jobright_github_markdown') {
       const postedTime = new Date(job.postedAt).getTime();
       const cutoffTime = now.getTime() - this.MAX_RETENTION_DAYS * 24 * 60 * 60 * 1000;
       if (!isNaN(postedTime) && postedTime < cutoffTime) {
@@ -288,7 +297,7 @@ export class JobEligibilityPolicy {
     let geographyCategory: GeographyCategory = 'UNKNOWN';
     let remoteCategory: RemoteCategory = isRemote ? 'REMOTE_UNKNOWN' : 'NOT_REMOTE';
 
-    if (parsedCountry === 'united states' || US_PATTERNS.test(locationString) || (parsed.region && LocationParser['isUSState']?.(parsed.region))) {
+    if (parsedCountry === 'united states' || US_PATTERNS.test(locationString) || US_CITY_PATTERNS.test(locationString) || US_STATE_PATTERNS.test(locationString) || (parsed.region && LocationParser['isUSState']?.(parsed.region))) {
       geographyCategory = 'US';
       remoteCategory = isRemote ? 'REMOTE_US' : 'NOT_REMOTE';
     } else if (parsedCountry === 'canada' || CANADA_PATTERNS.test(locationString)) {
