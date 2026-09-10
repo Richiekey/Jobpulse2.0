@@ -427,13 +427,13 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(4px)',
+            background: 'rgba(0, 0, 0, 0.7)',
+            backdropFilter: 'blur(6px)',
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999,
-            padding: '60px 20px 20px',
+            zIndex: 99999,
+            padding: '20px',
             overflowY: 'auto',
           }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowCreateModal(false); }}
