@@ -255,7 +255,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
               top: 'calc(100% + 6px)',
               left: 0,
               minWidth: '260px',
-              background: 'var(--bg-surface-elevated)',
+              background: '#151c2e',
               border: '1px solid var(--border-default)',
               borderRadius: '12px',
               boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)',
@@ -430,10 +430,11 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
             background: 'rgba(0, 0, 0, 0.6)',
             backdropFilter: 'blur(4px)',
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center',
             zIndex: 9999,
-            padding: '20px',
+            padding: '60px 20px 20px',
+            overflowY: 'auto',
           }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowCreateModal(false); }}
         >
@@ -446,7 +447,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: '20px',
-              background: 'var(--bg-surface-elevated)',
+              background: '#151c2e',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

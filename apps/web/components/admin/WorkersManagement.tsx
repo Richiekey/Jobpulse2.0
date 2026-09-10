@@ -1005,10 +1005,11 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
             background: 'rgba(0, 0, 0, 0.6)',
             backdropFilter: 'blur(4px)',
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center',
             zIndex: 9999,
-            padding: '20px',
+            padding: '60px 20px 20px',
+            overflowY: 'auto',
           }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowAddWorker(false); }}
         >
@@ -1021,7 +1022,7 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: '20px',
-              background: 'var(--bg-surface-elevated)',
+              background: '#151c2e',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
