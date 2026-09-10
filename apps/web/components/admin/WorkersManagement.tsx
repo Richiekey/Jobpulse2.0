@@ -15,6 +15,8 @@ import {
   X,
   UserX,
   MoreVertical,
+  UserPlus,
+  PlusCircle,
 } from 'lucide-react';
 
 export interface WorkerAssignmentStats {
@@ -80,6 +82,14 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
   const [removingMember, setRemovingMember] = useState<AdminWorkerItem | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+
+  // Add Worker modal state
+  const [showAddWorker, setShowAddWorker] = useState(false);
+  const [addWorkerEmail, setAddWorkerEmail] = useState('');
+  const [addWorkerRole, setAddWorkerRole] = useState<'owner' | 'admin' | 'worker'>('worker');
+  const [addingWorker, setAddingWorker] = useState(false);
+  const [addWorkerError, setAddWorkerError] = useState<string | null>(null);
+  const [addWorkerSuccess, setAddWorkerSuccess] = useState<string | null>(null);
 
   const fetchWorkers = useCallback(async () => {
     if (!organizationId) {
@@ -172,6 +182,45 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
     }
   };
 
+  // Handle adding a new worker by email
+  const handleAddWorker = async () => {
+    if (!addWorkerEmail.trim() || !organizationId) return;
+    setAddingWorker(true);
+    setAddWorkerError(null);
+    setAddWorkerSuccess(null);
+
+    try {
+      const res = await fetch(`/api/organizations/${organizationId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: addWorkerEmail.trim().toLowerCase(),
+          role: addWorkerRole,
+        }),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Failed to add worker (HTTP ${res.status})`);
+      }
+
+      setAddWorkerSuccess(`Successfully added ${addWorkerEmail.trim()} as ${addWorkerRole}.`);
+      setAddWorkerEmail('');
+      setAddWorkerRole('worker');
+      await fetchWorkers();
+
+      // Auto-close after success
+      setTimeout(() => {
+        setShowAddWorker(false);
+        setAddWorkerSuccess(null);
+      }, 1500);
+    } catch (err: any) {
+      setAddWorkerError(err.message || 'Error adding worker.');
+    } finally {
+      setAddingWorker(false);
+    }
+  };
+
   // Workload summary calculations
   const totalWorkers = workers.length;
   const activeWorkersCount = workers.filter(
@@ -213,6 +262,7 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
   }
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Workload KPI Summary */}
       <div
@@ -339,15 +389,30 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
             </select>
           </div>
 
-          <button
-            onClick={fetchWorkers}
-            disabled={loading}
-            className="btn btn-secondary"
-            style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            <span>Refresh</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={fetchWorkers}
+              disabled={loading}
+              className="btn btn-secondary"
+              style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setShowAddWorker(true);
+                setAddWorkerError(null);
+                setAddWorkerSuccess(null);
+              }}
+              className="btn btn-primary"
+              style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <UserPlus size={15} />
+              <span>Add Worker</span>
+            </button>
+          </div>
         </div>
 
         {/* Error Banner */}
@@ -931,5 +996,173 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
         </div>
       )}
     </div>
+
+      {showAddWorker && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddWorker(false); }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: '440px',
+              width: '100%',
+              padding: '28px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <UserPlus size={20} color="#818cf8" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Add Worker</h3>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    The user must have an existing account.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddWorker(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {addWorkerError && (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#f87171',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                }}
+              >
+                {addWorkerError}
+              </div>
+            )}
+
+            {addWorkerSuccess && (
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#34d399',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                }}
+              >
+                {addWorkerSuccess}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  placeholder="worker@example.com"
+                  value={addWorkerEmail}
+                  onChange={(e) => setAddWorkerEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && addWorkerEmail.trim()) handleAddWorker(); }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                  }}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                  Role
+                </label>
+                <select
+                  value={addWorkerRole}
+                  onChange={(e) => setAddWorkerRole(e.target.value as 'owner' | 'admin' | 'worker')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  <option value="worker">Worker</option>
+                  <option value="admin">Admin</option>
+                  <option value="owner">Owner</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+              <button
+                onClick={() => setShowAddWorker(false)}
+                className="btn btn-secondary"
+                style={{ padding: '8px 16px' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddWorker}
+                disabled={addingWorker || !addWorkerEmail.trim()}
+                className="btn btn-primary"
+                style={{ padding: '8px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                {addingWorker ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Adding…</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={14} />
+                    <span>Add to Organization</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
