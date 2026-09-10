@@ -55,9 +55,15 @@ export const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
       job.source_metadata?.originalSource === 'jobright_github_markdown' ||
       job.apply_url?.includes('jobright.ai');
 
-    const hasDirectAts = job.apply_url && !job.apply_url.includes('jobright.ai');
+    // Check if we already have a direct ATS URL (pre-resolved at scrape time)
+    const alreadyHasDirectAts =
+      (job.source_metadata?.direct_ats_url && !job.source_metadata.direct_ats_url.includes('jobright.ai')) ||
+      (job.source_metadata?.ats_url && !job.source_metadata.ats_url.includes('jobright.ai')) ||
+      (job.apply_url && !job.apply_url.includes('jobright.ai'));
 
-    if (isJobright && !hasDirectAts && job.source_metadata?.enrichment_status !== 'enriched') {
+    // Only trigger on-demand resolution if the job is from Jobright,
+    // doesn't already have a direct ATS URL, and hasn't been enriched
+    if (isJobright && !alreadyHasDirectAts && job.source_metadata?.enrichment_status !== 'enriched') {
       let isMounted = true;
       setIsResolving(true);
       fetch(`/api/jobs/${job.id}`)

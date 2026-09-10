@@ -112,6 +112,9 @@ export async function GET(
                 enrichment_status: 'enriched',
                 enriched_at: new Date().toISOString(),
                 ...(directUrl ? { direct_ats_url: directUrl } : {}),
+                // Store detected ATS platform as informational metadata only —
+                // do NOT overwrite ats_platform_slug (source identity must stay 'jobright')
+                ...(detectedSlug && detectedSlug !== 'jobright' ? { resolved_ats_platform: detectedSlug } : {}),
               },
               updated_at: new Date().toISOString(),
             };
@@ -120,14 +123,16 @@ export async function GET(
               updateFields.apply_url = directUrl;
               updateFields.original_apply_url = directUrl;
               updateFields.canonical_url = directUrl;
-              updateFields.ats_platform_slug = detectedSlug;
+              // DO NOT overwrite ats_platform_slug — Jobright jobs must always
+              // retain their source identity as 'jobright' regardless of where
+              // the direct ATS link points to.
               updateFields.url_resolution_method = isDirectAts ? 'direct_ats' : 'employer_application';
               updateFields.url_resolution_confidence = isDirectAts ? 0.95 : 0.85;
 
               job.apply_url = directUrl;
               job.original_apply_url = directUrl;
               job.canonical_url = directUrl;
-              job.ats_platform_slug = detectedSlug;
+              // Keep job.ats_platform_slug unchanged (stays 'jobright')
             }
 
             if (detail.cleanTitle) {

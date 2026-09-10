@@ -65,6 +65,9 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
     const isJobright = isJobrightOrigin(job);
     const isEnriched = job.source_metadata?.enrichment_status === 'enriched';
 
+    // Check if we already have a direct ATS URL (pre-resolved at scrape time)
+    const alreadyHasDirectAts = Boolean(getDirectAtsUrl(job));
+
     const rawTitle = job.canonical_title || job.display_title || '';
     const rawCompany = job.companies?.name || '';
     const isMalformed =
@@ -73,12 +76,10 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
       rawCompany.startsWith('[') ||
       (rawTitle.length > 0 && rawTitle.length <= 2);
 
-    const hasDirectAts =
-      Boolean(job.apply_url) &&
-      !job.apply_url.includes('jobright.ai') &&
-      job.ats_platform_slug !== 'jobright';
-
-    const needsResolution = (isJobright && (!hasDirectAts || !isEnriched)) || isMalformed;
+    // Only trigger on-demand resolution if:
+    // 1. Job is from Jobright AND doesn't already have a direct ATS URL AND isn't enriched
+    // 2. OR title/company is malformed (needs cleanup regardless)
+    const needsResolution = (isJobright && !alreadyHasDirectAts && !isEnriched) || isMalformed;
 
     if (needsResolution && !isResolving) {
       let isMounted = true;

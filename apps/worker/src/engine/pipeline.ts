@@ -256,6 +256,42 @@ export class IngestionPipeline {
       const parsedLocation = LocationParser.parseMultiple(normalizedJob.locations);
       const isRemote = normalizedJob.workplaceType === 'remote' || parsedLocation.isRemote;
 
+      // 8b. Jobright Direct ATS URL Promotion
+      // If the adapter already resolved a direct ATS URL during discover() (via
+      // JobrightDetailEnrichedAdapter), promote it into source_metadata.direct_ats_url
+      // and mark the job as pre-enriched so the frontend skips on-demand resolution.
+      // IMPORTANT: ats_platform_slug stays as 'jobright' — we never overwrite the
+      // source platform identity.
+      if (adapter.platformSlug === 'jobright') {
+        const meta = (normalizedJob.sourceMetadata || {}) as Record<string, unknown>;
+        const directUrl =
+          (typeof meta['original_apply_url'] === 'string' ? meta['original_apply_url'] : null) ||
+          (typeof meta['ats_url'] === 'string' ? meta['ats_url'] : null);
+
+        if (directUrl && !directUrl.includes('jobright.ai')) {
+          meta['direct_ats_url'] = directUrl;
+          meta['enrichment_status'] = 'enriched';
+          meta['enriched_at'] = new Date().toISOString();
+
+          // Preserve the original Jobright reference URL before overwriting apply_url
+          if (normalizedJob.urls.applyUrl?.includes('jobright.ai')) {
+            meta['jobright_reference_url'] = normalizedJob.urls.applyUrl;
+          } else if (normalizedJob.urls.canonicalUrl?.includes('jobright.ai')) {
+            meta['jobright_reference_url'] = normalizedJob.urls.canonicalUrl;
+          }
+
+          // Promote direct ATS URL to primary apply fields
+          normalizedJob.urls.applyUrl = directUrl;
+          normalizedJob.urls.originalApplyUrl = directUrl;
+          normalizedJob.sourceMetadata = meta;
+
+          logger.info('jobright_direct_ats_promoted_at_ingest', {
+            candidateId: candidate.externalJobId,
+            directUrl,
+          });
+        }
+      }
+
       // 9. Atomic Transactional Persistence via PostgreSQL RPC
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         'ingest_job_transaction',

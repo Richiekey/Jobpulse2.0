@@ -97,34 +97,34 @@ export function isJobrightOrigin(job: any): boolean {
 export function getDirectAtsUrl(job: any): string | null {
   if (!job) return null;
 
-  // Direct ATS candidate from source_metadata
+  // 1. Check source_metadata.direct_ats_url (set at scrape-time or by on-demand enrichment)
   if (job.source_metadata?.direct_ats_url && !job.source_metadata.direct_ats_url.includes('jobright.ai')) {
     return job.source_metadata.direct_ats_url;
   }
+
+  // 2. Check source_metadata.ats_url (set by JobrightDetailEnrichedAdapter during discover)
   if (job.source_metadata?.ats_url && !job.source_metadata.ats_url.includes('jobright.ai')) {
     return job.source_metadata.ats_url;
   }
 
-  // Check apply_url
+  // 3. Check source_metadata.original_apply_url (set by JobrightDetailEnrichedAdapter during discover)
+  if (job.source_metadata?.original_apply_url && !job.source_metadata.original_apply_url.includes('jobright.ai')) {
+    return job.source_metadata.original_apply_url;
+  }
+
+  // 4. Check primary apply_url (may already point to direct ATS after pipeline promotion)
   if (job.apply_url && !job.apply_url.includes('jobright.ai')) {
-    // If it's not marked as jobright platform, or if enrichment confirmed it
-    if (job.ats_platform_slug !== 'jobright' || job.source_metadata?.enrichment_status === 'enriched') {
-      return job.apply_url;
-    }
+    return job.apply_url;
   }
 
-  // Check original_apply_url
+  // 5. Check original_apply_url column
   if (job.original_apply_url && !job.original_apply_url.includes('jobright.ai')) {
-    if (job.ats_platform_slug !== 'jobright' || job.source_metadata?.enrichment_status === 'enriched') {
-      return job.original_apply_url;
-    }
+    return job.original_apply_url;
   }
 
-  // Check canonical_url
+  // 6. Check canonical_url
   if (job.canonical_url && !job.canonical_url.includes('jobright.ai')) {
-    if (job.ats_platform_slug !== 'jobright' || job.source_metadata?.enrichment_status === 'enriched') {
-      return job.canonical_url;
-    }
+    return job.canonical_url;
   }
 
   return null;
