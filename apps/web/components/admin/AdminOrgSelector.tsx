@@ -158,8 +158,8 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
     width: '100%',
     padding: '10px 14px',
     borderRadius: '8px',
-    border: '1px solid var(--border-color)',
-    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    background: 'var(--bg-surface)',
     color: 'var(--text-primary)',
     fontSize: '0.85rem',
   };
@@ -177,7 +177,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
             gap: '10px',
             padding: '8px 14px',
             background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid var(--border-color)',
+            border: '1px solid var(--border-default)',
             borderRadius: '10px',
             cursor: loading ? 'wait' : 'pointer',
             color: 'var(--text-primary)',
@@ -255,8 +255,8 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
               top: 'calc(100% + 6px)',
               left: 0,
               minWidth: '260px',
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
+              background: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-default)',
               borderRadius: '12px',
               boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)',
               zIndex: 1000,
@@ -272,7 +272,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
                 letterSpacing: '0.05em',
                 color: 'var(--text-muted)',
                 fontWeight: 700,
-                borderBottom: '1px solid var(--border-color)',
+                borderBottom: '1px solid var(--border-default)',
                 marginBottom: '4px',
               }}
             >
@@ -390,7 +390,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
             {/* Create Organization Button */}
             {isPlatformAdmin && (
               <>
-                <div style={{ borderTop: '1px solid var(--border-color)', margin: '4px 0' }} />
+                <div style={{ borderTop: '1px solid var(--border-default)', margin: '4px 0' }} />
                 <button
                   onClick={() => {
                     setIsOpen(false);
@@ -438,7 +438,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
           onClick={(e) => { if (e.target === e.currentTarget) setShowCreateModal(false); }}
         >
           <div
-            className="card"
+            className="ui-card-elevated"
             style={{
               maxWidth: '480px',
               width: '100%',
@@ -446,6 +446,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: '20px',
+              background: 'var(--bg-surface-elevated)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

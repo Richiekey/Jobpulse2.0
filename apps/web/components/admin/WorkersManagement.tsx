@@ -1013,7 +1013,7 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
           onClick={(e) => { if (e.target === e.currentTarget) setShowAddWorker(false); }}
         >
           <div
-            className="card"
+            className="ui-card-elevated"
             style={{
               maxWidth: '440px',
               width: '100%',
@@ -1021,6 +1021,7 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: '20px',
+              background: 'var(--bg-surface-elevated)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1100,8 +1101,8 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
                     fontSize: '0.85rem',
                   }}
@@ -1120,8 +1121,8 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
                     fontSize: '0.85rem',
                   }}
