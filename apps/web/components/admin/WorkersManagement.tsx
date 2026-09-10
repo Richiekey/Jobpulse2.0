@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Users,
   Search,
@@ -997,7 +998,7 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
       )}
     </div>
 
-      {showAddWorker && (
+      {showAddWorker && createPortal(
         <div
           style={{
             position: 'fixed',
@@ -1164,7 +1165,7 @@ export const WorkersManagement: React.FC<WorkersManagementProps> = ({
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </>
   );
 };

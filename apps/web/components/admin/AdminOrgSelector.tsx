@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Building2, ChevronDown, Check, Shield, Globe, Users, PlusCircle, X, RefreshCw } from 'lucide-react';
 
 export interface AdminOrganization {
@@ -422,7 +423,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
       </div>
 
       {/* Create Organization Modal */}
-      {showCreateModal && (
+      {showCreateModal && createPortal(
         <div
           style={{
             position: 'fixed',
@@ -583,7 +584,7 @@ export const AdminOrgSelector: React.FC<AdminOrgSelectorProps> = ({
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </>
   );
 };
