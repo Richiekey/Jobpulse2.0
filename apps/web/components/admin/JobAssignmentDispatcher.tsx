@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Briefcase,
   Send,
@@ -402,8 +403,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                   width: '100%',
                   padding: '8px 12px 8px 36px',
                   borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-default)',
+                  background: 'var(--bg-surface)',
                   color: 'var(--text-primary)',
                   fontSize: '0.85rem',
                 }}
@@ -417,8 +418,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
               style={{
                 padding: '8px 12px',
                 borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-default)',
+                background: 'var(--bg-surface)',
                 color: 'var(--text-primary)',
                 fontSize: '0.85rem',
               }}
@@ -438,8 +439,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
               style={{
                 padding: '8px 12px',
                 borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-default)',
+                background: 'var(--bg-surface)',
                 color: 'var(--text-primary)',
                 fontSize: '0.85rem',
                 maxWidth: '180px',
@@ -511,7 +512,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+              <tr style={{ borderBottom: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Job Opportunity</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Assigned Worker</th>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
@@ -547,7 +548,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                     <tr
                       key={a.id}
                       style={{
-                        borderBottom: '1px solid var(--border-color)',
+                        borderBottom: '1px solid var(--border-default)',
                         transition: 'background 0.15s ease',
                       }}
                     >
@@ -732,7 +733,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
       </div>
 
       {/* Dispatch Modal */}
-      {isDispatchModalOpen && (
+      {isDispatchModalOpen && createPortal(
         <div
           style={{
             position: 'fixed',
@@ -742,13 +743,13 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1000,
+            zIndex: 99999,
             padding: '20px',
           }}
           onClick={() => setIsDispatchModalOpen(false)}
         >
           <div
-            className="card"
+            className="ui-card-elevated"
             style={{
               maxWidth: '540px',
               width: '100%',
@@ -758,6 +759,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
               gap: '20px',
               maxHeight: '90vh',
               overflowY: 'auto',
+              background: '#151c2e',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -821,8 +823,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                     width: '100%',
                     padding: '10px 12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
                     fontSize: '0.85rem',
                   }}
@@ -891,8 +893,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                           width: '100%',
                           padding: '10px 12px 10px 36px',
                           borderRadius: '8px',
-                          border: '1px solid var(--border-color)',
-                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-default)',
+                          background: 'var(--bg-surface)',
                           color: 'var(--text-primary)',
                           fontSize: '0.85rem',
                         }}
@@ -903,9 +905,9 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                     {searchResults.length > 0 && (
                       <div
                         style={{
-                          border: '1px solid var(--border-color)',
+                          border: '1px solid var(--border-default)',
                           borderRadius: '8px',
-                          background: 'var(--bg-secondary)',
+                          background: '#151c2e',
                           maxHeight: '180px',
                           overflowY: 'auto',
                         }}
@@ -924,7 +926,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                               padding: '8px 12px',
                               textAlign: 'left',
                               border: 'none',
-                              borderBottom: '1px solid var(--border-color)',
+                              borderBottom: '1px solid var(--border-default)',
                               background: 'transparent',
                               color: 'var(--text-primary)',
                               fontSize: '0.85rem',
@@ -940,25 +942,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                       </div>
                     )}
 
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-                      — OR enter Job UUID directly —
-                    </div>
 
-                    <input
-                      type="text"
-                      placeholder="e.g. 11111111-2222-3333-4444-555555555555"
-                      value={jobIdInput}
-                      onChange={(e) => setJobIdInput(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-primary)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.8rem',
-                      }}
-                    />
                   </div>
                 )}
               </div>
@@ -976,8 +960,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
                     fontSize: '0.85rem',
                   }}
@@ -998,8 +982,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
                     fontSize: '0.85rem',
                     resize: 'vertical',
@@ -1030,10 +1014,10 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
             </form>
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* Cancel Confirmation Modal */}
-      {cancellingAssignment && (
+      {cancellingAssignment && createPortal(
         <div
           style={{
             position: 'fixed',
@@ -1043,14 +1027,14 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1000,
+            zIndex: 99999,
             padding: '20px',
           }}
           onClick={() => setCancellingAssignment(null)}
         >
           <div
-            className="card"
-            style={{ maxWidth: '420px', width: '100%', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+            className="ui-card-elevated"
+            style={{ maxWidth: '420px', width: '100%', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', background: '#151c2e' }}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ef4444' }}>Cancel Assignment</h3>
@@ -1098,7 +1082,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 };
