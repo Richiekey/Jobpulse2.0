@@ -49,12 +49,6 @@ export async function GET(request: NextRequest) {
             name,
             logo_url
           )
-        ),
-        profiles:worker_id (
-          id,
-          email,
-          full_name,
-          avatar_url
         )
       `)
       .eq('organization_id', organizationId);
@@ -77,38 +71,54 @@ export async function GET(request: NextRequest) {
       return ApiResponse.error('Failed to retrieve organization assignments.', queryError, 500);
     }
 
-    const formatted = (assignments || []).map((a: any) => ({
-      id: a.id,
-      organizationId: a.organization_id,
-      jobId: a.job_id,
-      workerId: a.worker_id,
-      assignedBy: a.assigned_by,
-      status: a.status,
-      deadlineAt: a.deadline_at,
-      notes: a.notes,
-      assignedAt: a.created_at,
-      updatedAt: a.updated_at,
-      job: a.jobs ? {
-        id: a.jobs.id,
-        canonicalTitle: a.jobs.canonical_title,
-        displayTitle: a.jobs.display_title,
-        locations: a.jobs.locations,
-        workplaceType: a.jobs.workplace_type,
-        applyUrl: a.jobs.apply_url,
-        canonicalUrl: a.jobs.canonical_url,
-        company: a.jobs.companies ? {
-          id: a.jobs.companies.id,
-          name: a.jobs.companies.name,
-          logoUrl: a.jobs.companies.logo_url,
+    // Fetch worker profiles separately (RLS blocks cross-user profile joins)
+    const workerIds = [...new Set((assignments || []).map((a: any) => a.worker_id).filter(Boolean))];
+    let workerProfilesMap = new Map<string, any>();
+    if (workerIds.length > 0) {
+      const { data: workerProfiles } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, avatar_url')
+        .in('id', workerIds);
+      for (const p of workerProfiles || []) {
+        workerProfilesMap.set(p.id, p);
+      }
+    }
+
+    const formatted = (assignments || []).map((a: any) => {
+      const workerProfile = workerProfilesMap.get(a.worker_id);
+      return {
+        id: a.id,
+        organizationId: a.organization_id,
+        jobId: a.job_id,
+        workerId: a.worker_id,
+        assignedBy: a.assigned_by,
+        status: a.status,
+        deadlineAt: a.deadline_at,
+        notes: a.notes,
+        assignedAt: a.created_at,
+        updatedAt: a.updated_at,
+        job: a.jobs ? {
+          id: a.jobs.id,
+          canonicalTitle: a.jobs.canonical_title,
+          displayTitle: a.jobs.display_title,
+          locations: a.jobs.locations,
+          workplaceType: a.jobs.workplace_type,
+          applyUrl: a.jobs.apply_url,
+          canonicalUrl: a.jobs.canonical_url,
+          company: a.jobs.companies ? {
+            id: a.jobs.companies.id,
+            name: a.jobs.companies.name,
+            logoUrl: a.jobs.companies.logo_url,
+          } : null,
         } : null,
-      } : null,
-      worker: a.profiles ? {
-        id: a.profiles.id,
-        email: a.profiles.email,
-        fullName: a.profiles.full_name,
-        avatarUrl: a.profiles.avatar_url,
-      } : null,
-    }));
+        worker: workerProfile ? {
+          id: workerProfile.id,
+          email: workerProfile.email,
+          fullName: workerProfile.full_name,
+          avatarUrl: workerProfile.avatar_url,
+        } : null,
+      };
+    });
 
     return ApiResponse.success(formatted);
   } catch (err) {
