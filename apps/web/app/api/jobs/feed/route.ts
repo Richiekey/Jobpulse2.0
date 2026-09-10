@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
 import { AuthGuard } from '@/lib/auth-guard';
 import { decodeCursor, encodeCursor } from '@/lib/cursor';
-import { LocationParser } from '@jobpulse/domain';
+import { LocationParser, JobFunctionTaxonomy } from '@jobpulse/domain';
 import { z } from 'zod';
 
 const FeedQuerySchema = z
@@ -156,12 +156,28 @@ export async function GET(request: NextRequest) {
       `)
       .eq('status', 'active');
 
-    // 1. Job Function Filter (Multi-Select)
+    // 1. Job Function Filter (Multi-Select with Taxonomy Hierarchy Expansion)
+    // When a parent category is selected (e.g., 'data-ai-ml'), automatically
+    // expand the filter to include all child sub-functions (e.g., 'data-science',
+    // 'data-engineering', 'data-ml', etc.) so users get complete results.
     if (functionSlugParam && functionSlugParam !== 'all') {
-      const functionsList = functionSlugParam
+      const rawFunctionsList = functionSlugParam
         .split(',')
         .map((f) => f.trim().toLowerCase())
         .filter(Boolean);
+
+      // Expand parent slugs into parent + children
+      const expandedFunctions = new Set<string>();
+      for (const slug of rawFunctionsList) {
+        expandedFunctions.add(slug);
+        // If this slug is a parent, add all its child sub-functions
+        const children = JobFunctionTaxonomy.getSubFunctions(slug);
+        for (const child of children) {
+          expandedFunctions.add(child.slug);
+        }
+      }
+
+      const functionsList = Array.from(expandedFunctions);
       if (functionsList.length === 1) {
         dbQuery = dbQuery.eq('job_function_slug', functionsList[0]!);
       } else if (functionsList.length > 1) {

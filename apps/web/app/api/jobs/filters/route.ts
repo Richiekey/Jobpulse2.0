@@ -22,61 +22,46 @@ export async function GET(_request: NextRequest) {
       return ApiResponse.error('Failed to load taxonomy.', taxError, 500);
     }
 
-    // 2. Fetch Aggregated Statistics for Functions, Platforms, Locations, Workplace, Employment
-    const hardMaxCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: jobStats, error: statsError } = await supabase
-      .from('jobs')
-      .select('ats_platform_slug, job_function_slug, workplace_type, employment_type, location_country, is_remote')
-      .eq('status', 'active')
-      .gte('posted_at', hardMaxCutoff);
+    // 2. Fetch Aggregated Facet Counts via Server-Side RPC
+    // This uses SQL COUNT/GROUP BY in Postgres, eliminating the PostgREST
+    // 1,000-row default limit that previously caused truncated/incorrect counts.
+    const { data: facets, error: facetsError } = await supabase.rpc('get_job_filter_facets');
 
-    if (statsError) {
-      return ApiResponse.error('Failed to load job filter facets.', statsError, 500);
+    if (facetsError) {
+      return ApiResponse.error('Failed to load job filter facets.', facetsError, 500);
     }
 
-    const functionCounts: Record<string, number> = {};
-    const platformCounts: Record<string, number> = {};
-    const workplaceCounts: Record<string, number> = {};
-    const employmentCounts: Record<string, number> = {};
-    const countryCounts: Record<string, number> = {};
-    let remoteCount = 0;
+    const functionCounts: Record<string, number> = facets?.function_counts || {};
+    const platformCounts: Record<string, number> = facets?.platform_counts || {};
+    const workplaceCounts: Record<string, number> = facets?.workplace_counts || {};
+    const employmentCounts: Record<string, number> = facets?.employment_counts || {};
+    const remoteCount: number = facets?.remote_count || 0;
+    const totalActiveJobs: number = facets?.total_active_jobs || 0;
 
-    for (const job of jobStats || []) {
-      if (job.job_function_slug) {
-        functionCounts[job.job_function_slug] = (functionCounts[job.job_function_slug] || 0) + 1;
-      }
-      if (job.ats_platform_slug) {
-        platformCounts[job.ats_platform_slug] = (platformCounts[job.ats_platform_slug] || 0) + 1;
-      }
-      if (job.workplace_type) {
-        workplaceCounts[job.workplace_type] = (workplaceCounts[job.workplace_type] || 0) + 1;
-      }
-      if (job.employment_type) {
-        employmentCounts[job.employment_type] = (employmentCounts[job.employment_type] || 0) + 1;
-      }
-      if (job.location_country) {
-        countryCounts[job.location_country] = (countryCounts[job.location_country] || 0) + 1;
-      }
-      if (job.is_remote) {
-        remoteCount++;
-      }
-    }
-
-    // Organize taxonomy tree
+    // Organize taxonomy tree with aggregated parent counts
+    // Parent count = direct parent matches + sum of all children counts
     const topLevelFunctions = (taxRows || [])
       .filter((r) => !r.parent_slug)
-      .map((r) => ({
-        slug: r.slug,
-        name: r.name,
-        count: functionCounts[r.slug] || 0,
-        subFunctions: (taxRows || [])
+      .map((r) => {
+        const subFunctions = (taxRows || [])
           .filter((sub) => sub.parent_slug === r.slug)
           .map((sub) => ({
             slug: sub.slug,
             name: sub.name,
             count: functionCounts[sub.slug] || 0,
-          })),
-      }));
+          }));
+
+        // Parent count = jobs directly tagged with parent slug + all children
+        const directParentCount = functionCounts[r.slug] || 0;
+        const childrenTotal = subFunctions.reduce((sum, sub) => sum + sub.count, 0);
+
+        return {
+          slug: r.slug,
+          name: r.name,
+          count: directParentCount + childrenTotal,
+          subFunctions,
+        };
+      });
 
     // Supported ATS Platforms
     const platforms = [
@@ -106,11 +91,8 @@ export async function GET(_request: NextRequest) {
       { slug: 'internship', name: 'Internship', count: employmentCounts['internship'] || 0 },
     ];
 
-    // Top Countries
-    const topCountries = Object.entries(countryCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 15)
-      .map(([country, count]) => ({ country, count }));
+    // Top Countries (from RPC, already sorted by count desc)
+    const topCountries: Array<{ country: string; count: number }> = facets?.countries || [];
 
     // Date Presets
     const datePresets = [
@@ -122,7 +104,7 @@ export async function GET(_request: NextRequest) {
     ];
 
     return ApiResponse.success({
-      total_active_jobs: jobStats?.length || 0,
+      total_active_jobs: totalActiveJobs,
       functions: topLevelFunctions,
       platforms,
       workplace_types: workplaceTypes,
