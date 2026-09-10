@@ -18,29 +18,31 @@ export async function GET(request: NextRequest) {
 
     const { supabase } = authResult;
 
-    // Fetch members who are workers (or admins) in this org
+    // Fetch members in this org (no profiles join — RLS blocks cross-user reads)
     const { data: members, error: membersError } = await supabase
       .from('organization_members')
-      .select(`
-        id,
-        user_id,
-        role,
-        created_at,
-        profiles (
-          id,
-          email,
-          full_name,
-          avatar_url
-        )
-      `)
+      .select('id, user_id, role, created_at')
       .eq('organization_id', organizationId);
 
     if (membersError) {
       return ApiResponse.error('Failed to retrieve organization workers.', membersError, 500);
     }
 
+    // Fetch profile info for each member individually
+    const userIds = (members || []).map((m: any) => m.user_id);
+    let profilesMap = new Map<string, any>();
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, avatar_url')
+        .in('id', userIds);
+      for (const p of profiles || []) {
+        profilesMap.set(p.id, p);
+      }
+    }
+
     // Fetch worker profiles for this org
-    const { data: profiles, error: profilesError } = await supabase
+    const { data: workerProfiles, error: profilesError } = await supabase
       .from('worker_profiles')
       .select('*')
       .eq('organization_id', organizationId);
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
       return ApiResponse.error('Failed to retrieve worker profiles.', profilesError, 500);
     }
 
-    const profileMap = new Map<string, any>((profiles || []).map((p: any) => [p.user_id, p]));
+    const workerProfileMap = new Map<string, any>((workerProfiles || []).map((p: any) => [p.user_id, p]));
 
     // Fetch assignment counts per worker
     const { data: assignments } = await supabase
@@ -68,7 +70,8 @@ export async function GET(request: NextRequest) {
     }
 
     const workers = (members || []).map((m: any) => {
-      const wp = profileMap.get(m.user_id);
+      const userProfile = profilesMap.get(m.user_id);
+      const wp = workerProfileMap.get(m.user_id);
       const stats = statsMap.get(m.user_id) || { total: 0, assigned: 0, in_progress: 0, completed: 0, skipped: 0, cancelled: 0 };
 
       return {
@@ -76,9 +79,9 @@ export async function GET(request: NextRequest) {
         userId: m.user_id,
         role: m.role,
         joinedAt: m.created_at,
-        email: m.profiles?.email || null,
-        fullName: m.profiles?.full_name || null,
-        avatarUrl: m.profiles?.avatar_url || null,
+        email: userProfile?.email || null,
+        fullName: userProfile?.full_name || null,
+        avatarUrl: userProfile?.avatar_url || null,
         profile: wp ? {
           cvUrl: wp.cv_url,
           skills: wp.skills,
