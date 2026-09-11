@@ -48,8 +48,11 @@ export async function GET(request: NextRequest) {
       nonce,
       redirectTarget: redirectTarget || undefined,
     });
-
-    const authUrl = GoogleOAuthService.buildAuthorizationUrl(signedState);
+    const origin = new URL(request.url).origin;
+    const redirectUri =
+      process.env['GOOGLE_REDIRECT_URI'] ||
+      `${origin}/api/integrations/google/callback`;
+    const authUrl = GoogleOAuthService.buildAuthorizationUrl(signedState, redirectUri);
 
     const cookieStore = await cookies();
     cookieStore.set('jobpulse_google_oauth_state', signedState, {

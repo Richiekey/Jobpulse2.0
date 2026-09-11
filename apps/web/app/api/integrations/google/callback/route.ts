@@ -99,7 +99,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Exchange authorization code for tokens
-    const tokens = await GoogleOAuthService.exchangeCodeForTokens(code);
+    const origin = new URL(request.url).origin;
+    const redirectUri =
+      process.env['GOOGLE_REDIRECT_URI'] ||
+      `${origin}/api/integrations/google/callback`;
+    const tokens = await GoogleOAuthService.exchangeCodeForTokens(code, redirectUri);
 
     // Retrieve user's Google email
     const googleEmail = await GoogleOAuthService.fetchUserEmail(tokens.accessToken);

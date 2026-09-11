@@ -36,10 +36,10 @@ export class GoogleOAuthService {
   /**
    * Constructs Google OAuth 2.0 authorization URL with offline access and consent prompt.
    */
-  public static buildAuthorizationUrl(state: string): string {
+  public static buildAuthorizationUrl(state: string, redirectUri?: string): string {
     const params = new URLSearchParams({
       client_id: this.getClientId(),
-      redirect_uri: this.getRedirectUri(),
+      redirect_uri: redirectUri || this.getRedirectUri(),
       response_type: 'code',
       scope: this.getOAuthScopes().join(' '),
       access_type: 'offline',
@@ -53,7 +53,7 @@ export class GoogleOAuthService {
   /**
    * Exchanges an authorization code for access and refresh tokens.
    */
-  public static async exchangeCodeForTokens(code: string): Promise<GoogleTokens> {
+  public static async exchangeCodeForTokens(code: string, redirectUri?: string): Promise<GoogleTokens> {
     // In test environment or mock mode
     if (
       process.env['NODE_ENV'] === 'test' ||
@@ -80,7 +80,7 @@ export class GoogleOAuthService {
         code,
         client_id: this.getClientId(),
         client_secret: this.getClientSecret(),
-        redirect_uri: this.getRedirectUri(),
+        redirect_uri: redirectUri || this.getRedirectUri(),
         grant_type: 'authorization_code',
       }),
     });
