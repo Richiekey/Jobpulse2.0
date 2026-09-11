@@ -130,6 +130,9 @@ export async function POST(request: NextRequest) {
       sheetName,
       organizationId,
       initializeHeaders,
+      resumeFolderId,
+      resumeFolderName,
+      applicantName,
     } = parseResult.data;
 
     // If setting for an organization, user must be Org Admin
@@ -211,6 +214,10 @@ export async function POST(request: NextRequest) {
       spreadsheetName: spreadsheetName || currentConfig.spreadsheetName,
       sheetName: sheetName || 'Sheet1',
       autoHeaderInitialized: headerSuccess || initializeHeaders,
+      // Resume discovery configuration
+      resumeFolderId: resumeFolderId !== undefined ? resumeFolderId : currentConfig.resumeFolderId,
+      resumeFolderName: resumeFolderName !== undefined ? resumeFolderName : currentConfig.resumeFolderName,
+      applicantName: applicantName !== undefined ? applicantName : currentConfig.applicantName,
     };
 
     const { data: updated, error: updateError } = await supabase

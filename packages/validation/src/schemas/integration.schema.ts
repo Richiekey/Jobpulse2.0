@@ -28,6 +28,12 @@ export const SelectSpreadsheetSchema = z.object({
   sheetName: z.string().trim().min(1).max(100).default('Sheet1'),
   organizationId: z.string().uuid().optional().nullable(),
   initializeHeaders: z.boolean().default(true),
+  /** Google Drive folder ID for resume discovery */
+  resumeFolderId: z.string().trim().min(5).max(100).optional().nullable(),
+  /** Display name of the resume folder */
+  resumeFolderName: z.string().trim().min(1).max(200).optional().nullable(),
+  /** Applicant's full name for resume filename matching */
+  applicantName: z.string().trim().min(1).max(200).optional().nullable(),
 });
 
 export const DisconnectIntegrationSchema = z.object({

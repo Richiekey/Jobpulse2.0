@@ -7,6 +7,7 @@ import {
   syncApplicationToGoogleSheet,
   refreshGoogleAccessToken,
   isGoogleApiRetryableError,
+  findMatchingResume,
   type SyncEventPayload,
 } from '@jobpulse/domain';
 
@@ -104,6 +105,7 @@ export class SyncRunner {
 
   /**
    * Processes a single claimed sync event with full credential isolation and idempotency.
+   * Includes resume discovery enrichment when a resume folder is configured.
    */
   public async processSyncEvent(event: ClaimedSyncEvent): Promise<void> {
     // 1. Retrieve user_integration metadata
@@ -122,6 +124,8 @@ export class SyncRunner {
     const config = (integration.config || {}) as {
       spreadsheetId?: string;
       sheetName?: string;
+      resumeFolderId?: string | null;
+      applicantName?: string | null;
     };
 
     if (!config.spreadsheetId) {
@@ -170,10 +174,58 @@ export class SyncRunner {
       this.fetchFn
     );
 
-    // 5. Format canonical 10-column row
+    // 5. Resume discovery enrichment (non-blocking with bounded retry)
+    if (config.resumeFolderId && config.applicantName && event.payload.companyName) {
+      try {
+        const match = await findMatchingResume(
+          {
+            accessToken: tokenResult.accessToken,
+            folderId: config.resumeFolderId,
+            applicantName: config.applicantName,
+            companyName: event.payload.companyName,
+            fetchFn: this.fetchFn,
+          },
+          this.fetchFn
+        );
+
+        if (match && match.webViewLink) {
+          event.payload.resumeUrl = match.webViewLink;
+          logger.info(
+            `SyncRunner: Resume discovered for ${event.application_id}: ${match.name}`
+          );
+        } else if (event.attempts < 3) {
+          // Upload race condition: browser extension may not have finished uploading.
+          // Throw retryable error so the worker retries with exponential backoff.
+          throw new ResumeNotYetAvailableError(
+            `Resume not yet found for ${event.payload.companyName} (attempt ${event.attempts + 1}/3). ` +
+            `Browser extension may still be uploading.`
+          );
+        } else {
+          // Bounded fallback: after 3 attempts, sync without resume URL
+          event.payload.resumeUrl = '';
+          logger.warn(
+            `SyncRunner: Resume not found after ${event.attempts + 1} attempts for ${event.application_id}. ` +
+            `Syncing row without resume URL.`
+          );
+        }
+      } catch (discoveryErr) {
+        if (discoveryErr instanceof ResumeNotYetAvailableError) {
+          throw discoveryErr; // Let the outer handler retry
+        }
+        // Non-fatal discovery error: log and proceed without resume URL
+        logger.warn(
+          `SyncRunner: Resume discovery failed for ${event.application_id}: ${
+            discoveryErr instanceof Error ? discoveryErr.message : String(discoveryErr)
+          }. Proceeding without resume URL.`
+        );
+        event.payload.resumeUrl = '';
+      }
+    }
+
+    // 6. Format canonical 8-column row
     const rowValues = formatApplicationSheetRow(event.payload);
 
-    // 6. Write to Google Sheets idempotently (update in place or append)
+    // 7. Write to Google Sheets idempotently (update in place or append)
     const syncResult = await syncApplicationToGoogleSheet(
       {
         accessToken: tokenResult.accessToken,
@@ -184,7 +236,7 @@ export class SyncRunner {
       this.fetchFn
     );
 
-    // 7. Complete sync event atomically in database with claim fencing
+    // 8. Complete sync event atomically in database with claim fencing
     const rowIdStr = syncResult.rowIndex ? `row_${syncResult.rowIndex}` : null;
     const { error: completeError } = await this.supabase.rpc('complete_sync_event', {
       p_event_id: event.id,
@@ -201,5 +253,17 @@ export class SyncRunner {
     logger.info(
       `SyncRunner: Synced application ${event.application_id} to sheet (${syncResult.action}).`
     );
+  }
+}
+
+/**
+ * Retryable error for resume upload race conditions.
+ * Signals to the worker that the resume file may not yet be available
+ * in the configured Drive folder.
+ */
+export class ResumeNotYetAvailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ResumeNotYetAvailableError';
   }
 }

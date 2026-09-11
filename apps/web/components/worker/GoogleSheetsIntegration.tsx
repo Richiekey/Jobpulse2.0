@@ -8,6 +8,8 @@ import {
   RefreshCw,
   Unplug,
   Loader2,
+  FolderOpen,
+  User,
 } from 'lucide-react';
 
 interface SpreadsheetItem {
@@ -17,11 +19,20 @@ interface SpreadsheetItem {
   webViewLink?: string;
 }
 
+interface DriveFolderItem {
+  id: string;
+  name: string;
+  modifiedTime?: string;
+}
+
 interface IntegrationConfig {
   spreadsheetId?: string;
   spreadsheetName?: string;
   sheetName?: string;
   autoHeaderInitialized?: boolean;
+  resumeFolderId?: string | null;
+  resumeFolderName?: string | null;
+  applicantName?: string | null;
 }
 
 interface IntegrationRecord {
@@ -34,6 +45,7 @@ interface IntegrationRecord {
 
 /**
  * User-level Google Sheets integration component.
+ * Includes Resume Drive Folder selector and Applicant Name field for resume discovery.
  * Does NOT pass organizationId — uses the authenticated user's own integration.
  */
 export const GoogleSheetsIntegration: React.FC = () => {
@@ -51,6 +63,13 @@ export const GoogleSheetsIntegration: React.FC = () => {
   const [disconnecting, setDisconnecting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+
+  // Resume discovery state
+  const [driveFolders, setDriveFolders] = useState<DriveFolderItem[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState('');
+  const [selectedFolderName, setSelectedFolderName] = useState('');
+  const [applicantName, setApplicantName] = useState('');
 
   // Check integration status (user-level, no organizationId)
   const checkStatus = useCallback(async () => {
@@ -71,6 +90,15 @@ export const GoogleSheetsIntegration: React.FC = () => {
         }
         if (config?.sheetName) {
           setSelectedSheetName(config.sheetName);
+        }
+        if (config?.resumeFolderId) {
+          setSelectedFolderId(config.resumeFolderId);
+        }
+        if (config?.resumeFolderName) {
+          setSelectedFolderName(config.resumeFolderName);
+        }
+        if (config?.applicantName) {
+          setApplicantName(config.applicantName);
         }
       } else {
         setConnected(false);
@@ -109,11 +137,29 @@ export const GoogleSheetsIntegration: React.FC = () => {
     }
   }, []);
 
+  // Load Drive folders when connected
+  const fetchDriveFolders = useCallback(async () => {
+    setLoadingFolders(true);
+    try {
+      const res = await fetch('/api/integrations/google/folders');
+      const json = await res.json();
+
+      if (res.ok && json.data?.folders) {
+        setDriveFolders(json.data.folders);
+      }
+    } catch {
+      // Non-fatal: folder loading is optional
+    } finally {
+      setLoadingFolders(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (connected) {
       fetchSpreadsheets();
+      fetchDriveFolders();
     }
-  }, [connected, fetchSpreadsheets]);
+  }, [connected, fetchSpreadsheets, fetchDriveFolders]);
 
   // Connect Google (user-level, redirect back to /worker/profile)
   const handleConnect = () => {
@@ -137,8 +183,12 @@ export const GoogleSheetsIntegration: React.FC = () => {
         setConnected(false);
         setIntegration(null);
         setSpreadsheets([]);
+        setDriveFolders([]);
         setSelectedSpreadsheetId('');
         setSelectedSheetName('Sheet1');
+        setSelectedFolderId('');
+        setSelectedFolderName('');
+        setApplicantName('');
         setTestResult(null);
       } else {
         const json = await res.json().catch(() => ({}));
@@ -151,12 +201,18 @@ export const GoogleSheetsIntegration: React.FC = () => {
     }
   };
 
-  // Select spreadsheet (user-level, no organizationId)
-  const handleSelectSpreadsheet = async (spreadsheetId: string) => {
-    setSelectedSpreadsheetId(spreadsheetId);
-    if (!spreadsheetId) return;
+  // Save all configuration at once
+  const saveConfiguration = async (overrides: Partial<{
+    spreadsheetId: string;
+    sheetName: string;
+    resumeFolderId: string | null;
+    resumeFolderName: string | null;
+    applicantName: string | null;
+  }> = {}) => {
+    const ssId = overrides.spreadsheetId ?? selectedSpreadsheetId;
+    if (!ssId) return;
 
-    const sheet = spreadsheets.find((s) => s.id === spreadsheetId);
+    const sheet = spreadsheets.find((s) => s.id === ssId);
     setSaving(true);
     setSaveSuccess(false);
     setError(null);
@@ -166,10 +222,19 @@ export const GoogleSheetsIntegration: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          spreadsheetId,
+          spreadsheetId: ssId,
           spreadsheetName: sheet?.name || 'Untitled',
-          sheetName: selectedSheetName,
+          sheetName: overrides.sheetName ?? selectedSheetName,
           initializeHeaders: true,
+          resumeFolderId: overrides.resumeFolderId !== undefined
+            ? overrides.resumeFolderId
+            : (selectedFolderId || null),
+          resumeFolderName: overrides.resumeFolderName !== undefined
+            ? overrides.resumeFolderName
+            : (selectedFolderName || null),
+          applicantName: overrides.applicantName !== undefined
+            ? overrides.applicantName
+            : (applicantName || null),
         }),
       });
 
@@ -179,49 +244,50 @@ export const GoogleSheetsIntegration: React.FC = () => {
         setTimeout(() => setSaveSuccess(false), 3000);
         await checkStatus();
       } else {
-        setError(json.error || 'Failed to select spreadsheet.');
+        setError(json.error || 'Failed to save configuration.');
       }
     } catch {
-      setError('Failed to save spreadsheet selection.');
+      setError('Failed to save configuration.');
     } finally {
       setSaving(false);
     }
   };
 
-  // Update sheet name (user-level)
+  // Select spreadsheet
+  const handleSelectSpreadsheet = async (spreadsheetId: string) => {
+    setSelectedSpreadsheetId(spreadsheetId);
+    if (!spreadsheetId) return;
+    await saveConfiguration({ spreadsheetId });
+  };
+
+  // Update sheet name
   const handleUpdateSheetName = async (newName: string) => {
     setSelectedSheetName(newName);
     if (!selectedSpreadsheetId) return;
-
-    const sheet = spreadsheets.find((s) => s.id === selectedSpreadsheetId);
-    setSaving(true);
-    setError(null);
-
-    try {
-      const res = await fetch('/api/integrations/google/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          spreadsheetId: selectedSpreadsheetId,
-          spreadsheetName: sheet?.name || 'Untitled',
-          sheetName: newName,
-          initializeHeaders: true,
-        }),
-      });
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        setError(json.error || 'Failed to update sheet name.');
-      }
-    } catch {
-      setError('Failed to update sheet name.');
-    } finally {
-      setSaving(false);
-    }
+    await saveConfiguration({ sheetName: newName });
   };
 
-  // Test connection — validates write capability by re-selecting the spreadsheet
-  // with initializeHeaders: true, which attempts to write header row.
+  // Select resume folder
+  const handleSelectFolder = async (folderId: string) => {
+    setSelectedFolderId(folderId);
+    const folder = driveFolders.find((f) => f.id === folderId);
+    const folderName = folder?.name || '';
+    setSelectedFolderName(folderName);
+    if (!selectedSpreadsheetId) return;
+    await saveConfiguration({
+      resumeFolderId: folderId || null,
+      resumeFolderName: folderName || null,
+    });
+  };
+
+  // Update applicant name
+  const handleUpdateApplicantName = async (name: string) => {
+    setApplicantName(name);
+    if (!selectedSpreadsheetId) return;
+    await saveConfiguration({ applicantName: name || null });
+  };
+
+  // Test connection
   const handleTestConnection = async () => {
     if (!selectedSpreadsheetId) return;
 
@@ -230,7 +296,6 @@ export const GoogleSheetsIntegration: React.FC = () => {
     setError(null);
 
     try {
-      // Step 1: Verify credentials by listing spreadsheets
       const listRes = await fetch('/api/integrations/google/sheets');
       if (!listRes.ok) {
         setTestResult('error');
@@ -238,7 +303,6 @@ export const GoogleSheetsIntegration: React.FC = () => {
         return;
       }
 
-      // Step 2: Verify write capability by re-selecting with initializeHeaders
       const sheet = spreadsheets.find((s) => s.id === selectedSpreadsheetId);
       const writeRes = await fetch('/api/integrations/google/sheets', {
         method: 'POST',
@@ -393,7 +457,7 @@ export const GoogleSheetsIntegration: React.FC = () => {
           gap: '6px',
         }}>
           <CheckCircle2 size={14} />
-          <span>Spreadsheet configuration saved!</span>
+          <span>Configuration saved!</span>
         </div>
       )}
 
@@ -456,6 +520,103 @@ export const GoogleSheetsIntegration: React.FC = () => {
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
               The tab within the spreadsheet where application rows will be written.
             </span>
+          </div>
+        )}
+
+        {/* ──── Resume Discovery Section ──── */}
+        {selectedSpreadsheetId && (
+          <div
+            style={{
+              borderTop: '1px solid var(--border-subtle)',
+              paddingTop: '16px',
+              marginTop: '4px',
+            }}
+          >
+            <h3 style={{
+              fontSize: '0.9375rem',
+              fontWeight: 700,
+              marginBottom: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: 'var(--text-primary)',
+            }}>
+              <FolderOpen size={18} />
+              <span>Resume Auto-Discovery</span>
+              <span style={{
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                backgroundColor: 'rgba(52, 168, 83, 0.12)',
+                color: '#34a853',
+              }}>
+                Optional
+              </span>
+            </h3>
+
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.5 }}>
+              Configure a Google Drive folder containing your generated resumes. When you mark an application as applied,
+              JobPulse will automatically find the matching resume and add its link to your Google Sheet.
+            </p>
+
+            {/* Resume Folder Selector */}
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                Resume Drive Folder
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <select
+                  value={selectedFolderId}
+                  onChange={(e) => handleSelectFolder(e.target.value)}
+                  disabled={loadingFolders || saving}
+                  className="input"
+                  style={{ flex: 1 }}
+                >
+                  <option value="">
+                    {loadingFolders ? 'Loading folders…' : 'Select a Drive folder…'}
+                  </option>
+                  {driveFolders.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={fetchDriveFolders}
+                  disabled={loadingFolders}
+                  className="btn btn-secondary"
+                  title="Refresh folder list"
+                  style={{ padding: '0 10px', display: 'flex', alignItems: 'center' }}
+                >
+                  <RefreshCw size={14} className={loadingFolders ? 'animate-spin' : ''} />
+                </button>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                The Google Drive folder where your browser extension saves generated resumes.
+              </span>
+            </div>
+
+            {/* Applicant Name */}
+            <div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                <User size={14} />
+                <span>Your Name (for resume matching)</span>
+              </label>
+              <input
+                type="text"
+                value={applicantName}
+                onChange={(e) => setApplicantName(e.target.value)}
+                onBlur={(e) => handleUpdateApplicantName(e.target.value)}
+                placeholder="e.g. Matthew Blackmon"
+                className="input"
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                Used to match resume filenames like &quot;Your Name - Company.pdf&quot;. Cover letters are automatically excluded.
+              </span>
+            </div>
           </div>
         )}
 

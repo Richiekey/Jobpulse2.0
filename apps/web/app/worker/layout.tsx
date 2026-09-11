@@ -3,6 +3,7 @@
 import React, { Suspense } from 'react';
 import { WorkerProvider } from '@/components/worker/WorkerContext';
 import { WorkerNav } from '@/components/worker/WorkerNav';
+import { Footer } from '@/components/Footer';
 
 export default function WorkerLayout({
   children,
@@ -48,6 +49,7 @@ export default function WorkerLayout({
           >
             {children}
           </main>
+          <Footer />
         </div>
       </WorkerProvider>
     </Suspense>

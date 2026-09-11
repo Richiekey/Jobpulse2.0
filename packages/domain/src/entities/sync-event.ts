@@ -18,6 +18,8 @@ export interface SyncEventPayload {
   location?: string;
   notes?: string;
   updatedAt: string;
+  /** Google Drive webViewLink to the matched resume, populated by resume-discovery enrichment */
+  resumeUrl?: string | null;
   [key: string]: unknown;
 }
 

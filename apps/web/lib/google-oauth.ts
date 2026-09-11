@@ -245,6 +245,52 @@ export class GoogleOAuthService {
   }
 
   /**
+   * Lists Google Drive folders accessible by the user.
+   * Used by the Resume Folder selector in the integration settings.
+   */
+  public static async listDriveFolders(
+    accessToken: string
+  ): Promise<Array<{ id: string; name: string; modifiedTime?: string }>> {
+    if (
+      process.env['NODE_ENV'] === 'test' ||
+      process.env['GOOGLE_MOCK_OAUTH'] === 'true'
+    ) {
+      return [
+        {
+          id: '1xdGNsqtYzYnjRdomH4afRrWmmmPl1m7q',
+          name: '10mni resume',
+          modifiedTime: new Date().toISOString(),
+        },
+        {
+          id: 'mock_folder_2_cover_letters',
+          name: 'Cover Letters',
+          modifiedTime: new Date().toISOString(),
+        },
+      ];
+    }
+
+    const query = encodeURIComponent(
+      "mimeType='application/vnd.google-apps.folder' and trashed=false"
+    );
+    const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime)');
+    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&pageSize=100&orderBy=name`;
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Failed to list Google Drive folders: ${err}`);
+    }
+
+    const data = await response.json();
+    return data.files || [];
+  }
+
+  /**
    * Bootstraps standard JobPulse headers in the target sheet.
    */
   public static async initializeHeaders(
@@ -259,7 +305,7 @@ export class GoogleOAuthService {
       return true;
     }
 
-    const range = `${encodeURIComponent(sheetName)}!A1:J1`;
+    const range = `${encodeURIComponent(sheetName)}!A1:H1`;
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=RAW`;
 
     const response = await fetch(url, {
@@ -278,3 +324,4 @@ export class GoogleOAuthService {
     return response.ok;
   }
 }
+

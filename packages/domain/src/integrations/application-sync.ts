@@ -2,7 +2,8 @@ import { DEFAULT_JOBPULSE_SHEET_HEADERS } from './google-sheets.js';
 import type { SyncEventPayload } from '../entities/sync-event.js';
 
 /**
- * Maps a job application sync payload into the canonical 10-column Google Sheet row.
+ * Maps a job application sync payload into the canonical 8-column Google Sheet row.
+ * Columns: Application ID | Job Title | Company | Location | Status | Applied At | Direct Apply URL | Resume URL
  */
 export function formatApplicationSheetRow(payload: SyncEventPayload): string[] {
   return [
@@ -12,10 +13,8 @@ export function formatApplicationSheetRow(payload: SyncEventPayload): string[] {
     payload.location || 'N/A',
     payload.status || 'applied',
     payload.appliedAt || new Date().toISOString(),
-    payload.verificationStatus || 'pending',
     payload.directApplyUrl || '',
-    payload.notes || '',
-    payload.updatedAt || new Date().toISOString(),
+    payload.resumeUrl || '',
   ];
 }
 

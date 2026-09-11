@@ -8,6 +8,12 @@ export interface GoogleSheetsConfig {
   connectedAt?: string;
   scopes?: string[];
   autoHeaderInitialized?: boolean;
+  /** Google Drive folder ID for resume discovery */
+  resumeFolderId?: string | null;
+  /** Display name of the resume folder */
+  resumeFolderName?: string | null;
+  /** Applicant's full name for resume filename matching */
+  applicantName?: string | null;
   [key: string]: unknown;
 }
 
@@ -89,6 +95,9 @@ export function sanitizeIntegrationRecord(record: {
       googleEmail: config.googleEmail,
       connectedAt: config.connectedAt,
       autoHeaderInitialized: config.autoHeaderInitialized,
+      resumeFolderId: config.resumeFolderId ?? null,
+      resumeFolderName: config.resumeFolderName ?? null,
+      applicantName: config.applicantName ?? null,
     },
     lastSyncedAt: record.last_synced_at !== undefined ? record.last_synced_at : (record.lastSyncedAt ?? null),
     lastError: record.last_error !== undefined ? record.last_error : (record.lastError ?? null),

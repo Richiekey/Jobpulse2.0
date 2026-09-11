@@ -7,10 +7,8 @@ export const DEFAULT_JOBPULSE_SHEET_HEADERS = [
   'Location',
   'Status',
   'Applied At',
-  'Verification Status',
   'Direct Apply URL',
-  'Worker Notes',
-  'Last Updated',
+  'Resume URL',
 ] as const;
 
 export type JobPulseSheetHeader = (typeof DEFAULT_JOBPULSE_SHEET_HEADERS)[number];
@@ -174,7 +172,7 @@ export async function syncApplicationToGoogleSheet(
 
   if (existingIndex !== -1) {
     // 2. Update existing row in place
-    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A${existingIndex}:J${existingIndex}?valueInputOption=USER_ENTERED`;
+    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A${existingIndex}:H${existingIndex}?valueInputOption=USER_ENTERED`;
     const updateRes = await fetchFn(updateUrl, {
       method: 'PUT',
       headers: {
@@ -182,7 +180,7 @@ export async function syncApplicationToGoogleSheet(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        range: `${sheetName}!A${existingIndex}:J${existingIndex}`,
+        range: `${sheetName}!A${existingIndex}:H${existingIndex}`,
         majorDimension: 'ROWS',
         values: [rowValues],
       }),
@@ -196,7 +194,7 @@ export async function syncApplicationToGoogleSheet(
     return { action: 'updated', rowIndex: existingIndex };
   } else {
     // 3. Append new row at bottom
-    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:J:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const appendRes = await fetchFn(appendUrl, {
       method: 'POST',
       headers: {

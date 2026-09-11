@@ -26,6 +26,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Button, EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui';
+import { Footer } from '@/components/Footer';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
@@ -932,6 +933,9 @@ export default function HomePage() {
           }}
         />
       )}
+
+      {/* Public / Compliance Footer */}
+      <Footer />
     </div>
   );
 }
