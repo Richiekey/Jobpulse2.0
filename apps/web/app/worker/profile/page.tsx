@@ -398,8 +398,8 @@ export default function WorkerProfilePage() {
           </div>
         </div>
 
-        {/* Google Sheets Integration (Batch N OAuth) */}
-        {selectedOrgId && <GoogleSheetsIntegration organizationId={selectedOrgId} />}
+        {/* Google Sheets Integration (Batch N OAuth — user-level) */}
+        <GoogleSheetsIntegration />
 
         {/* Skills Tag Manager */}
         <div

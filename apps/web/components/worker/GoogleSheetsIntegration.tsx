@@ -32,13 +32,11 @@ interface IntegrationRecord {
   created_at?: string;
 }
 
-interface GoogleSheetsIntegrationProps {
-  organizationId: string;
-}
-
-export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = ({
-  organizationId,
-}) => {
+/**
+ * User-level Google Sheets integration component.
+ * Does NOT pass organizationId — uses the authenticated user's own integration.
+ */
+export const GoogleSheetsIntegration: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [integration, setIntegration] = useState<IntegrationRecord | null>(null);
@@ -54,16 +52,13 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
 
-  // Check integration status
+  // Check integration status (user-level, no organizationId)
   const checkStatus = useCallback(async () => {
-    if (!organizationId) return;
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(
-        `/api/integrations/google/status?organizationId=${organizationId}`
-      );
+      const res = await fetch('/api/integrations/google/status');
       const json = await res.json();
 
       if (res.ok && json.data) {
@@ -87,22 +82,19 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
     } finally {
       setLoading(false);
     }
-  }, [organizationId]);
+  }, []);
 
   useEffect(() => {
     checkStatus();
   }, [checkStatus]);
 
-  // Load spreadsheets when connected
+  // Load spreadsheets when connected (user-level)
   const fetchSpreadsheets = useCallback(async () => {
-    if (!organizationId) return;
     setLoadingSheets(true);
     setError(null);
 
     try {
-      const res = await fetch(
-        `/api/integrations/google/sheets?organizationId=${organizationId}`
-      );
+      const res = await fetch('/api/integrations/google/sheets');
       const json = await res.json();
 
       if (res.ok && json.data?.spreadsheets) {
@@ -115,7 +107,7 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
     } finally {
       setLoadingSheets(false);
     }
-  }, [organizationId]);
+  }, []);
 
   useEffect(() => {
     if (connected) {
@@ -123,15 +115,14 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
     }
   }, [connected, fetchSpreadsheets]);
 
-  // Connect Google
+  // Connect Google (user-level, redirect back to /worker/profile)
   const handleConnect = () => {
     const redirectTarget = encodeURIComponent('/worker/profile');
-    window.location.href = `/api/integrations/google/connect?organizationId=${organizationId}&redirectTarget=${redirectTarget}`;
+    window.location.href = `/api/integrations/google/connect?redirectTarget=${redirectTarget}`;
   };
 
-  // Disconnect Google
+  // Disconnect Google (user-level)
   const handleDisconnect = async () => {
-    if (!organizationId) return;
     setDisconnecting(true);
     setError(null);
 
@@ -139,10 +130,7 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
       const res = await fetch('/api/integrations/google/disconnect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'google_sheets',
-          organizationId,
-        }),
+        body: JSON.stringify({ provider: 'google_sheets' }),
       });
 
       if (res.ok) {
@@ -163,10 +151,10 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
     }
   };
 
-  // Select spreadsheet
+  // Select spreadsheet (user-level, no organizationId)
   const handleSelectSpreadsheet = async (spreadsheetId: string) => {
     setSelectedSpreadsheetId(spreadsheetId);
-    if (!spreadsheetId || !organizationId) return;
+    if (!spreadsheetId) return;
 
     const sheet = spreadsheets.find((s) => s.id === spreadsheetId);
     setSaving(true);
@@ -181,7 +169,6 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
           spreadsheetId,
           spreadsheetName: sheet?.name || 'Untitled',
           sheetName: selectedSheetName,
-          organizationId,
           initializeHeaders: true,
         }),
       });
@@ -190,7 +177,6 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
       if (res.ok) {
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
-        // Refresh status to get updated config
         await checkStatus();
       } else {
         setError(json.error || 'Failed to select spreadsheet.');
@@ -202,10 +188,10 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
     }
   };
 
-  // Update sheet name
+  // Update sheet name (user-level)
   const handleUpdateSheetName = async (newName: string) => {
     setSelectedSheetName(newName);
-    if (!selectedSpreadsheetId || !organizationId) return;
+    if (!selectedSpreadsheetId) return;
 
     const sheet = spreadsheets.find((s) => s.id === selectedSpreadsheetId);
     setSaving(true);
@@ -219,7 +205,6 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
           spreadsheetId: selectedSpreadsheetId,
           spreadsheetName: sheet?.name || 'Untitled',
           sheetName: newName,
-          organizationId,
           initializeHeaders: true,
         }),
       });
@@ -235,21 +220,43 @@ export const GoogleSheetsIntegration: React.FC<GoogleSheetsIntegrationProps> = (
     }
   };
 
-  // Test connection
+  // Test connection — validates write capability by re-selecting the spreadsheet
+  // with initializeHeaders: true, which attempts to write header row.
   const handleTestConnection = async () => {
+    if (!selectedSpreadsheetId) return;
+
     setTesting(true);
     setTestResult(null);
     setError(null);
 
     try {
-      const res = await fetch(
-        `/api/integrations/google/sheets?organizationId=${organizationId}`
-      );
-      if (res.ok) {
+      // Step 1: Verify credentials by listing spreadsheets
+      const listRes = await fetch('/api/integrations/google/sheets');
+      if (!listRes.ok) {
+        setTestResult('error');
+        setError('Connection test failed: unable to access Google Drive. Credentials may need to be refreshed.');
+        return;
+      }
+
+      // Step 2: Verify write capability by re-selecting with initializeHeaders
+      const sheet = spreadsheets.find((s) => s.id === selectedSpreadsheetId);
+      const writeRes = await fetch('/api/integrations/google/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheetId: selectedSpreadsheetId,
+          spreadsheetName: sheet?.name || 'Untitled',
+          sheetName: selectedSheetName,
+          initializeHeaders: true,
+        }),
+      });
+
+      if (writeRes.ok) {
         setTestResult('success');
       } else {
         setTestResult('error');
-        setError('Connection test failed. Google credentials may need to be refreshed.');
+        const json = await writeRes.json().catch(() => ({}));
+        setError(json.error || 'Write test failed. Check sheet permissions.');
       }
     } catch {
       setTestResult('error');
