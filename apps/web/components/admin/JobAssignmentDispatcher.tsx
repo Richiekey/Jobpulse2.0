@@ -90,10 +90,8 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [workersList, setWorkersList] = useState<WorkerOption[]>([]);
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
-  const [jobIdInput, setJobIdInput] = useState('');
-  const [jobSearchQuery, setJobSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<JobOption[]>([]);
-  const [searchingJobs, setSearchingJobs] = useState(false);
+  const [catalogJobs, setCatalogJobs] = useState<JobOption[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
   const [selectedJob, setSelectedJob] = useState<JobOption | null>(null);
   const [deadlineDate, setDeadlineDate] = useState('');
   const [operationalNotes, setOperationalNotes] = useState('');
@@ -170,17 +168,11 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
     fetchWorkersList();
   }, [fetchAssignments, fetchWorkersList]);
 
-  // Search catalog jobs for assignment modal
-  const handleSearchJobs = async (q: string) => {
-    setJobSearchQuery(q);
-    if (!q || q.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    setSearchingJobs(true);
+  // Load catalog jobs for assignment dropdown
+  const fetchCatalogJobs = useCallback(async () => {
+    setLoadingJobs(true);
     try {
-      const res = await fetch(`/api/jobs?limit=8&search=${encodeURIComponent(q)}`);
+      const res = await fetch('/api/jobs?limit=200&sort=newest');
       if (res.ok) {
         const json = await res.json();
         const results: JobOption[] = (json.data?.jobs || []).map((j: any) => ({
@@ -190,23 +182,23 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
           location: Array.isArray(j.locations) ? j.locations[0] : j.locations,
           workplaceType: j.workplace_type,
         }));
-        setSearchResults(results);
+        setCatalogJobs(results);
       }
     } catch {
-      setSearchResults([]);
+      setCatalogJobs([]);
     } finally {
-      setSearchingJobs(false);
+      setLoadingJobs(false);
     }
-  };
+  }, []);
 
   // Submit new assignment dispatch
   const handleDispatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!organizationId) return;
 
-    const targetJobId = selectedJob ? selectedJob.id : jobIdInput.trim();
+    const targetJobId = selectedJob ? selectedJob.id : '';
     if (!targetJobId) {
-      setDispatchError('Please select or specify a target job ID.');
+      setDispatchError('Please select a job to assign.');
       return;
     }
 
@@ -247,8 +239,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
       // Close and reset modal
       setIsDispatchModalOpen(false);
       setSelectedJob(null);
-      setJobIdInput('');
-      setJobSearchQuery('');
+
       setOperationalNotes('');
       setDeadlineDate('');
       setSelectedWorkerId('');
@@ -470,6 +461,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
               onClick={() => {
                 setIsDispatchModalOpen(true);
                 setDispatchError(null);
+                fetchCatalogJobs();
               }}
               className="btn btn-primary"
               style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -843,108 +835,30 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px' }}>
                   Target Catalog Job <span style={{ color: '#ef4444' }}>*</span>
                 </label>
-                {selectedJob ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      background: 'rgba(99, 102, 241, 0.1)',
-                      border: '1px solid rgba(99, 102, 241, 0.3)',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#818cf8' }}>
-                        {selectedJob.title}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {selectedJob.companyName} • {selectedJob.location || 'Remote'}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedJob(null)}
-                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ position: 'relative' }}>
-                      <Search
-                        size={15}
-                        style={{
-                          position: 'absolute',
-                          left: '12px',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          color: 'var(--text-muted)',
-                        }}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Search active catalog jobs (e.g. Software Engineer)…"
-                        value={jobSearchQuery}
-                        onChange={(e) => handleSearchJobs(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px 10px 36px',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-default)',
-                          background: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.85rem',
-                        }}
-                      />
-                    </div>
-
-                    {/* Job Search Dropdown Results */}
-                    {searchResults.length > 0 && (
-                      <div
-                        style={{
-                          border: '1px solid var(--border-default)',
-                          borderRadius: '8px',
-                          background: '#151c2e',
-                          maxHeight: '180px',
-                          overflowY: 'auto',
-                        }}
-                      >
-                        {searchResults.map((job) => (
-                          <button
-                            key={job.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedJob(job);
-                              setSearchResults([]);
-                              setJobSearchQuery('');
-                            }}
-                            style={{
-                              width: '100%',
-                              padding: '8px 12px',
-                              textAlign: 'left',
-                              border: 'none',
-                              borderBottom: '1px solid var(--border-default)',
-                              background: 'transparent',
-                              color: 'var(--text-primary)',
-                              fontSize: '0.85rem',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <div style={{ fontWeight: 600 }}>{job.title}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              {job.companyName} • {job.location || 'Remote'}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-
-                  </div>
-                )}
+                <select
+                  value={selectedJob?.id || ''}
+                  onChange={(e) => {
+                    const job = catalogJobs.find(j => j.id === e.target.value);
+                    setSelectedJob(job || null);
+                  }}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  <option value="">{loadingJobs ? 'Loading jobs…' : 'Select a job…'}</option>
+                  {catalogJobs.map((job) => (
+                    <option key={job.id} value={job.id}>
+                      {job.title} — {job.companyName} ({job.location || 'Remote'})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Deadline */}
