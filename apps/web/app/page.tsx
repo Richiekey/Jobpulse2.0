@@ -7,6 +7,7 @@ import { JobFeedCard } from '@/components/JobFeedCard';
 import { JobInspectorPane } from '@/components/JobInspectorPane';
 import { JobDetailsModal } from '@/components/JobDetailsModal';
 import { ApplicationTrackerModal } from '@/components/ApplicationTrackerModal';
+import { SyncStatusToast } from '@/components/SyncStatusToast';
 import { JobAlertModal } from '@/components/alerts/JobAlertModal';
 import { JobAlertManager } from '@/components/alerts/JobAlertManager';
 import {
@@ -143,6 +144,7 @@ export default function HomePage() {
   // Modals state
   const [modalJob, setModalJob] = useState<any | null>(null);
   const [trackingJob, setTrackingJob] = useState<any | null>(null);
+  const [syncingApplicationId, setSyncingApplicationId] = useState<string | null>(null);
 
   const showToast = useCallback((type: 'error' | 'success', text: string) => {
     setToast({ type, text });
@@ -453,6 +455,10 @@ export default function HomePage() {
     setAppliedJobIds((prev) => new Set(prev).add(createdApp.job_id));
     setTrackingJob(null);
     showToast('success', 'Application recorded in your tracker!');
+    // Trigger sync status polling
+    if (createdApp.id) {
+      setSyncingApplicationId(createdApp.id);
+    }
   };
 
   const handleResetFilters = () => {
@@ -931,6 +937,14 @@ export default function HomePage() {
             setIsAlertModalOpen(false);
             showToast('success', 'Job alert created successfully!');
           }}
+        />
+      )}
+
+      {/* Sync Status Toast */}
+      {syncingApplicationId && (
+        <SyncStatusToast
+          applicationId={syncingApplicationId}
+          onDismiss={() => setSyncingApplicationId(null)}
         />
       )}
 
