@@ -51,7 +51,6 @@ export const WorkerEducationItemSchema = z.object({
 export const UpdateWorkerProfileSchema = z.object({
   organizationId: z.string().uuid(),
   cvUrl: z.string().url().optional().nullable(),
-  googleSheetUrl: z.string().url().optional().nullable(),
   resumes: z.array(WorkerResumeItemSchema).optional(),
   skills: z.array(z.string().trim().min(1).max(50)).optional(),
   experienceYears: z.number().min(0).max(60).optional().nullable(),
