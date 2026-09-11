@@ -63,6 +63,7 @@ export async function PUT(request: NextRequest) {
     const {
       organizationId,
       cvUrl,
+      googleSheetUrl,
       resumes,
       skills,
       experienceYears,
@@ -84,6 +85,7 @@ export async function PUT(request: NextRequest) {
       organization_id: organizationId,
       user_id: user.id,
       cv_url: cvUrl || null,
+      google_sheet_url: googleSheetUrl || null,
       resumes: resumes || [],
       skills: skills || [],
       experience_years: experienceYears != null ? experienceYears : null,

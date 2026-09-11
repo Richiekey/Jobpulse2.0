@@ -15,6 +15,7 @@ import {
   Clock,
   Building2,
   ExternalLink,
+  Link,
 } from 'lucide-react';
 import { useWorker } from '@/components/worker/WorkerContext';
 
@@ -57,6 +58,7 @@ export default function WorkerProfilePage() {
   const [locationInput, setLocationInput] = useState('');
   const [availability, setAvailability] = useState<string>('immediate');
   const [notes, setNotes] = useState('');
+  const [googleSheetUrl, setGoogleSheetUrl] = useState('');
 
   // Sync selectedOrgId with activeOrgId
   useEffect(() => {
@@ -94,6 +96,7 @@ export default function WorkerProfilePage() {
         setPreferredLocations(p.preferred_locations || []);
         setAvailability(p.availability || 'immediate');
         setNotes(p.notes || '');
+        setGoogleSheetUrl(p.google_sheet_url || '');
       } else {
         // Reset to default blank state
         setCvUrl('');
@@ -105,6 +108,7 @@ export default function WorkerProfilePage() {
         setPreferredLocations([]);
         setAvailability('immediate');
         setNotes('');
+        setGoogleSheetUrl('');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to retrieve profile.');
@@ -199,6 +203,7 @@ export default function WorkerProfilePage() {
         preferredLocations,
         availability,
         notes: notes.trim() ? notes.trim() : null,
+        googleSheetUrl: googleSheetUrl.trim() ? googleSheetUrl.trim() : null,
       };
 
       const res = await fetch('/api/worker/profile', {
@@ -393,6 +398,52 @@ export default function WorkerProfilePage() {
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
               A direct link to your latest resume, portfolio, or Google Drive PDF.
+            </span>
+          </div>
+        </div>
+
+        {/* Google Sheets Integration */}
+        <div
+          style={{
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-md)',
+            padding: '24px',
+          }}
+        >
+          <h2 style={{ fontSize: '1.0625rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Link size={18} style={{ color: '#34a853' }} />
+            <span>Google Sheets Integration</span>
+          </h2>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              Google Sheet URL:
+            </label>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input
+                type="url"
+                value={googleSheetUrl}
+                onChange={(e) => setGoogleSheetUrl(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                className="input"
+                style={{ flex: 1 }}
+              />
+              {googleSheetUrl && (
+                <a
+                  href={googleSheetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 14px' }}
+                >
+                  <ExternalLink size={14} />
+                  <span>Open Sheet</span>
+                </a>
+              )}
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+              When you mark a job as &quot;Applied&quot;, it will automatically sync to this Google Sheet for tracking.
             </span>
           </div>
         </div>

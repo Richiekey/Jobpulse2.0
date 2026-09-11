@@ -51,6 +51,7 @@ export const WorkerEducationItemSchema = z.object({
 export const UpdateWorkerProfileSchema = z.object({
   organizationId: z.string().uuid(),
   cvUrl: z.string().url().optional().nullable(),
+  googleSheetUrl: z.string().url().optional().nullable(),
   resumes: z.array(WorkerResumeItemSchema).optional(),
   skills: z.array(z.string().trim().min(1).max(50)).optional(),
   experienceYears: z.number().min(0).max(60).optional().nullable(),
@@ -64,10 +65,13 @@ export const UpdateWorkerProfileSchema = z.object({
 
 export const CreateJobAssignmentSchema = z.object({
   organizationId: z.string().uuid(),
-  jobId: z.string().uuid(),
+  jobId: z.string().uuid().optional().nullable(),
+  jobFunctionSlug: z.string().min(1).max(200).optional().nullable(),
   workerId: z.string().uuid(),
   deadlineAt: z.string().datetime().optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
+}).refine((d) => d.jobId || d.jobFunctionSlug, {
+  message: 'Either jobId or jobFunctionSlug must be provided.',
 });
 
 export const UpdateJobAssignmentStatusSchema = z.object({

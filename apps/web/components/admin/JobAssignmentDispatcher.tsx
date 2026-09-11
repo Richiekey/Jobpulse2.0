@@ -60,12 +60,11 @@ interface WorkerOption {
   availability?: string | null;
 }
 
-interface JobOption {
-  id: string;
-  title: string;
-  companyName: string;
-  location?: string;
-  workplaceType?: string;
+interface JobFunctionOption {
+  slug: string;
+  name: string;
+  count: number;
+  subFunctions?: { slug: string; name: string; count: number }[];
 }
 
 interface JobAssignmentDispatcherProps {
@@ -90,9 +89,9 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [workersList, setWorkersList] = useState<WorkerOption[]>([]);
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
-  const [catalogJobs, setCatalogJobs] = useState<JobOption[]>([]);
+  const [jobFunctions, setJobFunctions] = useState<JobFunctionOption[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<JobOption | null>(null);
+  const [selectedFunctionSlug, setSelectedFunctionSlug] = useState('');
   const [deadlineDate, setDeadlineDate] = useState('');
   const [operationalNotes, setOperationalNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -168,24 +167,23 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
     fetchWorkersList();
   }, [fetchAssignments, fetchWorkersList]);
 
-  // Load catalog jobs for assignment dropdown
-  const fetchCatalogJobs = useCallback(async () => {
+  // Load job function categories for assignment dropdown
+  const fetchJobFunctions = useCallback(async () => {
     setLoadingJobs(true);
     try {
-      const res = await fetch('/api/jobs?limit=200&sort=newest');
+      const res = await fetch('/api/jobs/filters');
       if (res.ok) {
         const json = await res.json();
-        const results: JobOption[] = (json.data?.jobs || []).map((j: any) => ({
-          id: j.id,
-          title: j.canonical_title || j.display_title,
-          companyName: j.company?.name || 'Company',
-          location: Array.isArray(j.locations) ? j.locations[0] : j.locations,
-          workplaceType: j.workplace_type,
+        const functions: JobFunctionOption[] = (json.data?.functions || []).map((f: any) => ({
+          slug: f.slug,
+          name: f.name,
+          count: f.count || 0,
+          subFunctions: f.subFunctions || [],
         }));
-        setCatalogJobs(results);
+        setJobFunctions(functions);
       }
     } catch {
-      setCatalogJobs([]);
+      setJobFunctions([]);
     } finally {
       setLoadingJobs(false);
     }
@@ -196,9 +194,9 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
     e.preventDefault();
     if (!organizationId) return;
 
-    const targetJobId = selectedJob ? selectedJob.id : '';
-    if (!targetJobId) {
-      setDispatchError('Please select a job to assign.');
+    const targetSlug = selectedFunctionSlug;
+    if (!targetSlug) {
+      setDispatchError('Please select a job function to assign.');
       return;
     }
 
@@ -213,7 +211,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
     try {
       const payload: Record<string, any> = {
         organizationId,
-        jobId: targetJobId,
+        jobFunctionSlug: targetSlug,
         workerId: selectedWorkerId,
       };
 
@@ -238,7 +236,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
 
       // Close and reset modal
       setIsDispatchModalOpen(false);
-      setSelectedJob(null);
+      setSelectedFunctionSlug('');
 
       setOperationalNotes('');
       setDeadlineDate('');
@@ -461,7 +459,7 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
               onClick={() => {
                 setIsDispatchModalOpen(true);
                 setDispatchError(null);
-                fetchCatalogJobs();
+                fetchJobFunctions();
               }}
               className="btn btn-primary"
               style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -830,17 +828,14 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                 </select>
               </div>
 
-              {/* Select Job */}
+              {/* Select Job Function */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px' }}>
-                  Target Catalog Job <span style={{ color: '#ef4444' }}>*</span>
+                  Job Function Category <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <select
-                  value={selectedJob?.id || ''}
-                  onChange={(e) => {
-                    const job = catalogJobs.find(j => j.id === e.target.value);
-                    setSelectedJob(job || null);
-                  }}
+                  value={selectedFunctionSlug}
+                  onChange={(e) => setSelectedFunctionSlug(e.target.value)}
                   required
                   style={{
                     width: '100%',
@@ -852,12 +847,23 @@ export const JobAssignmentDispatcher: React.FC<JobAssignmentDispatcherProps> = (
                     fontSize: '0.85rem',
                   }}
                 >
-                  <option value="">{loadingJobs ? 'Loading jobs…' : 'Select a job…'}</option>
-                  {catalogJobs.map((job) => (
-                    <option key={job.id} value={job.id}>
-                      {job.title} — {job.companyName} ({job.location || 'Remote'})
-                    </option>
-                  ))}
+                  <option value="">{loadingJobs ? 'Loading categories…' : 'Select a job function…'}</option>
+                  {jobFunctions.map((fn) =>
+                    fn.subFunctions && fn.subFunctions.length > 0 ? (
+                      <optgroup key={fn.slug} label={fn.name}>
+                        <option value={fn.slug}>{fn.name} (All)</option>
+                        {fn.subFunctions.map((sub) => (
+                          <option key={sub.slug} value={sub.slug}>
+                            {sub.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : (
+                      <option key={fn.slug} value={fn.slug}>
+                        {fn.name}
+                      </option>
+                    )
+                  )}
                 </select>
               </div>
 

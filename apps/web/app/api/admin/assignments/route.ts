@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { organizationId, jobId, workerId, deadlineAt, notes } = parseResult.data;
+    const { organizationId, jobId, jobFunctionSlug, workerId, deadlineAt, notes } = parseResult.data;
 
     // Verify caller is admin of this organization
     const authResult = await AuthGuard.requireOrgAdmin(organizationId);
@@ -161,39 +161,50 @@ export async function POST(request: NextRequest) {
       return ApiResponse.error('The target worker is not a member of this organization.', null, 400);
     }
 
-    // Verify target job exists
-    const { data: job } = await supabase
-      .from('jobs')
-      .select('id')
-      .eq('id', jobId)
-      .maybeSingle();
+    // For job-specific dispatches, verify the job exists
+    if (jobId) {
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('id')
+        .eq('id', jobId)
+        .maybeSingle();
 
-    if (!job) {
-      return ApiResponse.error('The specified job was not found.', null, 404);
+      if (!job) {
+        return ApiResponse.error('The specified job was not found.', null, 404);
+      }
     }
 
-    // Check if an assignment already exists for (organizationId, jobId, workerId)
-    const { data: existingAssignment } = await supabase
+    // Check for existing assignment
+    let existingQuery = supabase
       .from('job_assignments')
       .select('id, status, deadline_at, notes')
       .eq('organization_id', organizationId)
-      .eq('job_id', jobId)
-      .eq('worker_id', workerId)
-      .maybeSingle();
+      .eq('worker_id', workerId);
+
+    if (jobId) {
+      existingQuery = existingQuery.eq('job_id', jobId);
+    } else if (jobFunctionSlug) {
+      existingQuery = existingQuery.eq('job_function_slug', jobFunctionSlug).is('job_id', null);
+    }
+
+    const { data: existingAssignment } = await existingQuery.maybeSingle();
 
     if (!existingAssignment) {
       // 1. No existing assignment: create with status 'assigned'
+      const insertPayload: Record<string, any> = {
+        organization_id: organizationId,
+        worker_id: workerId,
+        assigned_by: user.id,
+        status: 'assigned',
+        deadline_at: deadlineAt || null,
+        notes: notes || null,
+      };
+      if (jobId) insertPayload.job_id = jobId;
+      if (jobFunctionSlug) insertPayload.job_function_slug = jobFunctionSlug;
+
       const { data: assignment, error: insertError } = await supabase
         .from('job_assignments')
-        .insert({
-          organization_id: organizationId,
-          job_id: jobId,
-          worker_id: workerId,
-          assigned_by: user.id,
-          status: 'assigned',
-          deadline_at: deadlineAt || null,
-          notes: notes || null,
-        })
+        .insert(insertPayload)
         .select('*')
         .single();
 
