@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
+import { processSyncForApplication } from '@/lib/sync-processor';
 import { z } from 'zod';
 
 const ApplicationSchema = z.object({
@@ -36,6 +37,12 @@ export async function GET(request: NextRequest) {
           name,
           logo_url
         )
+      ),
+      sync_events (
+        id,
+        status,
+        synced_at,
+        last_error
       )
     `);
 
@@ -137,7 +144,19 @@ export async function POST(request: NextRequest) {
       return ApiResponse.error('Failed to record application.', insertError, 500);
     }
 
-    return ApiResponse.success(data, undefined, { status: 201 });
+    // Trigger immediate Google Sheets sync so user sees real-time sync in UI
+    let syncResult = null;
+    try {
+      syncResult = await processSyncForApplication(data.id, user.id);
+    } catch (syncErr: any) {
+      console.error('[Applications] Immediate Google Sheets sync error:', syncErr?.message || syncErr);
+    }
+
+    return ApiResponse.success(
+      { ...data, sync_status: syncResult?.status || 'pending', sync_result: syncResult },
+      undefined,
+      { status: 201 }
+    );
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred.', err, 500);
   }

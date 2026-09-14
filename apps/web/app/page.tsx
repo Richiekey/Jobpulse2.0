@@ -840,19 +840,94 @@ export default function HomePage() {
                         <span>Applied on {new Date(app.applied_at || app.created_at || Date.now()).toLocaleDateString()}</span>
                       </div>
                     </div>
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        padding: '4px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: 'var(--success-surface)',
-                        color: 'var(--success-text)',
-                        border: '1px solid var(--success-border)',
-                      }}
-                    >
-                      {app.status || 'Applied'}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {(() => {
+                        const syncList = Array.isArray(app.sync_events) ? app.sync_events : [];
+                        const latestSync = syncList.length > 0 ? syncList[syncList.length - 1] : null;
+                        const syncStatus = latestSync?.status;
+
+                        if (syncStatus === 'synced') {
+                          return (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'rgba(15, 157, 88, 0.12)',
+                                color: '#0F9D58',
+                                border: '1px solid rgba(15, 157, 88, 0.3)',
+                              }}
+                              title={`Synced at ${latestSync.synced_at ? new Date(latestSync.synced_at).toLocaleTimeString() : 'recently'}`}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2Z" fill="#0F9D58"/>
+                                <path d="M14 2V8H20" fill="#87CEAC"/>
+                                <path d="M8 13H16V14H8V13ZM8 15H16V16H8V15ZM8 17H13V18H8V17ZM8 11H16V12H8V11Z" fill="white"/>
+                              </svg>
+                              Synced to Sheets
+                            </span>
+                          );
+                        } else if (syncStatus === 'pending' || syncStatus === 'processing') {
+                          return (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'rgba(251, 191, 36, 0.12)',
+                                color: '#fbbf24',
+                                border: '1px solid rgba(251, 191, 36, 0.3)',
+                              }}
+                            >
+                              Syncing…
+                            </span>
+                          );
+                        } else if (syncStatus === 'failed' || syncStatus === 'dead_letter') {
+                          return (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'rgba(248, 113, 113, 0.12)',
+                                color: '#f87171',
+                                border: '1px solid rgba(248, 113, 113, 0.3)',
+                              }}
+                              title={latestSync?.last_error || 'Sync failed'}
+                            >
+                              Sync Failed
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      <span
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          padding: '4px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          backgroundColor: 'var(--success-surface)',
+                          color: 'var(--success-text)',
+                          border: '1px solid var(--success-border)',
+                        }}
+                      >
+                        {app.status || 'Applied'}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
