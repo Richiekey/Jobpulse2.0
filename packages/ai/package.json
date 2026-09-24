@@ -1,0 +1,48 @@
+{
+  "name": "@jobpulse/ai",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./llm-client": {
+      "types": "./dist/llm-client.d.ts",
+      "import": "./dist/llm-client.js",
+      "default": "./dist/llm-client.js"
+    },
+    "./mock-provider": {
+      "types": "./dist/mock-provider.d.ts",
+      "import": "./dist/mock-provider.js",
+      "default": "./dist/mock-provider.js"
+    },
+    "./pdf-generator": {
+      "types": "./dist/pdf-generator.d.ts",
+      "import": "./dist/pdf-generator.js",
+      "default": "./dist/pdf-generator.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jspdf": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
+  }
+}

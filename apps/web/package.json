@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@jobpulse/ai": "workspace:*",
     "@jobpulse/ats": "workspace:*",
     "@jobpulse/curation": "workspace:*",
     "@jobpulse/domain": "workspace:*",

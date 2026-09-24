@@ -17,6 +17,9 @@ import {
   ChevronRight,
   Sparkles,
   Loader2,
+  FileText,
+  Mail,
+  MessageSquare,
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
@@ -31,6 +34,9 @@ import {
   getJobrightReferenceUrl,
 } from '@/lib/job-cleaner';
 import { getApplicationDisplayState } from '@/lib/application-status';
+import { CvGeneratorModal } from './CvGeneratorModal';
+import { CoverLetterModal } from './CoverLetterModal';
+import { JobQaModal } from './JobQaModal';
 
 interface JobInspectorPaneProps {
   job: any | null;
@@ -42,6 +48,7 @@ interface JobInspectorPaneProps {
   onPrevJob?: () => void;
   hasNext?: boolean;
   hasPrev?: boolean;
+  userProfile?: any;
 }
 
 export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
@@ -54,9 +61,14 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
   onPrevJob,
   hasNext = false,
   hasPrev = false,
+  userProfile,
 }) => {
   const [job, setJob] = useState<any>(initialJob);
   const [isResolving, setIsResolving] = useState<boolean>(false);
+  const [isCvModalOpen, setIsCvModalOpen] = useState(false);
+  const [isCoverLetterModalOpen, setIsCoverLetterModalOpen] = useState(false);
+  const [isQaModalOpen, setIsQaModalOpen] = useState(false);
+  const [activeResumeData, setActiveResumeData] = useState<any>(null);
 
   useEffect(() => {
     setJob(initialJob);
@@ -358,6 +370,31 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
             <CheckSquare size={15} />
             <span>{appState.hasApplication ? appState.actionLabel : 'Mark Applied'}</span>
           </button>
+
+          <button
+            onClick={() => setIsCvModalOpen(true)}
+            className="btn btn-secondary"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              height: '34px',
+              padding: '0 12px',
+              fontSize: '13px',
+              fontWeight: 600,
+              backgroundColor: 'rgba(37, 99, 235, 0.15)',
+              border: '1px solid rgba(37, 99, 235, 0.35)',
+              color: 'var(--brand-text)',
+              borderRadius: 'var(--radius-md)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              boxSizing: 'border-box',
+            }}
+            title="Generate ATS-tailored resume with AI"
+          >
+            <Sparkles size={14} color="#60a5fa" />
+            <span>Tailor Resume</span>
+          </button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
@@ -641,6 +678,127 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
           )}
         </div>
 
+        {/* AI Career Copilot Accelerators Card */}
+        <div
+          style={{
+            padding: '16px 20px',
+            borderRadius: 'var(--radius-md)',
+            background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(124, 58, 237, 0.08) 100%)',
+            border: '1px solid rgba(37, 99, 235, 0.25)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '6px',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Sparkles size={13} color="#ffffff" />
+              </div>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                AI Application Accelerators
+              </span>
+            </div>
+            <span
+              style={{
+                fontSize: '11px',
+                color: 'var(--brand-text)',
+                fontWeight: 600,
+                backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                border: '1px solid rgba(37, 99, 235, 0.3)',
+              }}
+            >
+              ATS Optimized
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+            <button
+              onClick={() => setIsCvModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-primary)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--brand-border)')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')}
+            >
+              <FileText size={14} color="#60a5fa" />
+              <span>Tailor Resume</span>
+            </button>
+
+            <button
+              onClick={() => setIsCoverLetterModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-primary)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--status-success-border)')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')}
+            >
+              <Mail size={14} color="#34d399" />
+              <span>Cover Letter</span>
+            </button>
+
+            <button
+              onClick={() => setIsQaModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-primary)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.4)')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')}
+            >
+              <MessageSquare size={14} color="#c084fc" />
+              <span>Interview Prep</span>
+            </button>
+          </div>
+        </div>
+
         {/* Skills Tag Cloud */}
         {job.skills && job.skills.length > 0 && (
           <div>
@@ -827,6 +985,56 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
           </div>
         </div>
       </div>
+
+      {/* AI Career Tools Modals */}
+      <CvGeneratorModal
+        isOpen={isCvModalOpen}
+        onClose={() => setIsCvModalOpen(false)}
+        job={{
+          id: job.id,
+          title: cleanTitle,
+          company_name: companyName,
+          location: primaryLocation,
+          description: job.description,
+          apply_url: primaryApplyUrl,
+          source: job.source,
+        }}
+        userProfile={userProfile}
+        onOpenCoverLetter={(_j, resumeData) => {
+          setActiveResumeData(resumeData);
+          setIsCvModalOpen(false);
+          setIsCoverLetterModalOpen(true);
+        }}
+        onOpenQaAssistant={(_j, resumeData) => {
+          setActiveResumeData(resumeData);
+          setIsCvModalOpen(false);
+          setIsQaModalOpen(true);
+        }}
+      />
+
+      <CoverLetterModal
+        isOpen={isCoverLetterModalOpen}
+        onClose={() => setIsCoverLetterModalOpen(false)}
+        job={{
+          title: cleanTitle,
+          company_name: companyName,
+          description: job.description,
+        }}
+        tailoredResume={activeResumeData}
+        userProfile={userProfile}
+      />
+
+      <JobQaModal
+        isOpen={isQaModalOpen}
+        onClose={() => setIsQaModalOpen(false)}
+        job={{
+          title: cleanTitle,
+          company_name: companyName,
+          description: job.description,
+        }}
+        tailoredResume={activeResumeData}
+        userProfile={userProfile}
+      />
     </div>
   );
 };
