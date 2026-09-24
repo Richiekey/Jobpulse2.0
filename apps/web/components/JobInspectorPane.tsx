@@ -22,6 +22,7 @@ import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
 import { sanitizeHtml, containsHtml } from '@jobpulse/shared/sanitize-html';
 import { LocationParser } from '@jobpulse/domain/location-parser';
+import { SalaryEstimator } from '@jobpulse/domain/salary-estimator';
 import {
   sanitizeCompanyName,
   sanitizeJobTitle,
@@ -162,9 +163,23 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
     ? formatSalary(rawSalaryObj)
     : null;
 
+  const rawLocation =
+    job.locations && job.locations.length > 0
+      ? job.locations.join('; ')
+      : [job.location_city, job.location_region, job.location_country].filter(Boolean).join(', ') ||
+        job.location ||
+        '';
+  const primaryLocation = LocationParser.deduplicateAndFormat(rawLocation);
+
+  const estimatedSalary = !formattedSalary
+    ? SalaryEstimator.estimateJobSalary(cleanTitle, primaryLocation)
+    : null;
+
   const displaySalary = formattedSalary
     ? (job.salary_currency ? formattedSalary : `${formattedSalary} (Currency not disclosed)`)
-    : 'Not Disclosed';
+    : estimatedSalary
+      ? estimatedSalary.formatted
+      : 'Not Disclosed';
 
   let annualizedEst: string | null = null;
   if (
@@ -591,14 +606,18 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
         >
           <div>
             <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700 }}>
-              Estimated Compensation
+              {formattedSalary ? 'Verified ATS Compensation' : estimatedSalary ? 'Estimated Market Benchmark' : 'Compensation'}
             </span>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: formattedSalary ? '#fbbf24' : 'var(--text-secondary)', marginTop: '2px' }}>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: formattedSalary ? '#fbbf24' : estimatedSalary ? '#d97706' : 'var(--text-secondary)', marginTop: '2px' }}>
               {displaySalary}
             </div>
-            {annualizedEst && (
+            {annualizedEst ? (
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{annualizedEst}</span>
-            )}
+            ) : estimatedSalary ? (
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Market estimate for {cleanTitle} in {primaryLocation || 'US'}
+              </span>
+            ) : null}
           </div>
 
           {job.equity_mentioned && (

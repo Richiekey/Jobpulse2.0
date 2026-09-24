@@ -172,9 +172,12 @@ export async function syncApplicationToGoogleSheet(
     }
   }
 
+  const colCount = Math.max(rowValues.length, 1);
+  const lastCol = String.fromCharCode(65 + Math.min(colCount - 1, 25));
+
   if (existingIndex !== -1) {
     // 2. Update existing row in place
-    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A${existingIndex}:H${existingIndex}?valueInputOption=USER_ENTERED`;
+    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A${existingIndex}:${lastCol}${existingIndex}?valueInputOption=USER_ENTERED`;
     const updateRes = await fetchFn(updateUrl, {
       method: 'PUT',
       headers: {
@@ -182,7 +185,7 @@ export async function syncApplicationToGoogleSheet(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        range: `${sheetName}!A${existingIndex}:H${existingIndex}`,
+        range: `${sheetName}!A${existingIndex}:${lastCol}${existingIndex}`,
         majorDimension: 'ROWS',
         values: [rowValues],
       }),
@@ -195,8 +198,11 @@ export async function syncApplicationToGoogleSheet(
 
     return { action: 'updated', rowIndex: existingIndex };
   } else {
+    const colCount = Math.max(rowValues.length, 1);
+    const lastCol = String.fromCharCode(65 + Math.min(colCount - 1, 25));
+
     // 3. Append new row at bottom
-    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:${lastCol}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const appendRes = await fetchFn(appendUrl, {
       method: 'POST',
       headers: {

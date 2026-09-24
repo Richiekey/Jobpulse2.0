@@ -9,6 +9,7 @@ import {
   JobFunctionTaxonomy,
   LocationParser,
   JobEligibilityPolicy,
+  SkillsTaxonomy,
 } from '@jobpulse/domain';
 import type { ATSAdapter } from '@jobpulse/ats';
 import { logger } from '@jobpulse/shared';
@@ -19,6 +20,7 @@ export interface PipelineResult {
   status: 'inserted' | 'updated' | 'rejected' | 'failed';
   jobId?: string;
   error?: string;
+  rejectionReason?: string;
 }
 
 export class IngestionPipeline {
@@ -163,6 +165,7 @@ export class IngestionPipeline {
           candidateId: candidate.externalJobId,
           status: 'rejected',
           error: validation.issues.map((i) => `${i.field}: ${i.message}`).join('; '),
+          rejectionReason: 'VALIDATION_FAILED',
         };
       }
 
@@ -193,6 +196,7 @@ export class IngestionPipeline {
           candidateId: candidate.externalJobId,
           status: 'rejected',
           error: `Ineligible job: ${eligibility.reason}`,
+          rejectionReason: eligibility.reason,
         };
       }
 
@@ -220,6 +224,13 @@ export class IngestionPipeline {
         salaryInterval as any,
         normalizedJob.description || ''
       );
+
+      // 5.5. Enrich Skills from Description & Taxonomy
+      let skills = Array.isArray(normalizedJob.skills) && normalizedJob.skills.length > 0 ? [...normalizedJob.skills] : [];
+      if (skills.length === 0 && normalizedJob.description) {
+        skills = SkillsTaxonomy.extractSkills(normalizedJob.description);
+      }
+      normalizedJob.skills = skills;
 
       // Determine effective company ID:
       // For aggregators (like Jobright), jobs belong to the extracted employer (rawJob.rawCompany),

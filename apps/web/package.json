@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@jobpulse/ats": "workspace:*",
+    "@jobpulse/curation": "workspace:*",
     "@jobpulse/domain": "workspace:*",
     "@jobpulse/shared": "workspace:*",
     "@jobpulse/url-resolution": "workspace:*",

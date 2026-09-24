@@ -15,6 +15,16 @@
       "types": "./dist/location-parser.d.ts",
       "import": "./dist/location-parser.js",
       "default": "./dist/location-parser.js"
+    },
+    "./skills-taxonomy": {
+      "types": "./dist/skills-taxonomy.d.ts",
+      "import": "./dist/skills-taxonomy.js",
+      "default": "./dist/skills-taxonomy.js"
+    },
+    "./salary-estimator": {
+      "types": "./dist/salary-estimator.d.ts",
+      "import": "./dist/salary-estimator.js",
+      "default": "./dist/salary-estimator.js"
     }
   },
   "scripts": {

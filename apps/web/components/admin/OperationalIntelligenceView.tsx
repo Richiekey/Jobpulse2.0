@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   XCircle,
   ShieldCheck,
+  ShieldAlert,
   RefreshCw,
   Database,
   BarChart3,
@@ -137,6 +138,23 @@ export interface OperationalIntelligenceData {
   };
 }
 
+export interface RejectionTelemetryData {
+  timeRange: string;
+  windowStart: string;
+  totalDiscovered: number;
+  totalInserted: number;
+  totalUpdated: number;
+  totalRejected: number;
+  totalFailed: number;
+  overallRejectionRate: number;
+  rejectionReasons: Array<{
+    reason: string;
+    label: string;
+    count: number;
+    percentage: number;
+  }>;
+}
+
 interface OperationalIntelligenceViewProps {
   organizationId: string | null;
   organizationName?: string;
@@ -150,6 +168,7 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
 }) => {
   const [range, setRange] = useState<'24h' | '7d' | '30d'>('24h');
   const [metrics, setMetrics] = useState<OperationalIntelligenceData | null>(null);
+  const [rejectionData, setRejectionData] = useState<RejectionTelemetryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,7 +182,11 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
         params.set('organizationId', organizationId);
       }
 
-      const res = await fetch(`/api/admin/intelligence?${params.toString()}`);
+      const [res, rejRes] = await Promise.all([
+        fetch(`/api/admin/intelligence?${params.toString()}`),
+        fetch(`/api/admin/rejection-breakdown?range=${range}`),
+      ]);
+
       const json = await res.json();
 
       if (!res.ok || json.error) {
@@ -171,6 +194,13 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
       }
 
       setMetrics(json.data);
+
+      if (rejRes.ok) {
+        const rejJson = await rejRes.json();
+        if (rejJson.data) {
+          setRejectionData(rejJson.data);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to fetch operational intelligence');
     } finally {
@@ -634,6 +664,110 @@ export const OperationalIntelligenceView: React.FC<OperationalIntelligenceViewPr
               </div>
             )}
           </div>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* MODULE 3B: CANDIDATE REJECTION & ELIGIBILITY ANALYSIS            */}
+          {/* ---------------------------------------------------------------- */}
+          {rejectionData && (
+            <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <ShieldAlert size={20} color="#f59e0b" />
+                  <div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Candidate Rejection & Eligibility Telemetry</h3>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Breakdown of discovered jobs evaluated against the active job eligibility policy.
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      backgroundColor: rejectionData.overallRejectionRate > 70 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                      border: `1px solid ${rejectionData.overallRejectionRate > 70 ? 'rgba(239, 68, 68, 0.28)' : 'rgba(245, 158, 11, 0.28)'}`,
+                      color: rejectionData.overallRejectionRate > 70 ? '#ef4444' : '#f59e0b',
+                    }}
+                  >
+                    Rejection Rate: {rejectionData.overallRejectionRate}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Rejection Summary Counters */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Discovered</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '4px' }}>
+                    {rejectionData.totalDiscovered.toLocaleString()}
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '8px', padding: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>Accepted & Synced</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '4px', color: '#10b981' }}>
+                    {(rejectionData.totalInserted + rejectionData.totalUpdated).toLocaleString()}
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', padding: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: 600 }}>Rejected Ineligible</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '4px', color: '#ef4444' }}>
+                    {rejectionData.totalRejected.toLocaleString()}
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Failed Ingestion</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '4px', color: rejectionData.totalFailed > 0 ? '#ef4444' : 'var(--text-primary)' }}>
+                    {rejectionData.totalFailed.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Reasons Breakdown Bars */}
+              {rejectionData.rejectionReasons.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
+                    Rejection Reasons Taxonomy ({rejectionData.timeRange})
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {rejectionData.rejectionReasons.map((item) => (
+                      <div
+                        key={item.reason}
+                        style={{
+                          background: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          padding: '10px 14px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginBottom: '6px' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.label}</span>
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>{item.count.toLocaleString()}</strong> ({item.percentage}%)
+                          </span>
+                        </div>
+                        <div style={{ width: '100%', height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: `${Math.min(100, item.percentage)}%`,
+                              height: '100%',
+                              background: item.reason === 'NON_TECHNICAL_ROLE' ? '#f59e0b' : item.reason === 'EXCLUDED_GEOGRAPHY' ? '#6366f1' : '#ef4444',
+                              borderRadius: '3px',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ---------------------------------------------------------------- */}
           {/* MODULE 4: DATA QUALITY & RESOLUTION RADAR                        */}

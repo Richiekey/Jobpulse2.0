@@ -4,6 +4,7 @@ import { ApiResponse } from '@/lib/api-response';
 import { AuthGuard } from '@/lib/auth-guard';
 import { decodeCursor, encodeCursor } from '@/lib/cursor';
 import { LocationParser, JobFunctionTaxonomy } from '@jobpulse/domain';
+import { scoreJob, balanceJobDiversity, type CurationCriteria } from '@jobpulse/curation';
 import { processFeedJobs } from '@/lib/feed-dedup';
 import { z } from 'zod';
 
@@ -30,6 +31,7 @@ const FeedQuerySchema = z
     currency: z.string().trim().max(10).toUpperCase().optional(),
     has_salary: z.coerce.boolean().optional(),
     skill: z.string().max(100).optional(),
+    skills: z.string().max(300).optional(),
     location: z.string().max(100).optional(),
     date_preset: z.enum(['24h', '3d', '7d', '14d', '30d', 'all']).optional(),
     posted_after: z.string().optional(),
@@ -87,6 +89,7 @@ export async function GET(request: NextRequest) {
       currency,
       has_salary,
       skill,
+      skills,
       location,
       date_preset,
       posted_after: explicitPostedAfter,
@@ -98,6 +101,7 @@ export async function GET(request: NextRequest) {
     const atsSlugParam = atsParam || atsPlatformParam;
     const countryParam = country || location_country;
     const cityParam = city || location_city;
+    const skillsParam = (skills || skill || '').trim();
 
     let decodedCursor: { postedAt: string; id: string } | null = null;
     if (cursor) {
@@ -326,6 +330,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 13d. Skills Filter (Multi-Select or Single-Select)
+    if (skillsParam) {
+      const skillTokens = skillsParam
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (skillTokens.length > 0) {
+        if (typeof (dbQuery as any).overlaps === 'function') {
+          dbQuery = (dbQuery as any).overlaps('skills', skillTokens);
+        } else if (typeof (dbQuery as any).contains === 'function') {
+          dbQuery = (dbQuery as any).contains('skills', skillTokens);
+        }
+      }
+    }
+
     // 14. Full-Text Search Query
     if (searchTerm) {
       dbQuery = dbQuery.textSearch('search_vector', searchTerm, {
@@ -360,7 +379,27 @@ export async function GET(request: NextRequest) {
     }
 
     const rawItems = rows || [];
-    const dedupedItems = processFeedJobs(rawItems);
+
+    const querySkills = skillsParam
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const queryRoles = (searchTerm || functionSlugParam || '')
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean);
+
+    const curationCriteria: CurationCriteria = {
+      skills: querySkills.length > 0 ? querySkills : undefined,
+      targetRoles: queryRoles.length > 0 ? queryRoles : undefined,
+      maxJobsPerCompany: 3,
+      targetTotalJobs: limit,
+    };
+
+    const scoredJobs = rawItems.map((job) => scoreJob(job as any, curationCriteria));
+    const curationResult = balanceJobDiversity(scoredJobs, curationCriteria);
+    const dedupedItems = curationResult.selectedJobs;
     const hasMore = rawItems.length > limit;
     const resultItems = dedupedItems.slice(0, limit);
 
@@ -451,6 +490,7 @@ export async function GET(request: NextRequest) {
         facet_scope: 'page',
         salaries_by_currency: salariesByCurrency,
       },
+      curation: curationResult.summary,
     });
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred while fetching the jobs feed.', err, 500);

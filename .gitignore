@@ -39,6 +39,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Reference repositories
+jobpulse-v1/
+
 # Development scratch
 scratch/
 

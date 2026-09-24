@@ -29,6 +29,9 @@ importers:
       '@jobpulse/ats':
         specifier: workspace:*
         version: link:../../packages/ats
+      '@jobpulse/curation':
+        specifier: workspace:*
+        version: link:../../packages/curation
       '@jobpulse/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -160,6 +163,18 @@ importers:
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)
 
   packages/config: {}
+
+  packages/curation:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.5
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.6
+        version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)
 
   packages/domain:
     dependencies:

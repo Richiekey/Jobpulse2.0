@@ -36,6 +36,15 @@ export type EligibilityExclusionReason =
   | 'NON_TECHNICAL_ROLE'
   | 'MISSING_REQUIRED_DATA';
 
+export const REJECTION_REASON_LABELS: Record<string, string> = {
+  NON_TECHNICAL_ROLE: 'Non-Technical Role (Sales, HR, Marketing, Operations)',
+  EXCLUDED_GEOGRAPHY: 'Excluded Geography (Outside US/CA/Europe/Remote)',
+  TOO_OLD: 'Stale / Over 30 Days Old',
+  MISSING_REQUIRED_DATA: 'Missing Required Fields (Title, Company, etc.)',
+  VALIDATION_FAILED: 'Validation Rules Failed (Length, Bad URLs, Malformed Data)',
+  OTHER: 'Other / Uncategorized',
+};
+
 export type GeographyCategory =
   | 'US'
   | 'CANADA'
@@ -108,11 +117,11 @@ const EXCLUDED_REGION_PATTERNS = [
 // Whitelist regional patterns
 const US_PATTERNS = /\b(united\s+states|usa?\b|u\.s\.a?\b|america)\b/i;
 const CANADA_PATTERNS = /\b(canada|can\b|ontario|toronto|vancouver|quebec|montreal|british\s+columbia|alberta|calgary|ottawa|edmonton|winnipeg)\b/i;
-const EUROPE_PATTERNS = /\b(europe|emea|united\s+kingdom|uk\b|u\.k\b|london|england|ireland|germany|berlin|france|paris|netherlands|amsterdam|spain|madrid|barcelona|sweden|stockholm|poland|warsaw|switzerland|zurich)\b/i;
+const EUROPE_PATTERNS = /\b(europe|emea|united\s+kingdom|uk\b|u\.k\b|london|england|scotland|wales|edinburgh|glasgow|manchester|birmingham|cambridge|oxford|bristol|leeds|ireland|dublin|cork|germany|berlin|munich|frankfurt|hamburg|cologne|stuttgart|france|paris|lyon|netherlands|amsterdam|rotterdam|utrecht|spain|madrid|barcelona|valencia|sweden|stockholm|gothenburg|norway|oslo|denmark|copenhagen|finland|helsinki|poland|warsaw|krakow|wroclaw|switzerland|zurich|geneva|basel|lausanne|austria|vienna|belgium|brussels|portugal|lisbon|porto|italy|milan|rome|czech\s+republic|prague|estonia|tallinn)\b/i;
 const WORLDWIDE_PATTERNS = /\b(worldwide|anywhere|global|all\s+locations)\b/i;
 
 // Common US cities & state abbreviations (fallback when country is not explicitly mentioned)
-const US_CITY_PATTERNS = /\b(san\s+francisco|new\s+york|los\s+angeles|seattle|austin|chicago|boston|denver|portland|atlanta|miami|dallas|houston|phoenix|philadelphia|san\s+diego|san\s+jose|washington\s*,?\s*d\.?c\.?|pittsburgh|minneapolis|detroit|charlotte|raleigh|salt\s+lake|nashville|columbus|indianapolis|madison|boulder|palo\s+alto|mountain\s+view|menlo\s+park|redwood\s+city|sunnyvale|cupertino|santa\s+clara|san\s+mateo|redmond|bellevue|brooklyn|manhattan|jersey\s+city|arlington|cambridge|somerville|oakland|berkeley|burlington)\b/i;
+const US_CITY_PATTERNS = /\b(san\s+francisco|new\s+york|los\s+angeles|seattle|austin|chicago|boston|denver|portland|atlanta|miami|dallas|houston|phoenix|philadelphia|san\s+diego|san\s+jose|washington\s*,?\s*d\.?c\.?|pittsburgh|minneapolis|detroit|charlotte|raleigh|durham|chapel\s+hill|salt\s+lake|nashville|columbus|indianapolis|madison|boulder|palo\s+alto|mountain\s+view|menlo\s+park|redwood\s+city|sunnyvale|cupertino|santa\s+clara|san\s+mateo|foster\s+city|redmond|bellevue|kirkland|brooklyn|manhattan|jersey\s+city|arlington|cambridge|somerville|oakland|berkeley|burlington|plano|irving)\b/i;
 const US_STATE_PATTERNS = /\b(california|new\s+york|texas|washington|massachusetts|colorado|georgia|florida|illinois|pennsylvania|virginia|north\s+carolina|ohio|michigan|minnesota|oregon|maryland|connecticut|new\s+jersey|arizona|tennessee|utah|wisconsin|indiana|missouri|\bCA\b|\bNY\b|\bTX\b|\bWA\b|\bMA\b|\bCO\b|\bGA\b|\bFL\b|\bIL\b|\bPA\b|\bVA\b|\bNC\b|\bOH\b|\bOR\b|\bMD\b|\bCT\b|\bNJ\b|\bAZ\b|\bTN\b|\bUT\b|\bWI\b|\bMN\b)\b/i;
 
 // Pseudo-technical patterns that MUST BE EXCLUDED even if containing the word "technical"
@@ -150,14 +159,14 @@ const NON_TECHNICAL_ROLE_PATTERNS = [
 
 // Valid technical role patterns
 const TECHNICAL_ROLE_PATTERNS: { pattern: RegExp; category: JobEligibilityResult['roleCategory'] }[] = [
-  // Software Engineering
+  // Software Engineering & Technical Leadership
   {
-    pattern: /\b(software\s+engineer|software\s+developer|full[\s-]?stack|frontend|front[\s-]?end|backend|back[\s-]?end|web\s+developer|mobile\s+engineer|mobile\s+developer|ios\s+(developer|engineer)|android\s+(developer|engineer)|embedded\s+engineer|firmware\s+engineer|application\s+engineer|systems\s+engineer|platform\s+engineer|infrastructure\s+engineer|devops|site\s+reliability|sre\b|\bqa\b|quality\s+assurance|test\s+automation|automation\s+engineer|test\s+engineer|sdet\b|swe\b|sde\b)\b/i,
+    pattern: /\b(software\s+engineer|software\s+developer|full[\s-]?stack|frontend|front[\s-]?end|backend|back[\s-]?end|web\s+developer|mobile\s+engineer|mobile\s+developer|ios\s+(developer|engineer)|android\s+(developer|engineer)|embedded\s+engineer|firmware\s+engineer|hardware\s+engineer|silicon\s+engineer|release\s+engineer|build\s+engineer|application\s+engineer|systems\s+engineer|platform\s+engineer|infrastructure\s+engineer|devops|site\s+reliability|sre\b|\bqa\b|quality\s+assurance|test\s+automation|automation\s+engineer|test\s+engineer|sdet\b|swe\b|sde\b|engineering\s+manager|director\s+of\s+engineering|vp\s+of\s+engineering|head\s+of\s+engineering|tech\s+lead|technical\s+lead|chief\s+technology\s+officer|\bcto\b|principal\s+engineer|staff\s+engineer|lead\s+developer|lead\s+engineer)\b/i,
     category: 'software',
   },
   // Data / AI / ML
   {
-    pattern: /\b(data\s+scientist|data\s+analyst|data\s+engineer|analytics\s+engineer|machine\s+learning|ml\s+engineer|ai\s+engineer|ai\s+research|research\s+engineer|research\s+scientist|mlops|bi\s+engineer|business\s+intelligence\s+engineer|data\s+architect|data\s+platform|computer\s+vision|nlp\s+engineer|deep\s+learning)\b/i,
+    pattern: /\b(data\s+scientist|data\s+analyst|data\s+engineer|analytics\s+engineer|machine\s+learning|ml\s+engineer|ai\s+engineer|ai\s+research|research\s+engineer|research\s+scientist|ai\s+scientist|genai|generative\s+ai|llm\s+engineer|applied\s+scientist|quant\s+developer|quantitative\s+developer|bioinformatics|data\s+lead|head\s+of\s+data|director\s+of\s+data|mlops|bi\s+engineer|business\s+intelligence\s+engineer|data\s+architect|data\s+platform|computer\s+vision|nlp\s+engineer|deep\s+learning)\b/i,
     category: 'data_ai',
   },
   // Cybersecurity & Cloud
@@ -167,12 +176,12 @@ const TECHNICAL_ROLE_PATTERNS: { pattern: RegExp; category: JobEligibilityResult
   },
   // Computer Science, IT & Systems Architecture
   {
-    pattern: /\b(computer\s+scientist|systems\s+analyst|technical\s+systems\s+analyst|database\s+administrator|dba\b|database\s+engineer|network\s+engineer|network\s+administrator|solutions\s+architect|technical\s+architect|enterprise\s+architect|infrastructure\s+architect)\b/i,
+    pattern: /\b(computer\s+scientist|systems\s+analyst|technical\s+systems\s+analyst|database\s+administrator|dba\b|database\s+engineer|network\s+engineer|network\s+administrator|solutions\s+architect|technical\s+architect|enterprise\s+architect|infrastructure\s+architect|it\s+engineer|it\s+systems)\b/i,
     category: 'it_systems',
   },
-  // Genuine Technical Cross-Disciplinary
+  // Genuine Technical Cross-Disciplinary (Product, Design, DevRel, Solutions)
   {
-    pattern: /\b(technical\s+product\s+manager|technical\s+program\s+manager|tpm\b|developer\s+advocate|developer\s+relations|devrel|technical\s+support\s+engineer|support\s+engineer|implementation\s+engineer|integration\s+engineer|api\s+engineer|blockchain\s+engineer|smart\s+contract\s+engineer|web3\s+engineer|forward\s+deployed\s+engineer|solutions\s+engineer|sales\s+engineer)\b/i,
+    pattern: /\b(product\s+manager|technical\s+product\s+manager|tpm\b|apm\b|group\s+product\s+manager|gpm\b|director\s+of\s+product|head\s+of\s+product|product\s+owner|product\s+designer|ux\s+designer|ui\s+designer|ui\/ux\s+designer|ux\/ui\s+designer|design\s+systems|interaction\s+designer|ux\s+researcher|design\s+technologist|creative\s+technologist|developer\s+advocate|developer\s+relations|devrel|technical\s+support\s+engineer|support\s+engineer|implementation\s+engineer|integration\s+engineer|api\s+engineer|blockchain\s+engineer|smart\s+contract\s+engineer|web3\s+engineer|forward\s+deployed\s+engineer|solutions\s+engineer|sales\s+engineer|scrum\s+master|agile\s+coach)\b/i,
     category: 'technical_other',
   },
 ];
@@ -243,7 +252,7 @@ export class JobEligibilityPolicy {
     // Check ATS department metadata if roleCategory not yet established from title
     if (!roleCategory && job.sourceMetadata?.department) {
       const dept = String(job.sourceMetadata.department).toLowerCase();
-      if (dept.includes('engineering') || dept.includes('technology') || dept.includes('data') || dept.includes('security')) {
+      if (dept.includes('engineering') || dept.includes('technology') || dept.includes('data') || dept.includes('security') || dept.includes('product') || dept.includes('design')) {
         roleCategory = 'software';
       }
     }

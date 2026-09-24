@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui';
 import { sanitizeCompanyName, sanitizeJobTitle, sanitizeLocation } from '@/lib/job-cleaner';
 import { getApplicationDisplayState } from '@/lib/application-status';
 import { LocationParser } from '@jobpulse/domain/location-parser';
+import { SalaryEstimator } from '@jobpulse/domain/salary-estimator';
 
 interface JobFeedCardProps {
   job: any;
@@ -85,6 +86,9 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
   const primaryLocation = LocationParser.deduplicateAndFormat(rawLocation);
 
   const cleanTitle = sanitizeJobTitle(job.canonical_title || job.display_title);
+  const estimatedSalary = !formattedSalary
+    ? SalaryEstimator.estimateJobSalary(cleanTitle, primaryLocation)
+    : null;
 
   return (
     <div
@@ -207,11 +211,26 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
           </Badge>
         )}
 
-        {formattedSalary && (
+        {formattedSalary ? (
           <Badge variant="warning" size="sm">
             {formattedSalary}
           </Badge>
-        )}
+        ) : estimatedSalary ? (
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: 'var(--radius-xs)',
+              backgroundColor: 'rgba(251, 191, 36, 0.08)',
+              border: '1px dashed rgba(251, 191, 36, 0.3)',
+              color: '#d97706',
+            }}
+            title="Estimated market benchmark"
+          >
+            {estimatedSalary.formatted}
+          </span>
+        ) : null}
 
         {job.equity_mentioned && (
           <Badge variant="primary" size="sm">
@@ -223,6 +242,25 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
           <Badge variant="neutral" size="sm">
             {job.job_function_slug.replace(/-/g, ' ')}
           </Badge>
+        )}
+
+        {job.skills && Array.isArray(job.skills) && job.skills.length > 0 && (
+          job.skills.slice(0, 3).map((sk: string) => (
+            <span
+              key={sk}
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 6px',
+                borderRadius: 'var(--radius-xs)',
+                backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                color: '#6366f1',
+              }}
+            >
+              {sk}
+            </span>
+          ))
         )}
       </div>
 

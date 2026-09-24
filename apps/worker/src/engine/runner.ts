@@ -150,11 +150,16 @@ export class ScraperRunner {
       let updated = 0;
       let rejected = 0;
       let failed = 0;
+      const rejectionBreakdown: Record<string, number> = {};
 
       for (const res of candidateResults) {
         if (res.status === 'inserted') inserted++;
         else if (res.status === 'updated') updated++;
-        else if (res.status === 'rejected') rejected++;
+        else if (res.status === 'rejected') {
+          rejected++;
+          const reason = res.rejectionReason || 'OTHER';
+          rejectionBreakdown[reason] = (rejectionBreakdown[reason] || 0) + 1;
+        }
         else if (res.status === 'failed') failed++;
       }
 
@@ -234,7 +239,8 @@ export class ScraperRunner {
         failed,
         sourceError,
         durationMs,
-        adapter.parserVersion
+        adapter.parserVersion,
+        rejectionBreakdown
       );
 
       return {
@@ -762,7 +768,8 @@ export class ScraperRunner {
     failed: number,
     errorMessage: string | null,
     durationMs: number,
-    parserVersion?: string
+    parserVersion?: string,
+    rejectionBreakdown?: Record<string, number>
   ): Promise<void> {
     const { error: insertError } = await supabase.from('scrape_run_sources').insert({
       scrape_run_id: runId,
@@ -776,6 +783,7 @@ export class ScraperRunner {
       error_message: errorMessage,
       metadata: {
         parser_version: parserVersion || 'unknown',
+        rejection_breakdown: rejectionBreakdown || {},
       },
       duration_ms: durationMs,
       started_at: new Date(Date.now() - durationMs).toISOString(),
