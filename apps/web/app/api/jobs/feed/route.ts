@@ -4,6 +4,7 @@ import { ApiResponse } from '@/lib/api-response';
 import { AuthGuard } from '@/lib/auth-guard';
 import { decodeCursor, encodeCursor } from '@/lib/cursor';
 import { LocationParser, JobFunctionTaxonomy } from '@jobpulse/domain';
+import { processFeedJobs } from '@/lib/feed-dedup';
 import { z } from 'zod';
 
 const FeedQuerySchema = z
@@ -358,9 +359,10 @@ export async function GET(request: NextRequest) {
       return ApiResponse.error('Failed to retrieve jobs feed.', queryError, 500);
     }
 
-    const items = rows || [];
-    const hasMore = items.length > limit;
-    const resultItems = hasMore ? items.slice(0, limit) : items;
+    const rawItems = rows || [];
+    const dedupedItems = processFeedJobs(rawItems);
+    const hasMore = rawItems.length > limit;
+    const resultItems = dedupedItems.slice(0, limit);
 
     // Batch query user's applications for these jobs to ensure authoritative application state
     const jobIds = resultItems.map((item: any) => item.id);

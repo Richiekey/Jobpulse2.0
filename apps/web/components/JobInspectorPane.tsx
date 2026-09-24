@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
+import { sanitizeHtml, containsHtml } from '@jobpulse/shared/sanitize-html';
+import { LocationParser } from '@jobpulse/domain/location-parser';
 import {
   sanitizeCompanyName,
   sanitizeJobTitle,
@@ -545,7 +547,15 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               }}
             >
               <MapPin size={13} />
-              {job.is_remote ? 'Remote' : (job.locations || []).join(', ') || 'Unspecified'}
+              {job.is_remote
+                ? 'Remote'
+                : LocationParser.deduplicateAndFormat(
+                    job.locations && job.locations.length > 0
+                      ? job.locations.join('; ')
+                      : [job.location_city, job.location_region, job.location_country].filter(Boolean).join(', ') ||
+                        job.location ||
+                        'Unspecified'
+                  )}
             </span>
 
             <span
@@ -731,16 +741,27 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               color: 'var(--text-secondary)',
             }}
           >
-            {job.description_html ? (
-              <div
-                dangerouslySetInnerHTML={{ __html: job.description_html }}
-                style={{
-                  wordBreak: 'break-word',
-                }}
-              />
-            ) : (
-              <p style={{ whiteSpace: 'pre-line' }}>{job.description}</p>
-            )}
+            {(() => {
+              const htmlContent =
+                job.description_html ||
+                (job.description && containsHtml(job.description) ? job.description : null);
+
+              if (htmlContent) {
+                return (
+                  <div
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(htmlContent) }}
+                    style={{
+                      wordBreak: 'break-word',
+                    }}
+                  />
+                );
+              }
+              return (
+                <p style={{ whiteSpace: 'pre-line' }}>
+                  {job.description || 'No description available.'}
+                </p>
+              );
+            })()}
           </div>
         </div>
 

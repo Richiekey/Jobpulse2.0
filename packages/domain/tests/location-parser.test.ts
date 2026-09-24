@@ -289,4 +289,27 @@ describe('LocationParser', () => {
       expect(res.region).toBe('San Francisco Bay Area');
     });
   });
+
+  describe('Display Formatting & Deduplication (Task 0.4)', () => {
+    it('deduplicates repetitive city, state, country sequences into clean location', () => {
+      const input = 'New York, New York, USA, New York, New York, NY, United States';
+      expect(LocationParser.deduplicateAndFormat(input)).toBe('New York, NY');
+    });
+
+    it('formats US city and state abbreviations without redundant United States', () => {
+      expect(LocationParser.deduplicateAndFormat('San Francisco, CA')).toBe('San Francisco, CA');
+    });
+
+    it('formats pure remote cleanly', () => {
+      expect(LocationParser.deduplicateAndFormat('Remote')).toBe('Remote');
+    });
+
+    it('formats international locations cleanly without redundant constituent country', () => {
+      expect(LocationParser.deduplicateAndFormat('London, England, United Kingdom')).toBe('London, United Kingdom');
+    });
+
+    it('formats remote with primary location', () => {
+      expect(LocationParser.deduplicateAndFormat('Remote - San Francisco, CA')).toBe('Remote — San Francisco, CA');
+    });
+  });
 });

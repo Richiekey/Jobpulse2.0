@@ -10,6 +10,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./sanitize-html": {
+      "types": "./dist/sanitize-html.d.ts",
+      "import": "./dist/sanitize-html.js",
+      "default": "./dist/sanitize-html.js"
+    },
+    "./format-salary": {
+      "types": "./dist/format-salary.d.ts",
+      "import": "./dist/format-salary.js",
+      "default": "./dist/format-salary.js"
     }
   },
   "scripts": {

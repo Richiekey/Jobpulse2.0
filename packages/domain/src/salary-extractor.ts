@@ -140,11 +140,11 @@ export class SalaryExtractor {
 
     // 1. Regex pattern for salary ranges:
     // e.g. "$140,000 - $180,000 / year", "£70k - £90k", "$60 - $80 / hr", "$2,000 - $3,000 / wk"
-    const salaryRangeRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:-|–|—|to)\s*(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
+    const salaryRangeRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+(?:\.\d{2})?)\s*(k|K)?\s*(?:-|–|—|to)\s*(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+(?:\.\d{2})?)\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
 
     // 2. Single salary pattern:
     // e.g. "$150,000 / year", "$75/hr", "£90k annually", "$2,500 / week"
-    const singleSalaryRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d{1,3})\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
+    const singleSalaryRegex = /(?:(\$|€|£|USD|EUR|GBP|CAD|AUD)\s*)?(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+(?:\.\d{2})?)\s*(k|K)?\s*(?:(USD|EUR|GBP|CAD|AUD))?\s*(?:\/|\s+per\s+|\s+a\s+|\s+an\s+)?(yr|year|annually|yearly|mo|month|monthly|wk|week|weekly|hr|hour|hourly|day|daily)?\b/i;
 
     const rangeMatch = text.match(salaryRangeRegex);
     if (rangeMatch && rangeMatch[2] && rangeMatch[5]) {
@@ -178,8 +178,13 @@ export class SalaryExtractor {
         else if (/wk|week|weekly/i.test(intervalStr)) interval = 'weekly';
         else if (/mo|month|monthly/i.test(intervalStr)) interval = 'monthly';
         else if (/day|daily/i.test(intervalStr)) interval = 'daily';
-      } else if (max < 300 && !isK) {
-        interval = 'hourly';
+      } else if (max > 0 && max < 300 && min > 0 && min < 300 && !isK) {
+        // Only infer hourly if BOTH values are in plausible hourly range (e.g., $25 - $75)
+        // AND the values are not suspiciously round numbers that could be truncated yearly salaries
+        const looksLikeHourly = min <= 200 && max <= 200 && (max - min) < 150;
+        if (looksLikeHourly) {
+          interval = 'hourly';
+        }
       }
 
       const result = this.normalize(min, max, currency, interval, text);
@@ -206,7 +211,7 @@ export class SalaryExtractor {
         else if (/wk|week|weekly/i.test(intervalStr)) interval = 'weekly';
         else if (/mo|month|monthly/i.test(intervalStr)) interval = 'monthly';
         else if (/day|daily/i.test(intervalStr)) interval = 'daily';
-      } else if (amount < 300 && !isK) {
+      } else if (amount > 0 && amount < 200 && !isK) {
         interval = 'hourly';
       }
 
@@ -276,6 +281,18 @@ export function formatSalary({ min, max, currency, interval = 'yearly' }: Format
 
   const hasMin = typeof min === 'number' && !isNaN(min);
   const hasMax = typeof max === 'number' && !isNaN(max);
+
+  // Guard against corrupted hourly rates
+  if (intervalKey === 'hourly') {
+    const minVal = hasMin ? min! : 0;
+    const maxVal = hasMax ? max! : minVal;
+    if ((hasMin && minVal < 5) || (hasMax && maxVal < 5)) {
+      return null;
+    }
+    if (!currCode && ((hasMin && minVal < 10) || (hasMax && maxVal < 10))) {
+      return null;
+    }
+  }
 
   if (hasMin && hasMax) {
     if (min === max) {

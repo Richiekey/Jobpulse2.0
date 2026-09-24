@@ -17,6 +17,7 @@ import { isPresentableSalary } from '@/lib/salary-shield';
 import { Badge } from '@/components/ui';
 import { sanitizeCompanyName, sanitizeJobTitle, sanitizeLocation } from '@/lib/job-cleaner';
 import { getApplicationDisplayState } from '@/lib/application-status';
+import { LocationParser } from '@jobpulse/domain/location-parser';
 
 interface JobFeedCardProps {
   job: any;
@@ -75,12 +76,13 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
     jobright: 'Jobright Aggregator',
   };
 
-  const primaryLocation =
-    job.location_city && job.location_country
-      ? `${job.location_city}, ${job.location_country}`
-      : job.locations && job.locations.length > 0
-      ? sanitizeLocation(job.locations[0])
-      : 'Unspecified';
+  const rawLocation =
+    job.locations && job.locations.length > 0
+      ? job.locations[0]
+      : [job.location_city, job.location_region, job.location_country].filter(Boolean).join(', ') ||
+        job.location ||
+        '';
+  const primaryLocation = LocationParser.deduplicateAndFormat(rawLocation);
 
   const cleanTitle = sanitizeJobTitle(job.canonical_title || job.display_title);
 

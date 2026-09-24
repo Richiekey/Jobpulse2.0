@@ -56,6 +56,18 @@ export function formatSalary({ min, max, currency, interval = 'yearly' }: Format
   const hasMin = typeof min === 'number' && !isNaN(min);
   const hasMax = typeof max === 'number' && !isNaN(max);
 
+  // Guard against corrupted hourly rates
+  if (intervalKey === 'hourly') {
+    const minVal = hasMin ? min! : 0;
+    const maxVal = hasMax ? max! : minVal;
+    if ((hasMin && minVal < 5) || (hasMax && maxVal < 5)) {
+      return null;
+    }
+    if (!currCode && ((hasMin && minVal < 10) || (hasMax && maxVal < 10))) {
+      return null;
+    }
+  }
+
   if (hasMin && hasMax) {
     if (min === max) {
       return `${formatAmount(min)}${suffix}`;

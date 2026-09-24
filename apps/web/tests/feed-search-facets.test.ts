@@ -67,17 +67,29 @@ describe('Search & Multi-Faceted Filtering Feed API (S17/S18)', () => {
     const mockLimit = vi.fn().mockResolvedValue({ data: mockJobs, error: null });
 
     const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: mockEq,
-          gte: mockGte,
-          lte: mockLte,
-          contains: mockContains,
-          textSearch: mockTextSearch,
-          order: mockOrder,
-          limit: mockLimit,
-          or: vi.fn().mockReturnThis(),
-        }),
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'applications') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                in: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: mockEq,
+            gte: mockGte,
+            lte: mockLte,
+            contains: mockContains,
+            textSearch: mockTextSearch,
+            order: mockOrder,
+            limit: mockLimit,
+            or: vi.fn().mockReturnThis(),
+            not: vi.fn().mockReturnThis(),
+          }),
+        };
       }),
     };
 
@@ -124,13 +136,26 @@ describe('Search & Multi-Faceted Filtering Feed API (S17/S18)', () => {
     const mockLimit = vi.fn().mockResolvedValue({ data: mockJobs, error: null });
 
     const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnThis(),
-          or: mockOr,
-          order: mockOrder,
-          limit: mockLimit,
-        }),
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'applications') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                in: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnThis(),
+            gte: vi.fn().mockReturnThis(),
+            not: vi.fn().mockReturnThis(),
+            or: mockOr,
+            order: mockOrder,
+            limit: mockLimit,
+          }),
+        };
       }),
     };
 

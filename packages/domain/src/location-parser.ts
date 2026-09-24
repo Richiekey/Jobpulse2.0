@@ -368,4 +368,82 @@ export class LocationParser {
   private static isUSState(value: string): boolean {
     return US_STATE_NAMES.has(value.toLowerCase().trim()) || this.isUSStateAbbr(value);
   }
+
+  /**
+   * Formats a ParsedLocation into a clean, deduplicated display string.
+   * Max 3 components: City, Region/State, Country
+   * 
+   * Examples:
+   *   "New York, NY" (not "New York, New York, USA, New York, New York, NY, United States")
+   *   "San Francisco, CA" (inferred US, no need to show country)
+   *   "Remote" (for pure remote jobs)
+   *   "London, United Kingdom"
+   *   "Remote — San Francisco, CA"
+   */
+  public static formatForDisplay(parsed: ParsedLocation): string {
+    if (parsed.isRemote && !parsed.city && !parsed.region && !parsed.country) {
+      return 'Remote';
+    }
+
+    const parts: string[] = [];
+    
+    if (parsed.city) {
+      parts.push(parsed.city);
+    }
+    
+    if (parsed.region) {
+      const regionLower = parsed.region.toLowerCase();
+      const cityLower = (parsed.city || '').toLowerCase();
+      const abbrEntry = Object.entries(US_STATE_ABBR).find(
+        ([abbr, name]) => name.toLowerCase() === regionLower || abbr.toLowerCase() === regionLower
+      );
+      const stateAbbr = abbrEntry ? abbrEntry[0] : null;
+
+      if (stateAbbr) {
+        // If it's a US state, always use abbreviation (e.g. "NY", "CA")
+        parts.push(stateAbbr);
+      } else if (regionLower !== cityLower) {
+        // Skip redundant UK constituent country in region if Country is United Kingdom and City is present
+        const isUkConstituent =
+          parsed.country === 'United Kingdom' &&
+          parsed.city &&
+          ['england', 'scotland', 'wales', 'northern ireland', 'greater london'].includes(regionLower);
+        if (!isUkConstituent) {
+          parts.push(parsed.region);
+        }
+      }
+    }
+    
+    if (parsed.country) {
+      // Don't add "United States" if we already have a US state abbreviation
+      const hasUSState = parts.some((p) => Boolean(US_STATE_ABBR[p.toUpperCase()]));
+      if (!(parsed.country === 'United States' && hasUSState && parts.length >= 2)) {
+        parts.push(parsed.country);
+      }
+    }
+    
+    if (parsed.isRemote && parts.length > 0) {
+      return `Remote — ${parts.join(', ')}`;
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : parsed.raw || 'Unspecified';
+  }
+
+  /**
+   * Deduplicates and formats a raw location string for display.
+   */
+  public static deduplicateAndFormat(rawLocation: string): string {
+    if (!rawLocation || typeof rawLocation !== 'string' || !rawLocation.trim()) {
+      return 'Unspecified';
+    }
+    if (rawLocation.includes(';')) {
+      const parts = rawLocation.split(';').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const parsed = this.parseMultiple(parts);
+        return this.formatForDisplay(parsed);
+      }
+    }
+    const parsed = this.parse(rawLocation);
+    return this.formatForDisplay(parsed);
+  }
 }

@@ -173,5 +173,26 @@ describe('SalaryExtractor & Formatter (Batch H Remediation)', () => {
       expect(formatSalary({ min: null, max: null })).toBeNull();
       expect(formatSalary({})).toBeNull();
     });
+
+    it('rejects corrupted hourly rates (< 10 without currency or < 5 with currency)', () => {
+      expect(formatSalary({ min: 6, max: 23, currency: null, interval: 'hourly' })).toBeNull();
+      expect(formatSalary({ min: 3, max: 3, currency: 'USD', interval: 'hourly' })).toBeNull();
+      expect(formatSalary({ min: 4, max: 20, currency: null, interval: 'hourly' })).toBeNull();
+    });
+
+    it('extracts comma-separated and non-comma 6-figure salaries accurately without corrupting to hourly', () => {
+      const result = SalaryExtractor.extractFromText('Compensation: $186,000 - $233,000/yr with equity.');
+      expect(result.hasSalary).toBe(true);
+      expect(result.salaryMin).toBe(186000);
+      expect(result.salaryMax).toBe(233000);
+      expect(result.interval).toBe('yearly');
+      expect(result.currency).toBe('USD');
+
+      const plainNum = SalaryExtractor.extractFromText('Salary: $150000 - $200000 / year');
+      expect(plainNum.hasSalary).toBe(true);
+      expect(plainNum.salaryMin).toBe(150000);
+      expect(plainNum.salaryMax).toBe(200000);
+      expect(plainNum.interval).toBe('yearly');
+    });
   });
 });

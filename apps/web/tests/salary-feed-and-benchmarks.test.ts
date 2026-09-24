@@ -36,22 +36,36 @@ describe('Salary & Compensation Intelligence (Batch H Remediation)', () => {
       expect(json.error).toContain('salary_min');
     });
 
-    it('accepts legitimate zero values (salary_min=0) without treating as falsy error', async () => {
-      const queryBuilder: any = {};
-      queryBuilder.select = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.eq = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.gte = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.lte = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.order = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.limit = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      });
+    function createMockSupabase(data: any = []) {
+      const qb: any = {};
+      qb.select = vi.fn().mockReturnValue(qb);
+      qb.eq = vi.fn().mockReturnValue(qb);
+      qb.gte = vi.fn().mockReturnValue(qb);
+      qb.lte = vi.fn().mockReturnValue(qb);
+      qb.not = vi.fn().mockReturnValue(qb);
+      qb.order = vi.fn().mockReturnValue(qb);
+      qb.limit = vi.fn().mockResolvedValue({ data, error: null });
 
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue(queryBuilder),
+      const client = {
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ data: [], error: null }),
+                }),
+              }),
+            };
+          }
+          return qb;
+        }),
       };
-      vi.spyOn(serverDb, 'createClient').mockResolvedValue(mockSupabase as any);
+      return { queryBuilder: qb, client };
+    }
+
+    it('accepts legitimate zero values (salary_min=0) without treating as falsy error', async () => {
+      const { queryBuilder, client } = createMockSupabase([]);
+      vi.spyOn(serverDb, 'createClient').mockResolvedValue(client as any);
 
       const req = new NextRequest('http://localhost:3000/api/jobs/feed?salary_min=0&salary_max=100000');
       const res = await getFeedRoute(req);
@@ -62,21 +76,8 @@ describe('Salary & Compensation Intelligence (Batch H Remediation)', () => {
     });
 
     it('accepts equal bounds (salary_min === salary_max)', async () => {
-      const queryBuilder: any = {};
-      queryBuilder.select = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.eq = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.gte = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.lte = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.order = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.limit = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      });
-
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue(queryBuilder),
-      };
-      vi.spyOn(serverDb, 'createClient').mockResolvedValue(mockSupabase as any);
+      const { client } = createMockSupabase([]);
+      vi.spyOn(serverDb, 'createClient').mockResolvedValue(client as any);
 
       const req = new NextRequest('http://localhost:3000/api/jobs/feed?salary_min=120000&salary_max=120000');
       const res = await getFeedRoute(req);
@@ -86,6 +87,33 @@ describe('Salary & Compensation Intelligence (Batch H Remediation)', () => {
   });
 
   describe('Currency Integrity in Salary Facets & Filtering (P0 & P1)', () => {
+    function createMockSupabase(data: any = []) {
+      const qb: any = {};
+      qb.select = vi.fn().mockReturnValue(qb);
+      qb.eq = vi.fn().mockReturnValue(qb);
+      qb.gte = vi.fn().mockReturnValue(qb);
+      qb.lte = vi.fn().mockReturnValue(qb);
+      qb.not = vi.fn().mockReturnValue(qb);
+      qb.order = vi.fn().mockReturnValue(qb);
+      qb.limit = vi.fn().mockResolvedValue({ data, error: null });
+
+      const client = {
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'applications') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ data: [], error: null }),
+                }),
+              }),
+            };
+          }
+          return qb;
+        }),
+      };
+      return { queryBuilder: qb, client };
+    }
+
     it('isolates salary facets by currency and never mixes raw numbers across currencies', async () => {
       const mockJobs = [
         {
@@ -132,19 +160,8 @@ describe('Salary & Compensation Intelligence (Batch H Remediation)', () => {
         },
       ];
 
-      const queryBuilder: any = {};
-      queryBuilder.select = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.eq = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.order = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.limit = vi.fn().mockResolvedValue({
-        data: mockJobs,
-        error: null,
-      });
-
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue(queryBuilder),
-      };
-      vi.spyOn(serverDb, 'createClient').mockResolvedValue(mockSupabase as any);
+      const { client } = createMockSupabase(mockJobs);
+      vi.spyOn(serverDb, 'createClient').mockResolvedValue(client as any);
 
       const req = new NextRequest('http://localhost:3000/api/jobs/feed');
       const res = await getFeedRoute(req);
@@ -175,20 +192,8 @@ describe('Salary & Compensation Intelligence (Batch H Remediation)', () => {
     });
 
     it('filters strictly by requested currency when currency parameter is passed', async () => {
-      const queryBuilder: any = {};
-      queryBuilder.select = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.eq = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.gte = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.order = vi.fn().mockReturnValue(queryBuilder);
-      queryBuilder.limit = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      });
-
-      const mockSupabase = {
-        from: vi.fn().mockReturnValue(queryBuilder),
-      };
-      vi.spyOn(serverDb, 'createClient').mockResolvedValue(mockSupabase as any);
+      const { queryBuilder, client } = createMockSupabase([]);
+      vi.spyOn(serverDb, 'createClient').mockResolvedValue(client as any);
 
       const req = new NextRequest('http://localhost:3000/api/jobs/feed?currency=GBP&salary_min=80000');
       const res = await getFeedRoute(req);

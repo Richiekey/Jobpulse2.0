@@ -93,6 +93,13 @@ export function isPresentableSalary(
       }
     }
 
+    // Reject suspicious hourly strings (e.g. "6 - 23/hr", "3/hr")
+    if (hasHr || /\b(per|an|\/)\s*hour\b/i.test(trimmed)) {
+      const hasCurrency = /[$€£]|USD|EUR|GBP|CAD|AUD/i.test(trimmed);
+      if (parsedNums.some((n) => n > 0 && n < 5)) return false;
+      if (!hasCurrency && parsedNums.some((n) => n < 10)) return false;
+    }
+
     return true;
   }
 
@@ -146,6 +153,19 @@ export function isPresentableSalary(
   // When currency is missing and hourly rate is an exact integer matching common tracking token ranges (> 300/hr without currency)
   if (normalizedInterval === 'hourly') {
     if (!currency && (minVal > 300 || maxVal > 300)) {
+      return false;
+    }
+  }
+
+  // 4. Hourly rates below $5/hr are almost certainly parse artifacts (even for international roles)
+  if (normalizedInterval === 'hourly') {
+    if (hasMin && minVal > 0 && minVal < 5) return false;
+    if (hasMax && maxVal > 0 && maxVal < 5) return false;
+  }
+
+  // 5. If no currency and interval is hourly with suspiciously low values, likely corrupted
+  if (!currency && normalizedInterval === 'hourly') {
+    if ((hasMin && minVal < 10) || (hasMax && maxVal < 10)) {
       return false;
     }
   }
