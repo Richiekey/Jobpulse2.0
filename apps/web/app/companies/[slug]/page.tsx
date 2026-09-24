@@ -117,7 +117,7 @@ export default function CompanyDetailPage({ params }: CompanyDetailPageProps) {
           </div>
         ) : !company ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 700 }}>Company Not Found</h2>
+            <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Company Not Found</h1>
             <p style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
               We could not find active postings or verified records for this organization.
             </p>

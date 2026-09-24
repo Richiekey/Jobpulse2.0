@@ -556,6 +556,23 @@ export default function HomePage() {
         applicationCount={applications.length}
       />
 
+      {/* Screen-reader-only h1 for WCAG heading hierarchy */}
+      <h1
+        style={{
+          position: 'absolute',
+          width: '1px',
+          height: '1px',
+          padding: 0,
+          margin: '-1px',
+          overflow: 'hidden',
+          clip: 'rect(0, 0, 0, 0)',
+          whiteSpace: 'nowrap',
+          borderWidth: 0,
+        }}
+      >
+        JobPulse Job Feed — {jobs.length} Jobs Loaded
+      </h1>
+
       {/* Primary 3-Pane Container (Zero gaps, full height calc(100vh - 56px)) */}
       <div
         style={{
@@ -626,9 +643,9 @@ export default function HomePage() {
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em', margin: 0 }}>
+                    <h2 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em', margin: 0 }}>
                       {isLoading ? 'Scanning Feed...' : `${jobs.length} Jobs Loaded`}
-                    </h1>
+                    </h2>
                     {!isLoading && jobs.length > 0 && (
                       <span
                         style={{
@@ -672,6 +689,22 @@ export default function HomePage() {
                     <span>Filters</span>
                   </button>
 
+                  <label
+                    htmlFor="feed-sort-order"
+                    style={{
+                      position: 'absolute',
+                      width: '1px',
+                      height: '1px',
+                      padding: 0,
+                      margin: '-1px',
+                      overflow: 'hidden',
+                      clip: 'rect(0, 0, 0, 0)',
+                      whiteSpace: 'nowrap',
+                      borderWidth: 0,
+                    }}
+                  >
+                    Sort job feed
+                  </label>
                   <select
                     id="feed-sort-order"
                     aria-label="Sort job feed"

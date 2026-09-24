@@ -47,6 +47,18 @@ const SALARY_PRESETS = [
   { label: '$200k+ / year', value: '200000' },
 ];
 
+const srOnlyStyle: React.CSSProperties = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  padding: 0,
+  margin: '-1px',
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  borderWidth: 0,
+};
+
 export const SearchFilters: React.FC<SearchFiltersProps> = ({
   searchQuery,
   onSearchChange,
@@ -106,7 +118,11 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
               pointerEvents: 'none',
             }}
           />
+          <label htmlFor="search-jobs-input" style={srOnlyStyle}>
+            Search jobs
+          </label>
           <input
+            id="search-jobs-input"
             type="text"
             className="input-field"
             placeholder="Search by job title, company name, skill, or keyword..."
@@ -142,7 +158,11 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
 
         {/* Workplace Selector */}
         <div style={{ width: '150px' }}>
+          <label htmlFor="filter-workplace-type" style={srOnlyStyle}>
+            Filter by workplace type
+          </label>
           <select
+            id="filter-workplace-type"
             className="input-field"
             value={workplace}
             onChange={(e) => onWorkplaceChange(e.target.value)}
@@ -158,7 +178,11 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
 
         {/* Salary Floor Selector */}
         <div style={{ width: '165px' }}>
+          <label htmlFor="filter-salary-min-search" style={srOnlyStyle}>
+            Filter by minimum salary
+          </label>
           <select
+            id="filter-salary-min-search"
             className="input-field"
             value={salaryMin}
             onChange={(e) => onSalaryMinChange(e.target.value)}
@@ -176,7 +200,11 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
         {/* Currency Selector */}
         {onCurrencyChange && (
           <div style={{ width: '120px' }}>
+            <label htmlFor="filter-currency-search" style={srOnlyStyle}>
+              Filter by currency
+            </label>
             <select
+              id="filter-currency-search"
               className="input-field"
               value={currency || 'ALL'}
               onChange={(e) => onCurrencyChange(e.target.value === 'ALL' ? '' : e.target.value)}
@@ -194,7 +222,11 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
 
         {/* Employment Type Selector */}
         <div style={{ width: '145px' }}>
+          <label htmlFor="filter-employment-type-search" style={srOnlyStyle}>
+            Filter by employment type
+          </label>
           <select
+            id="filter-employment-type-search"
             className="input-field"
             value={employment}
             onChange={(e) => onEmploymentChange(e.target.value)}

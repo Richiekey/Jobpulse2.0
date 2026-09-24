@@ -57,6 +57,18 @@ interface FiltersSidebarProps {
   onCloseMobile?: () => void;
 }
 
+const srOnlyStyle: React.CSSProperties = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  padding: 0,
+  margin: '-1px',
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  borderWidth: 0,
+};
+
 export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
   options,
   filters,
@@ -643,6 +655,9 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
 
           {expandedSections['salary'] && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label htmlFor="filter-salary-min" style={srOnlyStyle}>
+                Minimum annual compensation
+              </label>
               <select
                 id="filter-salary-min"
                 aria-label="Minimum annual compensation"
