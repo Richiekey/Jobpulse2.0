@@ -27,7 +27,7 @@ import {
   Sparkles,
   Download,
 } from 'lucide-react';
-import { Button, EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui';
+import { Button, EmptyState, ErrorState, LoadingState, Skeleton, srOnlyStyle } from '@/components/ui';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
@@ -557,19 +557,7 @@ export default function HomePage() {
       />
 
       {/* Screen-reader-only h1 for WCAG heading hierarchy */}
-      <h1
-        style={{
-          position: 'absolute',
-          width: '1px',
-          height: '1px',
-          padding: 0,
-          margin: '-1px',
-          overflow: 'hidden',
-          clip: 'rect(0, 0, 0, 0)',
-          whiteSpace: 'nowrap',
-          borderWidth: 0,
-        }}
-      >
+      <h1 style={srOnlyStyle}>
         JobPulse Job Feed — {jobs.length} Jobs Loaded
       </h1>
 
@@ -689,20 +677,7 @@ export default function HomePage() {
                     <span>Filters</span>
                   </button>
 
-                  <label
-                    htmlFor="feed-sort-order"
-                    style={{
-                      position: 'absolute',
-                      width: '1px',
-                      height: '1px',
-                      padding: 0,
-                      margin: '-1px',
-                      overflow: 'hidden',
-                      clip: 'rect(0, 0, 0, 0)',
-                      whiteSpace: 'nowrap',
-                      borderWidth: 0,
-                    }}
-                  >
+                  <label htmlFor="feed-sort-order" style={srOnlyStyle}>
                     Sort job feed
                   </label>
                   <select

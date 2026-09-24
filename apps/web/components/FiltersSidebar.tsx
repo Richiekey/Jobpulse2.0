@@ -15,6 +15,7 @@ import {
   Calendar,
   Building,
 } from 'lucide-react';
+import { srOnlyStyle } from '@/components/ui';
 
 export interface FilterOptions {
   total_active_jobs?: number;
@@ -56,18 +57,6 @@ interface FiltersSidebarProps {
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
 }
-
-const srOnlyStyle: React.CSSProperties = {
-  position: 'absolute',
-  width: '1px',
-  height: '1px',
-  padding: 0,
-  margin: '-1px',
-  overflow: 'hidden',
-  clip: 'rect(0, 0, 0, 0)',
-  whiteSpace: 'nowrap',
-  borderWidth: 0,
-};
 
 export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
   options,

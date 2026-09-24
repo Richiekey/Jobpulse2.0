@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Search, X, DollarSign, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
+import { srOnlyStyle } from '@/components/ui';
 
 interface SearchFiltersProps {
   searchQuery: string;
@@ -46,18 +47,6 @@ const SALARY_PRESETS = [
   { label: '$180k+ / year', value: '180000' },
   { label: '$200k+ / year', value: '200000' },
 ];
-
-const srOnlyStyle: React.CSSProperties = {
-  position: 'absolute',
-  width: '1px',
-  height: '1px',
-  padding: 0,
-  margin: '-1px',
-  overflow: 'hidden',
-  clip: 'rect(0, 0, 0, 0)',
-  whiteSpace: 'nowrap',
-  borderWidth: 0,
-};
 
 export const SearchFilters: React.FC<SearchFiltersProps> = ({
   searchQuery,
