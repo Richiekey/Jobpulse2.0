@@ -36,12 +36,12 @@ describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
     expect(ATSAdapterRegistry.getAdapter('  JOBRIGHT  ')).toBeInstanceOf(JobrightAdapter);
   });
 
-  it('distinguishes known-but-unimplemented ATS platforms (e.g. Workable, BambooHR) from unknown platforms', () => {
-    // Workable is in the catalog but not yet implemented
-    expect(ATSAdapterRegistry.isKnownPlatform('workable')).toBe(true);
-    expect(ATSAdapterRegistry.hasAdapter('workable')).toBe(false);
+  it('distinguishes known-but-unimplemented ATS platforms (e.g. Bullhorn) from unknown platforms', () => {
+    // Bullhorn is in the catalog but not yet implemented
+    expect(ATSAdapterRegistry.isKnownPlatform('bullhorn')).toBe(true);
+    expect(ATSAdapterRegistry.hasAdapter('bullhorn')).toBe(false);
     expect(() => {
-      ATSAdapterRegistry.getAdapter('workable');
+      ATSAdapterRegistry.getAdapter('bullhorn');
     }).toThrowError(UnimplementedATSError);
 
     // Completely unknown ATS
@@ -52,7 +52,7 @@ describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
     }).toThrowError(UnknownATSError);
 
     // Both inherit from UnsupportedATSError to prevent silent fallback
-    expect(() => ATSAdapterRegistry.getAdapter('workable')).toThrowError(UnsupportedATSError);
+    expect(() => ATSAdapterRegistry.getAdapter('bullhorn')).toThrowError(UnsupportedATSError);
     expect(() => ATSAdapterRegistry.getAdapter('non_existent_ats_999')).toThrowError(UnsupportedATSError);
   });
 
@@ -91,10 +91,15 @@ describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
     const workableDef = ATSAdapterRegistry.getDefinition('workable');
     expect(workableDef).not.toBeNull();
     expect(workableDef?.name).toBe('Workable');
-    expect(workableDef?.isImplemented).toBe(false);
+    expect(workableDef?.isImplemented).toBe(true);
+
+    const bullhornDef = ATSAdapterRegistry.getDefinition('bullhorn');
+    expect(bullhornDef).not.toBeNull();
+    expect(bullhornDef?.name).toBe('Bullhorn');
+    expect(bullhornDef?.isImplemented).toBe(false);
 
     const allDefs = ATSAdapterRegistry.getAllDefinitions();
-    expect(allDefs.length).toBeGreaterThanOrEqual(8);
+    expect(allDefs.length).toBeGreaterThanOrEqual(20);
     expect(allDefs.some((d) => d.slug === 'greenhouse')).toBe(true);
     expect(allDefs.some((d) => d.slug === 'workday')).toBe(true);
     expect(allDefs.some((d) => d.slug === 'smartrecruiters')).toBe(true);
@@ -102,6 +107,7 @@ describe('ATSAdapterRegistry Comprehensive Verification (Finding 5)', () => {
     expect(allDefs.some((d) => d.slug === 'successfactors')).toBe(true);
     expect(allDefs.some((d) => d.slug === 'oracle')).toBe(true);
     expect(allDefs.some((d) => d.slug === 'workable')).toBe(true);
+    expect(allDefs.some((d) => d.slug === 'bullhorn')).toBe(true);
   });
 
   it('detects Greenhouse URLs and board tokens', () => {

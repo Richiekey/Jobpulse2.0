@@ -145,9 +145,9 @@ describe('Source Pre-Flight Validation Engine (S11)', () => {
     const mockConfig: CompanySourceConfig = {
       id: 'cs_101',
       companyId: 'comp_2',
-      sourceId: 'src_workable',
+      sourceId: 'src_bullhorn',
       sourceIdentifier: 'enterprise',
-      adapterConfig: { atsType: 'workable' },
+      adapterConfig: { atsType: 'bullhorn' },
       isActive: false,
       healthStatus: 'healthy',
       priority: 10,
@@ -159,7 +159,7 @@ describe('Source Pre-Flight Validation Engine (S11)', () => {
       updatedAt: new Date().toISOString(),
     };
 
-    const validation = await SourceValidator.validate(mockConfig, 'workable');
+    const validation = await SourceValidator.validate(mockConfig, 'bullhorn');
     expect(validation.isValid).toBe(false);
     expect(validation.error).toContain('is recognized in catalog but adapter implementation is pending');
   });
