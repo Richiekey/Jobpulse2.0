@@ -63,6 +63,18 @@ describe('Admin Workforce Operations API (Batch K)', () => {
               }),
             };
           }
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnValue({
+                in: vi.fn().mockResolvedValue({
+                  data: [
+                    { id: workerId, email: 'worker@acme.com', full_name: 'Worker Bob', avatar_url: null },
+                  ],
+                  error: null,
+                }),
+              }),
+            };
+          }
           if (table === 'worker_profiles') {
             return {
               select: vi.fn().mockReturnValue({

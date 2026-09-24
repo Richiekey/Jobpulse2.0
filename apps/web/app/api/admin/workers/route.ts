@@ -28,16 +28,28 @@ export async function GET(request: NextRequest) {
       return ApiResponse.error('Failed to retrieve organization workers.', membersError, 500);
     }
 
-    // Fetch profile info for each member individually
-    const userIds = (members || []).map((m: any) => m.user_id);
+    // Extract profile info from relation if already present, or fetch from profiles table
     let profilesMap = new Map<string, any>();
-    if (userIds.length > 0) {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, avatar_url')
-        .in('id', userIds);
-      for (const p of profiles || []) {
-        profilesMap.set(p.id, p);
+    const userIds = (members || []).map((m: any) => {
+      if (m.profiles) {
+        profilesMap.set(m.user_id, m.profiles);
+      }
+      return m.user_id;
+    });
+
+    if (userIds.length > 0 && profilesMap.size === 0) {
+      try {
+        const profileQuery = supabase.from('profiles');
+        if (profileQuery && typeof profileQuery.select === 'function') {
+          const { data: profiles } = await profileQuery
+            .select('id, email, full_name, avatar_url')
+            .in('id', userIds);
+          for (const p of profiles || []) {
+            profilesMap.set(p.id, p);
+          }
+        }
+      } catch {
+        // Non-blocking fallback if profiles table query is unavailable
       }
     }
 

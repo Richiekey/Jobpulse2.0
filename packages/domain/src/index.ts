@@ -31,3 +31,4 @@ export * from './seed/catalog-seed.js';
 export * from './job-eligibility.js';
 export * from './skills-taxonomy.js';
 export * from './salary-estimator.js';
+export * from './staffing-detector.js';

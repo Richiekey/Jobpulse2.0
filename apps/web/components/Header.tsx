@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Briefcase, Bookmark, CheckSquare, Bell, Shield, Layers, Menu, X, LogOut, User } from 'lucide-react';
+import { Briefcase, Bookmark, CheckSquare, Bell, Shield, Layers, Menu, X, LogOut, User, UploadCloud } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 
 interface HeaderProps {
@@ -239,6 +239,27 @@ export const Header: React.FC<HeaderProps> = ({
             }}
           />
 
+          <a
+            href="/import"
+            className="btn btn-ghost"
+            style={{
+              height: '34px',
+              padding: '0 12px',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              textDecoration: 'none',
+              borderRadius: 'var(--radius-md)',
+            }}
+            title="Bulk ATS Career URL Importer"
+          >
+            <UploadCloud size={15} />
+            <span>Import</span>
+          </a>
+
           {user && (
             <a
               href="/worker/jobs"
@@ -448,6 +469,15 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '4px 0' }} />
+
+          <a
+            href="/import"
+            className="btn btn-ghost"
+            style={{ justifyContent: 'flex-start', width: '100%', padding: '10px 14px', color: 'var(--text-secondary)' }}
+          >
+            <UploadCloud size={18} />
+            <span>Bulk ATS Import</span>
+          </a>
 
           {user && (
             <a

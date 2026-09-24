@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useWorker } from '@/components/worker/WorkerContext';
 import { GoogleSheetsIntegration } from '@/components/worker/GoogleSheetsIntegration';
+import { SKILLS_TAXONOMY, ROLE_CATEGORIES } from '@jobpulse/domain/skills-taxonomy';
 
 interface ResumeItem {
   id: string;
@@ -50,6 +51,7 @@ export default function WorkerProfilePage() {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState('');
+  const [activeSkillCategory, setActiveSkillCategory] = useState<string>('frontend');
   const [experienceYears, setExperienceYears] = useState<number | ''>('');
   const [education, setEducation] = useState<EducationItem[]>([]);
   const [preferredRoles, setPreferredRoles] = useState<string[]>([]);
@@ -132,6 +134,14 @@ export default function WorkerProfilePage() {
     setSkills(skills.filter((item) => item !== skill));
   };
 
+  const handleToggleTaxonomySkill = (skill: string) => {
+    if (skills.includes(skill)) {
+      setSkills(skills.filter((s) => s !== skill));
+    } else {
+      setSkills([...skills, skill]);
+    }
+  };
+
   const handleAddRole = (e: React.KeyboardEvent | React.MouseEvent) => {
     if ('key' in e && e.key !== 'Enter') return;
     e.preventDefault();
@@ -144,6 +154,14 @@ export default function WorkerProfilePage() {
 
   const handleRemoveRole = (role: string) => {
     setPreferredRoles(preferredRoles.filter((item) => item !== role));
+  };
+
+  const handleToggleTaxonomyRole = (role: string) => {
+    if (preferredRoles.includes(role)) {
+      setPreferredRoles(preferredRoles.filter((r) => r !== role));
+    } else {
+      setPreferredRoles([...preferredRoles, role]);
+    }
   };
 
   const handleAddLocation = (e: React.KeyboardEvent | React.MouseEvent) => {
@@ -472,9 +490,79 @@ export default function WorkerProfilePage() {
             ))}
             {skills.length === 0 && (
               <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-                No skills added yet. Add your core competencies above.
+                No skills added yet. Add your core competencies above or select from the taxonomy below.
               </span>
             )}
+          </div>
+
+          {/* Quick-Add from Technical Taxonomy */}
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
+            <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px' }}>
+              Suggested Skills by Category:
+            </span>
+
+            {/* Category Tabs */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+              {[
+                { id: 'frontend', label: 'Frontend' },
+                { id: 'backend', label: 'Backend' },
+                { id: 'languages', label: 'Languages' },
+                { id: 'data', label: 'Data & DB' },
+                { id: 'ml_ai', label: 'AI / ML' },
+                { id: 'cloud', label: 'Cloud' },
+                { id: 'devops', label: 'DevOps' },
+                { id: 'mobile', label: 'Mobile' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setActiveSkillCategory(cat.id)}
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '4px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid',
+                    borderColor: activeSkillCategory === cat.id ? 'var(--brand-primary)' : 'var(--border-subtle)',
+                    backgroundColor: activeSkillCategory === cat.id ? 'var(--brand-surface)' : 'var(--bg-app)',
+                    color: activeSkillCategory === cat.id ? 'var(--brand-text)' : 'var(--text-secondary)',
+                    fontWeight: activeSkillCategory === cat.id ? 700 : 500,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Skills in Active Category */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {(SKILLS_TAXONOMY[activeSkillCategory] || []).map((skill) => {
+                const isSelected = skills.includes(skill);
+                return (
+                  <button
+                    key={skill}
+                    type="button"
+                    onClick={() => handleToggleTaxonomySkill(skill)}
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '3px 9px',
+                      borderRadius: 'var(--radius-full)',
+                      border: `1px solid ${isSelected ? 'var(--brand-primary)' : 'var(--border-subtle)'}`,
+                      backgroundColor: isSelected ? 'var(--brand-surface)' : 'var(--bg-surface-elevated)',
+                      color: isSelected ? 'var(--brand-text)' : 'var(--text-secondary)',
+                      fontWeight: isSelected ? 700 : 400,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span>{skill}</span>
+                    {isSelected && <span style={{ fontSize: '10px' }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -537,6 +625,37 @@ export default function WorkerProfilePage() {
                   </button>
                 </span>
               ))}
+            </div>
+
+            {/* Quick Role Suggestions */}
+            <div style={{ marginTop: '10px' }}>
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                Popular roles to add:
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                {Object.keys(ROLE_CATEGORIES).map((catName) => {
+                  const isSelected = preferredRoles.includes(catName);
+                  return (
+                    <button
+                      key={catName}
+                      type="button"
+                      onClick={() => handleToggleTaxonomyRole(catName)}
+                      style={{
+                        fontSize: '0.6875rem',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-xs)',
+                        border: `1px solid ${isSelected ? 'var(--brand-primary)' : 'var(--border-subtle)'}`,
+                        backgroundColor: isSelected ? 'var(--brand-surface)' : 'var(--bg-app)',
+                        color: isSelected ? 'var(--brand-text)' : 'var(--text-muted)',
+                        fontWeight: isSelected ? 700 : 400,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {catName} {isSelected ? '✓' : '+'}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

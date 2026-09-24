@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ApiResponse } from '@/lib/api-response';
 import { AuthGuard } from '@/lib/auth-guard';
 import { decodeCursor, encodeCursor } from '@/lib/cursor';
-import { LocationParser, JobFunctionTaxonomy } from '@jobpulse/domain';
+import { LocationParser, JobFunctionTaxonomy, StaffingDetector } from '@jobpulse/domain';
 import { scoreJob, balanceJobDiversity, type CurationCriteria } from '@jobpulse/curation';
 import { processFeedJobs } from '@/lib/feed-dedup';
 import { z } from 'zod';
@@ -25,6 +25,7 @@ const FeedQuerySchema = z
     city: z.string().max(100).optional(),
     location_city: z.string().max(100).optional(),
     is_remote: z.coerce.boolean().optional(),
+    hide_staffing: z.coerce.boolean().optional(),
     company_id: z.string().uuid().optional(),
     salary_min: z.coerce.number().min(0, 'salary_min must be greater than or equal to 0').optional(),
     salary_max: z.coerce.number().min(0, 'salary_max must be greater than or equal to 0').optional(),
@@ -83,6 +84,7 @@ export async function GET(request: NextRequest) {
       city,
       location_city,
       is_remote,
+      hide_staffing,
       company_id,
       salary_min,
       salary_max,
@@ -421,15 +423,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const enrichedItems = resultItems.map((item: any) => {
+    const mappedItems = resultItems.map((item: any) => {
       const appStatus = applicationMap.get(item.id) || null;
+      const companyName = item.company?.name || '';
+      const staffingDetection = StaffingDetector.detect(companyName, item.description);
+      const isStaffing = Boolean(item.company?.is_staffing_agency || staffingDetection.isStaffingAgency);
+
       return {
         ...item,
+        is_staffing_agency: isStaffing,
+        staffing_agency_name: staffingDetection.agencyName || null,
         application_status: appStatus,
         has_application: applicationMap.has(item.id),
         is_applied: appStatus === 'applied',
       };
     });
+
+    const enrichedItems = hide_staffing
+      ? mappedItems.filter((i) => !i.is_staffing_agency)
+      : mappedItems;
 
     // Calculate Currency-Isolated Salary Distribution Facets
     const salariesByCurrency: Record<

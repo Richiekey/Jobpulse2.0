@@ -25,12 +25,14 @@ import {
   Briefcase,
   Layers,
   Sparkles,
+  Download,
 } from 'lucide-react';
 import { Button, EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'saved' | 'applications' | 'alerts'>('feed');
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
   const [savedJobs, setSavedJobs] = useState<any[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
@@ -58,6 +60,7 @@ export default function HomePage() {
           hasSalaryOnly: false,
           datePreset: 'all',
           isRemoteOnly: false,
+          hideStaffing: false,
         },
         parsedSort: 'posted_at_desc',
         parsedJobId: null,
@@ -75,6 +78,7 @@ export default function HomePage() {
     const hasSal = sp.get('has_salary') === 'true';
     const datePre = sp.get('date_preset') || 'all';
     const isRem = sp.get('is_remote') === 'true' || sp.get('workplace') === 'remote';
+    const hideStaffing = sp.get('hide_staffing') === 'true';
     const sortVal = sp.get('sort');
     const parsedSort = (sortVal === 'posted_at_asc' || sortVal === 'salary_desc') ? sortVal : 'posted_at_desc';
     const parsedJobId = sp.get('job') || null;
@@ -92,6 +96,7 @@ export default function HomePage() {
         hasSalaryOnly: hasSal,
         datePreset: datePre,
         isRemoteOnly: isRem,
+        hideStaffing,
       },
       parsedSort,
       parsedJobId,
@@ -214,6 +219,7 @@ export default function HomePage() {
         if (filters.hasSalaryOnly) params.set('has_salary', 'true');
         if (filters.datePreset && filters.datePreset !== 'all') params.set('date_preset', filters.datePreset);
         if (filters.isRemoteOnly) params.set('is_remote', 'true');
+        if (filters.hideStaffing) params.set('hide_staffing', 'true');
         params.set('sort', sortOrder);
 
         if (!resetCursor && cursor) params.set('cursor', cursor);
@@ -317,6 +323,7 @@ export default function HomePage() {
       if (filters.hasSalaryOnly) params.set('has_salary', 'true');
       if (filters.datePreset && filters.datePreset !== 'all') params.set('date_preset', filters.datePreset);
       if (filters.isRemoteOnly) params.set('is_remote', 'true');
+      if (filters.hideStaffing) params.set('hide_staffing', 'true');
       if (sortOrder !== 'posted_at_desc') params.set('sort', sortOrder);
       if (selectedJobId) params.set('job', selectedJobId);
 
@@ -473,7 +480,24 @@ export default function HomePage() {
       hasSalaryOnly: false,
       datePreset: 'all',
       isRemoteOnly: false,
+      hideStaffing: false,
     });
+  };
+
+  const handleExport = (format: 'csv' | 'json') => {
+    setIsExportMenuOpen(false);
+    const params = new URLSearchParams();
+    params.set('format', format);
+    params.set('limit', '500');
+    if (filters.search.trim()) params.set('q', filters.search.trim());
+    if (filters.selectedFunctions.size > 0) params.set('function', Array.from(filters.selectedFunctions).join(','));
+    if (filters.selectedPlatforms.size > 0) params.set('ats', Array.from(filters.selectedPlatforms).join(','));
+    if (filters.selectedWorkplaces.size > 0) params.set('workplace', Array.from(filters.selectedWorkplaces).join(','));
+    if (filters.selectedEmployments.size > 0) params.set('employment', Array.from(filters.selectedEmployments).join(','));
+    if (filters.salaryMin) params.set('salary_min', filters.salaryMin);
+    if (filters.hasSalaryOnly) params.set('has_salary', 'true');
+    if (filters.datePreset && filters.datePreset !== 'all') params.set('date_preset', filters.datePreset);
+    window.open(`/api/jobs/export?${params.toString()}`, '_blank');
   };
 
   const handleNextJob = () => {
@@ -665,6 +689,84 @@ export default function HomePage() {
                     <option value="posted_at_asc">Oldest First</option>
                     <option value="salary_desc">Highest Salary</option>
                   </select>
+
+                  {/* Export Button & Dropdown */}
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsExportMenuOpen((prev) => !prev)}
+                      className="btn btn-secondary"
+                      style={{
+                        padding: '5px 10px',
+                        fontSize: '12px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        cursor: 'pointer',
+                      }}
+                      title="Export current job results"
+                    >
+                      <Download size={13} />
+                      <span>Export</span>
+                    </button>
+
+                    {isExportMenuOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          right: 0,
+                          top: '100%',
+                          marginTop: '4px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-default)',
+                          borderRadius: 'var(--radius-md)',
+                          boxShadow: 'var(--shadow-md)',
+                          zIndex: 50,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          minWidth: '130px',
+                          padding: '4px',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleExport('csv')}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            textAlign: 'left',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                            borderRadius: 'var(--radius-sm)',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-elevated)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        >
+                          Export as CSV
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleExport('json')}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            textAlign: 'left',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                            borderRadius: 'var(--radius-sm)',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-elevated)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        >
+                          Export as JSON
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

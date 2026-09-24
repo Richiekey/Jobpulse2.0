@@ -13,6 +13,7 @@ export interface Company {
   industry?: string | null;
   companySize?: string | null;
   verified?: boolean;
+  isStaffingAgency?: boolean | null;
   status: CompanyStatus;
   metadata: Record<string, unknown>;
   createdAt: string;

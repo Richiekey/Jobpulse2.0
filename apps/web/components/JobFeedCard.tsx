@@ -19,6 +19,7 @@ import { sanitizeCompanyName, sanitizeJobTitle, sanitizeLocation } from '@/lib/j
 import { getApplicationDisplayState } from '@/lib/application-status';
 import { LocationParser } from '@jobpulse/domain/location-parser';
 import { SalaryEstimator } from '@jobpulse/domain/salary-estimator';
+import { CompanyNormalizer } from '@jobpulse/domain/normalizer';
 
 interface JobFeedCardProps {
   job: any;
@@ -142,7 +143,9 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
               <Building2 size={13} color="var(--text-muted)" />
             </div>
           )}
-          <span
+          <a
+            href={`/companies/${CompanyNormalizer.generateSlug(companyName)}`}
+            onClick={(e) => e.stopPropagation()}
             style={{
               fontSize: '12px',
               fontWeight: 600,
@@ -151,13 +154,33 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               minWidth: 0,
+              textDecoration: 'none',
             }}
+            title={`View ${companyName} jobs`}
           >
             {companyName}
-          </span>
+          </a>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          {job.is_staffing_agency && (
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                padding: '1px 6px',
+                borderRadius: 'var(--radius-xs)',
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#f87171',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+              title="Staffing / Recruiting Agency Placement"
+            >
+              Staffing
+            </span>
+          )}
           {atsPlatform && (
             <span
               style={{

@@ -181,7 +181,7 @@ const TECHNICAL_ROLE_PATTERNS: { pattern: RegExp; category: JobEligibilityResult
   },
   // Genuine Technical Cross-Disciplinary (Product, Design, DevRel, Solutions)
   {
-    pattern: /\b(product\s+manager|technical\s+product\s+manager|tpm\b|apm\b|group\s+product\s+manager|gpm\b|director\s+of\s+product|head\s+of\s+product|product\s+owner|product\s+designer|ux\s+designer|ui\s+designer|ui\/ux\s+designer|ux\/ui\s+designer|design\s+systems|interaction\s+designer|ux\s+researcher|design\s+technologist|creative\s+technologist|developer\s+advocate|developer\s+relations|devrel|technical\s+support\s+engineer|support\s+engineer|implementation\s+engineer|integration\s+engineer|api\s+engineer|blockchain\s+engineer|smart\s+contract\s+engineer|web3\s+engineer|forward\s+deployed\s+engineer|solutions\s+engineer|sales\s+engineer|scrum\s+master|agile\s+coach)\b/i,
+    pattern: /\b(product\s+manager|technical\s+product\s+manager|technical\s+program\s+manager|tpm\b|apm\b|group\s+product\s+manager|gpm\b|director\s+of\s+product|head\s+of\s+product|product\s+owner|product\s+designer|ux\s+designer|ui\s+designer|ui\/ux\s+designer|ux\/ui\s+designer|design\s+systems|interaction\s+designer|ux\s+researcher|design\s+technologist|creative\s+technologist|developer\s+advocate|developer\s+relations|devrel|technical\s+support\s+engineer|support\s+engineer|implementation\s+engineer|integration\s+engineer|api\s+engineer|blockchain\s+engineer|smart\s+contract\s+engineer|web3\s+engineer|forward\s+deployed\s+engineer|solutions\s+engineer|sales\s+engineer|scrum\s+master|agile\s+coach)\b/i,
     category: 'technical_other',
   },
 ];

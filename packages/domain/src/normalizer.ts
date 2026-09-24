@@ -7,6 +7,8 @@ import type {
   ResolvedURLs,
 } from './entities/job.js';
 
+export { CompanyNormalizer } from './entities/company.js';
+
 const KNOWN_SKILLS = [
   'TypeScript', 'JavaScript', 'React', 'Next.js', 'Vue', 'Angular', 'Node.js',
   'Python', 'Django', 'FastAPI', 'Flask', 'Go', 'Golang', 'Rust', 'Java',

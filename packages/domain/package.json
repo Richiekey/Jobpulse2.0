@@ -25,6 +25,11 @@
       "types": "./dist/salary-estimator.d.ts",
       "import": "./dist/salary-estimator.js",
       "default": "./dist/salary-estimator.js"
+    },
+    "./normalizer": {
+      "types": "./dist/normalizer.d.ts",
+      "import": "./dist/normalizer.js",
+      "default": "./dist/normalizer.js"
     }
   },
   "scripts": {

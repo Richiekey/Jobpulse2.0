@@ -43,6 +43,7 @@ export interface ActiveFilters {
   hasSalaryOnly: boolean;
   datePreset: string;
   isRemoteOnly: boolean;
+  hideStaffing?: boolean;
 }
 
 interface FiltersSidebarProps {
@@ -153,6 +154,7 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
     filters.salaryMin !== '' ||
     filters.hasSalaryOnly ||
     filters.isRemoteOnly ||
+    Boolean(filters.hideStaffing) ||
     (filters.datePreset !== 'all' && filters.datePreset !== '');
 
   const platformBadgeColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -317,6 +319,42 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
               </button>
             )}
           </div>
+        </div>
+
+        {/* Quick Toggles */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            padding: '10px 12px',
+            backgroundColor: 'var(--bg-app)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={filters.hideStaffing ?? false}
+              onChange={(e) => onFilterChange({ ...filters, hideStaffing: e.target.checked })}
+              style={{ accentColor: 'var(--brand-primary)', cursor: 'pointer' }}
+            />
+            <span style={{ fontWeight: filters.hideStaffing ? 600 : 400, color: filters.hideStaffing ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+              Hide Staffing Agencies
+            </span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={filters.isRemoteOnly}
+              onChange={(e) => onFilterChange({ ...filters, isRemoteOnly: e.target.checked })}
+              style={{ accentColor: 'var(--brand-primary)', cursor: 'pointer' }}
+            />
+            <span style={{ fontWeight: filters.isRemoteOnly ? 600 : 400, color: filters.isRemoteOnly ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+              Remote Positions Only
+            </span>
+          </label>
         </div>
 
         {/* Date Presets */}

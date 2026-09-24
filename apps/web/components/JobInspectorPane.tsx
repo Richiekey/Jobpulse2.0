@@ -26,6 +26,7 @@ import { isPresentableSalary } from '@/lib/salary-shield';
 import { sanitizeHtml, containsHtml } from '@jobpulse/shared/sanitize-html';
 import { LocationParser } from '@jobpulse/domain/location-parser';
 import { SalaryEstimator } from '@jobpulse/domain/salary-estimator';
+import { CompanyNormalizer } from '@jobpulse/domain/normalizer';
 import {
   sanitizeCompanyName,
   sanitizeJobTitle,
@@ -501,8 +502,19 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               </div>
             )}
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{companyName}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <a
+                  href={`/companies/${CompanyNormalizer.generateSlug(companyName)}`}
+                  style={{
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    textDecoration: 'none',
+                  }}
+                  title={`View all ${companyName} positions`}
+                >
+                  {companyName}
+                </a>
                 {companyWebsite && (
                   <a
                     href={companyWebsite}
@@ -512,6 +524,24 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
                   >
                     <Globe size={13} />
                   </a>
+                )}
+                {job.is_staffing_agency && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-xs)',
+                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: '#f87171',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                    title="Staffing / Recruiting Agency Placement"
+                  >
+                    Staffing Agency
+                  </span>
                 )}
               </div>
               {companyIndustry && (
