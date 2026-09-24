@@ -57,9 +57,9 @@ gantt
 | Add salary display guard | [`salary-shield.ts`](file:///c:/Users/HP/Documents/Jobpulse2.0/apps/web/lib/salary-shield.ts) | Frontend guard: hide salary badge if values are implausible |
 
 **Acceptance criteria:**
-- [ ] Greenhouse salary metadata like `$186,000 - $233,000/yr` renders as `$186k - $233k/yr`
-- [ ] No salary badge shows `3/hr` or `6 - 23/hr` for staff-level roles
-- [ ] Currency symbol always present when salary is shown
+- [x] Greenhouse salary metadata like `$186,000 - $233,000/yr` renders as `$186k - $233k/yr`
+- [x] No salary badge shows `3/hr` or `6 - 23/hr` for staff-level roles
+- [x] Currency symbol always present when salary is shown
 
 ### 0.2 — HTML Sanitizer for Job Descriptions
 **Bug:** Job detail pane shows raw `<p><strong>` tags instead of rendered content
@@ -73,9 +73,9 @@ gantt
 | Integrate in job feed cards | [`JobFeedCard.tsx`](file:///c:/Users/HP/Documents/Jobpulse2.0/apps/web/components/JobFeedCard.tsx) | Same sanitization for any inline description previews |
 
 **Acceptance criteria:**
-- [ ] Job descriptions render as formatted HTML (bold, lists, paragraphs)
-- [ ] No raw `<p>`, `<strong>`, `&nbsp;` tags visible
-- [ ] `<script>`, `<iframe>`, event handlers stripped
+- [x] Job descriptions render as formatted HTML (bold, lists, paragraphs)
+- [x] No raw `<p>`, `<strong>`, `&nbsp;` tags visible
+- [x] `<script>`, `<iframe>`, event handlers stripped
 
 ### 0.3 — Feed-Level Deduplication
 **Bug:** 5/25 jobs are duplicates (same title, same company, different location postings)
@@ -88,9 +88,9 @@ gantt
 | Add per-company cap | Same file | Max 3-4 jobs per company in a single page (configurable) |
 
 **Acceptance criteria:**
-- [ ] "Deployed Engineer, Professional Services" appears once, not 3x
-- [ ] No company dominates more than 4 slots in a 25-job page
-- [ ] Job count reflects post-dedup count
+- [x] "Deployed Engineer, Professional Services" appears once, not 3x
+- [x] No company dominates more than 4 slots in a 25-job page
+- [x] Job count reflects post-dedup count
 
 ### 0.4 — Location Deduplication
 **Bug:** "New York, New York, USA, New York, New York, NY, United States"
@@ -102,8 +102,8 @@ gantt
 | Add display formatter | Same file or `apps/web` | Format as `City, State, Country` — max 3 components |
 
 **Acceptance criteria:**
-- [ ] "New York, NY, United States" instead of the 7-part duplicate string
-- [ ] No location string exceeds ~50 characters
+- [x] "New York, NY, United States" instead of the 7-part duplicate string
+- [x] No location string exceeds ~50 characters
 
 ---
 
@@ -193,9 +193,9 @@ gantt
 | Add env vars | `.env` | `GEMINI_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `OPENAI_API_KEY` (all optional) |
 
 **Acceptance criteria:**
-- [ ] `callLLM(prompt, systemPrompt)` cascades through providers
-- [ ] Works with zero API keys (mock fallback)
-- [ ] Each provider has timeout + error handling
+- [x] `callLLM(prompt, systemPrompt)` cascades through providers
+- [x] Works with zero API keys (mock fallback)
+- [x] Each provider has timeout + error handling
 
 ### 2.2 — Resume Tailoring Modal
 **Source:** v1's `CvGeneratorModal.tsx` (26.4KB)
