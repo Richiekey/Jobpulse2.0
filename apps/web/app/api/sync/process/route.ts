@@ -12,7 +12,7 @@ import { processPendingSyncBatch } from '@/lib/sync-processor';
  *
  * Protected by CRON_SECRET / SYNC_CRON_SECRET or authenticated user session.
  */
-export const maxDuration = 60; // Allow up to 60s for batch processing
+export const maxDuration = 10; // Max allowed duration on Vercel Hobby plan
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization');

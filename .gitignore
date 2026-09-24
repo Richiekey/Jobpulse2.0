@@ -45,3 +45,8 @@ jobpulse-v1/
 # Development scratch
 scratch/
 
+# Firebase
+apphosting.yaml
+apps/web/apphosting.yaml
+.firebaserc
+
