@@ -626,9 +626,9 @@ export default function HomePage() {
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                    <h1 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em', margin: 0 }}>
                       {isLoading ? 'Scanning Feed...' : `${jobs.length} Jobs Loaded`}
-                    </span>
+                    </h1>
                     {!isLoading && jobs.length > 0 && (
                       <span
                         style={{
@@ -673,6 +673,8 @@ export default function HomePage() {
                   </button>
 
                   <select
+                    id="feed-sort-order"
+                    aria-label="Sort job feed"
                     value={sortOrder}
                     onChange={(e) => setSortOrder(e.target.value as any)}
                     style={{
@@ -696,6 +698,9 @@ export default function HomePage() {
                       type="button"
                       onClick={() => setIsExportMenuOpen((prev) => !prev)}
                       className="btn btn-secondary"
+                      aria-label="Export current job results"
+                      aria-haspopup="menu"
+                      aria-expanded={isExportMenuOpen}
                       style={{
                         padding: '5px 10px',
                         fontSize: '12px',

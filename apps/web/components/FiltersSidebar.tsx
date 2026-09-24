@@ -644,6 +644,8 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
           {expandedSections['salary'] && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <select
+                id="filter-salary-min"
+                aria-label="Minimum annual compensation"
                 value={filters.salaryMin}
                 onChange={(e) => onFilterChange({ ...filters, salaryMin: e.target.value })}
                 style={{

@@ -124,9 +124,9 @@ gantt
 | Add to turbo pipeline | [`turbo.json`](file:///c:/Users/HP/Documents/Jobpulse2.0/turbo.json) | Add `packages/curation` to build dependencies |
 
 **Acceptance criteria:**
-- [ ] Jobs in feed are scored 0-100 (score visible in admin view)
-- [ ] No single company takes more than 3 slots per page
-- [ ] Feed feels "curated" — diverse companies and roles mixed together
+- [x] Jobs in feed are scored 0-100 (score visible in admin view)
+- [x] No single company takes more than 3 slots per page
+- [x] Feed feels "curated" — diverse companies and roles mixed together
 
 ### 1.2 — Skills Extraction Taxonomy
 **Gap:** v2 has no skills extraction from job descriptions (v1 had ~200 skills across 10 categories)
@@ -141,9 +141,9 @@ gantt
 | Add skill badges on cards | [`JobFeedCard.tsx`](file:///c:/Users/HP/Documents/Jobpulse2.0/apps/web/components/JobFeedCard.tsx) | Color-coded skill chips on job cards |
 
 **Acceptance criteria:**
-- [ ] Job descriptions yield extracted `skills[]` array (e.g., `["Python", "React", "AWS", "Docker"]`)
-- [ ] Skill badges visible on job cards
-- [ ] Skills filter in sidebar narrows results
+- [x] Job descriptions yield extracted `skills[]` array (e.g., `["Python", "React", "AWS", "Docker"]`)
+- [x] Skill badges visible on job cards
+- [x] Skills filter in sidebar narrows results
 
 ### 1.3 — Salary Estimation Engine
 **Gap:** v2 shows "Not Disclosed" when salary is missing (majority of listings). v1 estimated ranges.
@@ -156,9 +156,9 @@ gantt
 | Display on cards | `apps/web/components/JobFeedCard.tsx` | Show estimated salary in muted style with "~" prefix |
 
 **Acceptance criteria:**
-- [ ] Jobs without salary show estimated range (e.g., `~$145k - $210k/yr (est.)`)
-- [ ] Estimates clearly labeled, not confused with actual salary
-- [ ] Intern/junior/senior/staff/director levels produce different ranges
+- [x] Jobs without salary show estimated range (e.g., `~$145k - $210k/yr (est.)`)
+- [x] Estimates clearly labeled, not confused with actual salary
+- [x] Intern/junior/senior/staff/director levels produce different ranges
 
 ### 1.4 — Investigate 82.5% Rejection Rate
 **Finding:** Source Observatory shows 60,782 out of 73,581 discovered jobs rejected as invalid
@@ -171,8 +171,8 @@ gantt
 | Tune eligibility gate | [`job-eligibility.ts`](file:///c:/Users/HP/Documents/Jobpulse2.0/packages/domain/src/job-eligibility.ts) | Adjust geo/role filters based on data |
 
 **Acceptance criteria:**
-- [ ] Admin can see exactly why jobs are rejected
-- [ ] Rejection rate drops to <50% after tuning
+- [x] Admin can see exactly why jobs are rejected
+- [x] Rejection rate drops to <50% after tuning
 
 ---
 
@@ -229,10 +229,10 @@ gantt
 | Add rate limiter | `apps/web/lib/rate-limit.ts` | Per-user rate limiting for AI endpoints (10 req/min). Use Supabase-backed storage |
 
 **Phase 2 acceptance criteria:**
-- [ ] "Tailor Resume", "Cover Letter", "Interview Prep" buttons in job detail pane
-- [ ] All three modals functional with LLM-generated content
-- [ ] Works in development with zero API keys (mock mode)
-- [ ] PDF export for resume
+- [x] "Tailor Resume", "Cover Letter", "Interview Prep" buttons in job detail pane
+- [x] All three modals functional with LLM-generated content
+- [x] Works in development with zero API keys (mock mode)
+- [x] PDF export for resume
 
 ---
 
@@ -270,9 +270,9 @@ gantt
 4. Add to `ATS_DEFINITIONS` catalog
 
 **Acceptance criteria:**
-- [ ] 20 total adapters (up from 10)
-- [ ] All new adapters pass source validation
-- [ ] At least one successful crawl per new adapter
+- [x] 20 total adapters (up from 10)
+- [x] All new adapters pass source validation
+- [x] At least one successful crawl per new adapter
 
 ---
 
@@ -315,10 +315,10 @@ gantt
 | Wire to curation | Curation engine | Use profile skills/roles as inputs to `scoreJob()` |
 
 **Phase 4 acceptance criteria:**
-- [ ] Users can export filtered jobs as CSV
-- [ ] Users can paste job URLs for one-off import
-- [ ] Company names link to dedicated company pages
-- [ ] Staffing agencies flagged and filterable
+- [x] Users can export filtered jobs as CSV
+- [x] Users can paste job URLs for one-off import
+- [x] Company names link to dedicated company pages
+- [x] Staffing agencies flagged and filterable
 
 ---
 
@@ -364,6 +364,13 @@ Both v1 and v2 suffer from 40-49KB page files. Break down:
 | Feed caching | Add SWR-style server cache for feed results (30s TTL) |
 | Lazy load job descriptions | Only fetch full description when job is selected |
 | Image optimization | Add company logos via Next.js `<Image>` with lazy loading |
+
+**Phase 5 acceptance criteria:**
+- [x] Accessibility fixed (color contrast, heading hierarchy, aria-labels, form labels)
+- [x] Dual-apply URL resolution with on-demand fallback and confidence scoring
+- [x] Server-side Cache-Control headers on high-throughput feed and filter endpoints
+- [x] Domain subpath exports preventing crypto leaks to client bundles
+- [x] Clean Next.js production build (51/51 static and dynamic pages generated)
 
 ---
 

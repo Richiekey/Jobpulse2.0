@@ -492,18 +492,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return ApiResponse.success(enrichedItems, {
-      pagination: {
-        next_cursor: nextCursor,
-        has_more: hasMore,
-        count: enrichedItems.length,
+    return ApiResponse.success(
+      enrichedItems,
+      {
+        pagination: {
+          next_cursor: nextCursor,
+          has_more: hasMore,
+          count: enrichedItems.length,
+        },
+        facets: {
+          facet_scope: 'page',
+          salaries_by_currency: salariesByCurrency,
+        },
+        curation: curationResult.summary,
       },
-      facets: {
-        facet_scope: 'page',
-        salaries_by_currency: salariesByCurrency,
-      },
-      curation: curationResult.summary,
-    });
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+        },
+      }
+    );
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred while fetching the jobs feed.', err, 500);
   }

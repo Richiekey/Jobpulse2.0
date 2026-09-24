@@ -328,6 +328,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
                 borderRadius: 'var(--radius-xs)',
               }}
               title="Mark as Applied"
+              aria-label={`Mark applied for ${cleanTitle} at ${companyName}`}
             >
               + Mark Applied
             </button>
@@ -347,6 +348,7 @@ export const JobFeedCard: React.FC<JobFeedCardProps> = ({
             padding: '2px',
           }}
           title={isSaved ? 'Remove Bookmark' : 'Bookmark Job'}
+          aria-label={isSaved ? `Remove bookmark for ${cleanTitle}` : `Bookmark ${cleanTitle}`}
         >
           <Bookmark size={14} fill={isSaved ? 'currentColor' : 'none'} />
         </button>

@@ -111,11 +111,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
       isStaffingAgency: false,
     };
 
-    return ApiResponse.success({
-      company: displayCompany,
-      jobs,
-      total_active_jobs: jobs.length,
-    });
+    return ApiResponse.success(
+      {
+        company: displayCompany,
+        jobs,
+        total_active_jobs: jobs.length,
+      },
+      undefined,
+      {
+        headers: {
+          'Cache-Control': 'public, max-age=60, stale-while-revalidate=120',
+        },
+      }
+    );
   } catch (err) {
     return ApiResponse.error('An unexpected error occurred while fetching company profile.', err, 500);
   }

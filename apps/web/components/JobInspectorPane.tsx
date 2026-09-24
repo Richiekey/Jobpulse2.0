@@ -117,6 +117,32 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
       };
     }
   }, [job?.id]);
+
+  const handleResolveDirectUrl = async () => {
+    if (isResolving || !job?.id) return;
+    setIsResolving(true);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/resolve-url`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.data?.directUrl) {
+        setJob((prev: any) => ({
+          ...prev,
+          apply_url: data.data.directUrl,
+          canonical_url: data.data.directUrl,
+          source_metadata: {
+            ...prev?.source_metadata,
+            direct_ats_url: data.data.directUrl,
+            jobright_reference_url: data.data.jobrightUrl || prev?.source_metadata?.jobright_reference_url,
+          },
+        }));
+      }
+    } catch (err) {
+      console.warn('URL resolution notice:', err);
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
   if (!job) {
     return (
       <div
@@ -348,6 +374,36 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
             </a>
           )}
 
+          {/* Manual Resolve Button if direct ATS link is missing on aggregator source */}
+          {isJobrightSource && !directAtsUrl && (
+            <button
+              type="button"
+              onClick={handleResolveDirectUrl}
+              disabled={isResolving}
+              className="btn btn-secondary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                height: '34px',
+                padding: '0 12px',
+                fontSize: '13px',
+                fontWeight: 600,
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--brand-border)',
+                color: 'var(--brand-text)',
+                whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
+                cursor: isResolving ? 'not-allowed' : 'pointer',
+              }}
+              title="Query ATS resolver to uncover direct career portal URL"
+            >
+              {isResolving ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              <span>{isResolving ? 'Resolving Direct ATS...' : 'Find Company ATS Link'}</span>
+            </button>
+          )}
+
           <button
             onClick={() => onTrackApplication && onTrackApplication(job)}
             className="btn btn-secondary"
@@ -415,6 +471,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
               boxSizing: 'border-box',
             }}
             title={isSaved ? 'Saved' : 'Save Job'}
+            aria-label={isSaved ? `Remove bookmark for ${cleanTitle}` : `Bookmark ${cleanTitle}`}
           >
             <Bookmark size={15} fill={isSaved ? 'currentColor' : 'none'} />
           </button>
@@ -438,6 +495,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
                 boxSizing: 'border-box',
               }}
               title="Previous job (↑)"
+              aria-label="Previous job (Up arrow)"
             >
               Prev
             </button>
@@ -461,6 +519,7 @@ export const JobInspectorPane: React.FC<JobInspectorPaneProps> = ({
                 boxSizing: 'border-box',
               }}
               title="Next job (↓)"
+              aria-label="Next job (Down arrow)"
             >
               Next
             </button>

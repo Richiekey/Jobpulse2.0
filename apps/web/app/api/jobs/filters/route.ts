@@ -103,15 +103,23 @@ export async function GET(_request: NextRequest) {
       { id: '30d', label: 'Last 30 days', hours: 720 },
     ];
 
-    return ApiResponse.success({
-      total_active_jobs: totalActiveJobs,
-      functions: topLevelFunctions,
-      platforms,
-      workplace_types: workplaceTypes,
-      employment_types: employmentTypes,
-      countries: topCountries,
-      date_presets: datePresets,
-    });
+    return ApiResponse.success(
+      {
+        total_active_jobs: totalActiveJobs,
+        functions: topLevelFunctions,
+        platforms,
+        workplace_types: workplaceTypes,
+        employment_types: employmentTypes,
+        countries: topCountries,
+        date_presets: datePresets,
+      },
+      undefined,
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=60, stale-while-revalidate=120',
+        },
+      }
+    );
   } catch (err) {
     return ApiResponse.error('Failed to load filter metadata.', err, 500);
   }
