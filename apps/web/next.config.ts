@@ -2,8 +2,10 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   transpilePackages: [
-    '@jobpulse/domain',
+    '@jobpulse/ai',
     '@jobpulse/ats',
+    '@jobpulse/curation',
+    '@jobpulse/domain',
     '@jobpulse/shared',
     '@jobpulse/url-resolution',
     '@jobpulse/validation',

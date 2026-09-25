@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useWorker } from '@/components/worker/WorkerContext';
 import { GoogleSheetsIntegration } from '@/components/worker/GoogleSheetsIntegration';
-import { SKILLS_TAXONOMY, ROLE_CATEGORIES } from '@jobpulse/domain/skills-taxonomy';
+import { SKILLS_TAXONOMY, ROLE_CATEGORIES } from '@jobpulse/domain';
 
 interface ResumeItem {
   id: string;
