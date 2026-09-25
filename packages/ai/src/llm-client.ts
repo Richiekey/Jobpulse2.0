@@ -55,7 +55,7 @@ function createOpenAICompatibleConfig(params: {
   };
 }
 
-const PROVIDERS: Record<LLMProvider, ProviderConfig> = {
+const PROVIDERS: Record<Exclude<LLMProvider, 'mock'>, ProviderConfig> = {
   gemini: {
     name: 'gemini',
     displayName: 'Gemini',
@@ -144,6 +144,7 @@ export async function callLLM(options: LLMRequestOptions): Promise<LLMResponse> 
     : defaultCascade;
 
   for (const provider of cascadeOrder) {
+    if (provider === 'mock') continue;
     const config = PROVIDERS[provider];
     if (!config) continue;
 

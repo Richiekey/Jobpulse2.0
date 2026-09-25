@@ -19,7 +19,14 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@jobpulse/ai": ["../../packages/ai/src/index.ts"],
+      "@jobpulse/ats": ["../../packages/ats/src/index.ts"],
+      "@jobpulse/curation": ["../../packages/curation/src/index.ts"],
+      "@jobpulse/domain": ["../../packages/domain/src/index.ts"],
+      "@jobpulse/shared": ["../../packages/shared/src/index.ts"],
+      "@jobpulse/url-resolution": ["../../packages/url-resolution/src/index.ts"],
+      "@jobpulse/validation": ["../../packages/validation/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

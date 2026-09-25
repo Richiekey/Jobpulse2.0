@@ -2,6 +2,7 @@ import type {
   JobCandidate,
   RawJobPayload,
   RawJob,
+  NormalizedJob,
   CompanySourceConfig,
   SourceValidationResult,
   ATSDetectionResult,
