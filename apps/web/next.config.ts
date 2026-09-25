@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  webpack: (config, { isServer, webpack }) => {
+  webpack: (config, { isServer }) => {
     config.resolve.extensionAlias = {
       '.js': ['.ts', '.tsx', '.js', '.jsx'],
       '.mjs': ['.mts', '.mjs'],
@@ -36,23 +36,7 @@ const nextConfig: NextConfig = {
         stream: false,
         zlib: false,
         child_process: false,
-        buffer: false,
-        util: false,
-        url: false,
-        path: false,
-        os: false,
-        events: false,
-        process: false,
       };
-      // Strip the 'node:' protocol prefix so that e.g. 'node:net' becomes
-      // 'net', which then hits resolve.fallback above.  resolve.alias can't
-      // intercept node: URIs because webpack processes the scheme *before*
-      // module resolution runs (causes UnhandledSchemeError).
-      config.plugins.push(
-        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource: any) => {
-          resource.request = resource.request.replace(/^node:/, '');
-        })
-      );
     }
     return config;
   },

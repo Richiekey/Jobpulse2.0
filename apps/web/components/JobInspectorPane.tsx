@@ -23,8 +23,10 @@ import {
 } from 'lucide-react';
 import { formatSalary } from '@/lib/format-salary';
 import { isPresentableSalary } from '@/lib/salary-shield';
-import { sanitizeHtml, containsHtml } from '@jobpulse/shared';
-import { LocationParser, SalaryEstimator, CompanyNormalizer } from '@jobpulse/domain';
+import { sanitizeHtml, containsHtml } from '@jobpulse/shared/sanitize-html';
+import { LocationParser } from '@jobpulse/domain/location-parser';
+import { SalaryEstimator } from '@jobpulse/domain/salary-estimator';
+import { CompanyNormalizer } from '@jobpulse/domain/normalizer';
 import {
   sanitizeCompanyName,
   sanitizeJobTitle,

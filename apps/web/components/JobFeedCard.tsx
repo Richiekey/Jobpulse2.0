@@ -17,7 +17,9 @@ import { isPresentableSalary } from '@/lib/salary-shield';
 import { Badge } from '@/components/ui';
 import { sanitizeCompanyName, sanitizeJobTitle, sanitizeLocation } from '@/lib/job-cleaner';
 import { getApplicationDisplayState } from '@/lib/application-status';
-import { LocationParser, SalaryEstimator, CompanyNormalizer } from '@jobpulse/domain';
+import { LocationParser } from '@jobpulse/domain/location-parser';
+import { SalaryEstimator } from '@jobpulse/domain/salary-estimator';
+import { CompanyNormalizer } from '@jobpulse/domain/normalizer';
 
 interface JobFeedCardProps {
   job: any;
