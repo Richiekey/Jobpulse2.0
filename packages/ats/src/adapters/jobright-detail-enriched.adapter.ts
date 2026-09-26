@@ -6,7 +6,7 @@ import { JobrightAdapter } from './jobright.adapter.js';
 const JOBRIGHT_LOGIN_URL = 'https://jobright.ai/swan/auth/login/pwd';
 const JOBRIGHT_ORIGIN = 'https://jobright.ai';
 const JOBRIGHT_DETAIL_PREFIX = 'https://jobright.ai/jobs/info/';
-const DEFAULT_DETAIL_FETCH_CAP = 50;
+const DEFAULT_DETAIL_FETCH_CAP = Infinity;
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 let cachedSessionId: string | null = null;
@@ -274,7 +274,7 @@ export class JobrightDetailEnrichedAdapter extends JobrightAdapter {
 
   public override async discover(companySource: Parameters<JobrightAdapter['discover']>[0]): Promise<JobCandidate[]> {
     const candidates = await super.discover(companySource);
-    const limit = Math.min(candidates.length, this.detailFetchCap);
+    const limit = this.detailFetchCap === Infinity ? candidates.length : Math.min(candidates.length, this.detailFetchCap);
 
     for (let index = 0; index < limit; index += 1) {
       const candidate = candidates[index];
