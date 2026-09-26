@@ -515,7 +515,7 @@ export default function HomePage() {
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-app)', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-app)', overflow: 'hidden' }}>
       {/* Toast Notification */}
       {toast && (
         <div
@@ -567,7 +567,6 @@ export default function HomePage() {
           flex: 1,
           display: 'flex',
           width: '100%',
-          height: 'calc(100vh - 56px)',
           overflow: 'hidden',
           backgroundColor: 'var(--bg-app)',
         }}
