@@ -269,7 +269,7 @@ export class JobEligibilityPolicy {
     // Check for explicit excluded region mentions in location string
     for (const excludedPattern of EXCLUDED_REGION_PATTERNS) {
       if (excludedPattern.test(locationString)) {
-        const isRemoteMatch = workplaceType === 'remote' || /\bremote\b/i.test(locationString);
+        const isRemoteMatch = workplaceType === 'remote' || (workplaceType === 'unspecified' && /\bremote\b/i.test(locationString));
         return {
           eligible: false,
           reason: 'EXCLUDED_GEOGRAPHY',
@@ -301,7 +301,8 @@ export class JobEligibilityPolicy {
     }
 
     // Determine Remote Category and Whitelist Geography
-    const isRemote = workplaceType === 'remote' || parsed.isRemote || /\bremote\b/i.test(locationString);
+    // NEVER promote hybrid or on_site to remote
+    const isRemote = workplaceType === 'remote' || (workplaceType === 'unspecified' && parsed.isRemote);
 
     let geographyCategory: GeographyCategory = 'UNKNOWN';
     let remoteCategory: RemoteCategory = isRemote ? 'REMOTE_UNKNOWN' : 'NOT_REMOTE';
@@ -359,6 +360,7 @@ export class JobEligibilityPolicy {
     if (job.workplaceType === 'remote' || job.workplaceType === 'hybrid' || job.workplaceType === 'on_site') {
       return job.workplaceType;
     }
+    // Only infer from locations if it's unspecified
     const loc = Array.isArray(job.locations) ? job.locations.join(' ') : '';
     if (/\bremote\b/i.test(loc)) return 'remote';
     if (/\bhybrid\b/i.test(loc)) return 'hybrid';

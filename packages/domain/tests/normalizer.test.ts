@@ -11,11 +11,29 @@ describe('Normalizer', () => {
     expect(res2.canonicalTitle).toBe('Staff Software Engineer');
   });
 
-  it('accurately identifies workplace types', () => {
-    expect(Normalizer.normalizeWorkplaceType(null, 'Backend Engineer (Remote)')).toBe('remote');
-    expect(Normalizer.normalizeWorkplaceType('Hybrid', 'Frontend Engineer')).toBe('hybrid');
+  it('accurately identifies workplace types and respects priority', () => {
+    // 1. Authoritative field priority over description
+    expect(Normalizer.normalizeWorkplaceType('Hybrid', 'Software Engineer', [], 'We offer remote work options.')).toBe('hybrid');
+    expect(Normalizer.normalizeWorkplaceType('On-site', 'Backend Engineer', [], 'Remote sensing background required')).toBe('on_site');
+    expect(Normalizer.normalizeWorkplaceType('Remote', 'Data Scientist')).toBe('remote');
+
+    // 2. Location inference
+    expect(Normalizer.normalizeWorkplaceType(null, 'Engineer', ['Remote'])).toBe('remote');
     expect(Normalizer.normalizeWorkplaceType(null, 'DevOps', ['San Francisco, CA (In-Office)'])).toBe('on_site');
-    expect(Normalizer.normalizeWorkplaceType(null, 'Engineer', ['London'])).toBe('unspecified');
+    expect(Normalizer.normalizeWorkplaceType(null, 'Engineer', ['London (Hybrid)'])).toBe('hybrid');
+
+    // 3. Title explicit inference
+    expect(Normalizer.normalizeWorkplaceType(null, 'Backend Engineer (Remote)')).toBe('remote');
+    expect(Normalizer.normalizeWorkplaceType(null, 'Frontend - Hybrid')).toBe('hybrid');
+    expect(Normalizer.normalizeWorkplaceType(null, 'Backend Engineer [On-site]')).toBe('on_site');
+    expect(Normalizer.normalizeWorkplaceType(null, 'Remote Sensing Engineer')).toBe('unspecified'); // Should not match title without word boundary/brackets
+
+    // 4. Description strict inference
+    expect(Normalizer.normalizeWorkplaceType(null, 'Engineer', ['London'], 'We are a fully remote company.')).toBe('remote');
+    expect(Normalizer.normalizeWorkplaceType(null, 'Engineer', ['London'], 'This is a 100% onsite position.')).toBe('on_site');
+    
+    // 5. Unspecified fallback
+    expect(Normalizer.normalizeWorkplaceType(null, 'Engineer', ['London'], 'We offer a great remote work culture but this is an office job.')).toBe('unspecified');
   });
 
   it('normalizes employment types', () => {

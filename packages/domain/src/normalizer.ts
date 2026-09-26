@@ -47,17 +47,38 @@ export class Normalizer {
     locations?: string[],
     description?: string
   ): WorkplaceType {
-    const combined = `${rawWorkplace ?? ''} ${title ?? ''} ${(locations ?? []).join(' ')} ${description ? description.slice(0, 500) : ''}`.toLowerCase();
+    // 1. Authoritative ATS/structured field (Highest Priority)
+    if (rawWorkplace) {
+      const lowerRaw = rawWorkplace.toLowerCase();
+      if (lowerRaw.includes('hybrid')) return 'hybrid';
+      if (lowerRaw.includes('on-site') || lowerRaw.includes('onsite') || lowerRaw.includes('in-office')) return 'on_site';
+      if (lowerRaw.match(/\b(remote|work from home|anywhere)\b/)) return 'remote';
+    }
 
-    if (combined.includes('remote') || combined.includes('work from home') || combined.includes('anywhere')) {
-      return 'remote';
+    // 2. Location inference
+    if (locations && locations.length > 0) {
+      const lowerLocs = locations.join(' ').toLowerCase();
+      if (lowerLocs.includes('hybrid')) return 'hybrid';
+      if (lowerLocs.includes('on-site') || lowerLocs.includes('onsite') || lowerLocs.includes('in-office')) return 'on_site';
+      if (lowerLocs.match(/\b(remote|work from home|anywhere)\b/)) return 'remote';
     }
-    if (combined.includes('hybrid')) {
-      return 'hybrid';
+
+    // 3. Title inference (explicit formats like "(Remote)", "- Hybrid")
+    if (title) {
+      const lowerTitle = title.toLowerCase();
+      if (lowerTitle.match(/[-\[({]\s*hybrid\s*[\])}]/) || lowerTitle.match(/-\s*hybrid\b/)) return 'hybrid';
+      if (lowerTitle.match(/[-\[({]\s*(on-site|onsite|in-office)\s*[\])}]/) || lowerTitle.match(/-\s*(on-site|onsite|in-office)\b/)) return 'on_site';
+      if (lowerTitle.match(/[-\[({]\s*(remote|work from home|anywhere)\s*[\])}]/) || lowerTitle.match(/-\s*(remote|work from home|anywhere)\b/)) return 'remote';
     }
-    if (combined.includes('on-site') || combined.includes('onsite') || combined.includes('in-office')) {
-      return 'on_site';
+
+    // 4. Description inference (Very strict to prevent false positives)
+    if (description) {
+      const lowerDesc = description.slice(0, 1000).toLowerCase();
+      if (lowerDesc.match(/\b(fully remote|100% remote|100% work from home)\b/)) return 'remote';
+      if (lowerDesc.match(/\b(hybrid role|hybrid position)\b/)) return 'hybrid';
+      if (lowerDesc.match(/\b(100% onsite|fully onsite|100% in-office)\b/)) return 'on_site';
     }
+
     return 'unspecified';
   }
 
