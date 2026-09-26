@@ -50,3 +50,6 @@ apphosting.yaml
 apps/web/apphosting.yaml
 .firebaserc
 
+
+.vercel
+.env*

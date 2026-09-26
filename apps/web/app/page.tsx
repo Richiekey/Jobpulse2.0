@@ -619,9 +619,14 @@ export default function HomePage() {
               {/* Stream Sub-Header: Controls & Status */}
               <div
                 style={{
+                  position: 'sticky',
+                  top: '-16px',
+                  zIndex: 10,
+                  backgroundColor: 'var(--bg-app)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  paddingTop: '16px',
                   paddingBottom: '12px',
                   borderBottom: '1px solid var(--border-subtle)',
                   flexWrap: 'wrap',
