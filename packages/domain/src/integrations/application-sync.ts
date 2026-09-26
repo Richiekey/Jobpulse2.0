@@ -125,11 +125,11 @@ export function isGoogleApiRetryableError(error: unknown): boolean {
   // 2. Fallback message regex matching
   const msg = error instanceof Error ? error.message : String(error);
 
-  // Explicit non-retryable error patterns
+  // Explicit non-retryable error patterns (exclude 'not yet found' which is intentional retry)
   if (
     /400|401|403|404|invalid_grant|invalid_client|unauthorized|permission\s*denied|not\s*found|invalid spreadsheet|no durable credentials/i.test(
       msg
-    )
+    ) && !/not yet found/i.test(msg)
   ) {
     return false;
   }
