@@ -17,6 +17,8 @@ CREATE INDEX IF NOT EXISTS idx_alert_delivered_jobs_status_claimed
 ON public.job_alert_delivered_jobs(alert_id, status, claimed_at);
 
 -- 3. ATOMIC RPC: CLAIM UNDELIVERED ALERT JOBS (WITH LEASE EXPIRATION & FAILED RETRY)
+DROP FUNCTION IF EXISTS public.claim_undelivered_alert_jobs(UUID, UUID[]);
+
 CREATE OR REPLACE FUNCTION public.claim_undelivered_alert_jobs(
     p_alert_id UUID,
     p_job_ids UUID[],
@@ -118,10 +120,10 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.claim_undelivered_alert_jobs FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.claim_undelivered_alert_jobs(UUID, UUID[], INT) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.mark_alert_jobs_delivered FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.mark_alert_jobs_failed FROM PUBLIC, anon;
 
-GRANT EXECUTE ON FUNCTION public.claim_undelivered_alert_jobs TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.claim_undelivered_alert_jobs(UUID, UUID[], INT) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.mark_alert_jobs_delivered TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.mark_alert_jobs_failed TO authenticated, service_role;

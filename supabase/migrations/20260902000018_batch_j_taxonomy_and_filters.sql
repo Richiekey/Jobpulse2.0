@@ -267,6 +267,8 @@ WHERE location_country IS NULL AND location_city IS NULL;
 -- ---------------------------------------------------------------------------
 -- 7. Replace ingest_job_transaction to accept new Batch J fields
 -- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.ingest_job_transaction(uuid, text, text, text, text, public.employment_type_enum, public.workplace_type_enum, text[], numeric, numeric, text, text, text[], timestamptz, text, text, text, text, numeric, varchar, uuid, text, text, text, varchar, jsonb, text, jsonb);
+
 CREATE OR REPLACE FUNCTION public.ingest_job_transaction(
   p_company_id UUID,
   p_canonical_title TEXT,

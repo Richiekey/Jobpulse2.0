@@ -13,7 +13,8 @@
 -- Ensure authoritative url_resolution_method column exists on jobs (R-H01)
 -- CRITICAL: Must be nullable with NO default to prevent fabricating resolution state.
 ALTER TABLE public.jobs
-  ADD COLUMN IF NOT EXISTS url_resolution_method TEXT;
+  ADD COLUMN IF NOT EXISTS url_resolution_method TEXT,
+  ADD COLUMN IF NOT EXISTS scraped_at TIMESTAMPTZ DEFAULT clock_timestamp();
 
 -- Drop default if it was previously created with 'direct'
 ALTER TABLE public.jobs
@@ -24,6 +25,38 @@ ALTER TABLE public.jobs
 UPDATE public.jobs
   SET url_resolution_method = NULL
   WHERE url_resolution_method = 'direct';
+
+-- Ensure source_runs table exists (R-H02)
+CREATE TABLE IF NOT EXISTS public.source_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source TEXT NOT NULL,
+  source_id UUID REFERENCES public.sources(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  error_message TEXT,
+  error_class TEXT,
+  jobs_found INTEGER NOT NULL DEFAULT 0,
+  jobs_inserted INTEGER NOT NULL DEFAULT 0,
+  jobs_updated INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+ALTER TABLE public.source_runs ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'source_runs' AND policyname = 'Service role full access on source_runs'
+  ) THEN
+    CREATE POLICY "Service role full access on source_runs" ON public.source_runs FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'source_runs' AND policyname = 'Authenticated users view source_runs'
+  ) THEN
+    CREATE POLICY "Authenticated users view source_runs" ON public.source_runs FOR SELECT TO authenticated USING (true);
+  END IF;
+END $$;
 
 -- Ensure normalized failure taxonomy classification exists on source_runs (R-H02)
 ALTER TABLE public.source_runs

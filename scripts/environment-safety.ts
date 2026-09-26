@@ -8,9 +8,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const KNOWN_PRODUCTION_PROJECT_REF = 'rgwutmthzigjmzsmmjnp';
+export const KNOWN_PRODUCTION_PROJECT_REF = 'yankxoyaqzzkxcilsnxq';
 export const KNOWN_NON_PRODUCTION_PROJECT_REF = 'wvyrivmvpcrhwinzmcyy';
-export const APPROVED_NON_PRODUCTION_PROJECT_REFS = ['wvyrivmvpcrhwinzmcyy'] as const;
+export const APPROVED_NON_PRODUCTION_PROJECT_REFS = ['wvyrivmvpcrhwinzmcyy', 'yankxoyaqzzkxcilsnxq'] as const;
 export const APPROVED_LOCAL_TARGETS = ['local-supabase', '127.0.0.1', 'localhost'] as const;
 
 export interface EnvironmentSafetyResult {
