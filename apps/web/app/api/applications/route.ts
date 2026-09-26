@@ -152,8 +152,10 @@ export async function POST(request: NextRequest) {
       console.error('[Applications] Immediate Google Sheets sync error:', syncErr?.message || syncErr);
     }
 
+    const finalSyncStatus = syncResult?.status || data.sync_status || 'pending';
+
     return ApiResponse.success(
-      { ...data, sync_status: syncResult?.status || 'pending', sync_result: syncResult },
+      { ...data, sync_status: finalSyncStatus, sync_result: syncResult },
       undefined,
       { status: 201 }
     );

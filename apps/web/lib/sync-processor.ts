@@ -31,6 +31,13 @@ export async function processEvent(
   supabase: ReturnType<typeof createAdminClient>,
   event: ClaimedEvent
 ): Promise<{ rowIndex?: number }> {
+  console.info('[Sync] Starting event', {
+    eventId: event.id,
+    applicationId: event.application_id,
+    integrationId: event.integration_id,
+    attempt: event.attempts,
+  });
+
   // 1. Get integration config
   const { data: integration, error: intError } = await supabase
     .from('user_integrations')
@@ -52,6 +59,12 @@ export async function processEvent(
   if (!config.spreadsheetId) {
     throw new Error(`Integration ${event.integration_id} has no spreadsheetId`);
   }
+
+  console.info('[Sync] Integration loaded', {
+    eventId: event.id,
+    spreadsheetId: config.spreadsheetId,
+    sheetName: config.sheetName || 'Sheet1',
+  });
 
   // 2. Get encrypted credentials
   const { data: secret, error: secretError } = await supabase
@@ -76,8 +89,16 @@ export async function processEvent(
     aad
   );
 
+  console.info('[Sync] Refresh token decrypted', {
+    eventId: event.id,
+  });
+
   // 4. Refresh access token
   const { accessToken } = await GoogleOAuthService.refreshAccessToken(refreshToken);
+
+  console.info('[Sync] Google access token refreshed', {
+    eventId: event.id,
+  });
 
   // 5. Resume discovery enrichment (optional)
   if (config.resumeFolderId && config.applicantName && event.payload.companyName) {
@@ -96,23 +117,37 @@ export async function processEvent(
           `Resume not yet found for ${event.payload.companyName} (attempt ${event.attempts + 1}/3)`
         );
       } else {
+        console.info('[Sync] Resume not found after 3 attempts, continuing without it', { eventId: event.id });
         event.payload.resumeUrl = '';
       }
     } catch (discoveryErr) {
       if (event.attempts < 3 && discoveryErr instanceof Error && discoveryErr.message.includes('not yet found')) {
         throw discoveryErr;
       }
+      console.info('[Sync] Resume not found after 3 attempts, continuing without it', { eventId: event.id });
       event.payload.resumeUrl = '';
     }
   }
 
   // 6. Format 8-column row and write to sheet
+  console.info('[Sync] Writing row to Google Sheets', {
+    eventId: event.id,
+    spreadsheetId: config.spreadsheetId,
+    sheetName: config.sheetName || 'Sheet1',
+  });
+
   const rowValues = formatApplicationSheetRow(event.payload);
   const syncResult = await syncApplicationToGoogleSheet({
     accessToken,
     spreadsheetId: config.spreadsheetId,
     sheetName: config.sheetName || 'Sheet1',
     rowValues,
+  });
+
+  console.info('[Sync] Google Sheets write completed', {
+    eventId: event.id,
+    action: syncResult.action,
+    rowIndex: syncResult.rowIndex ?? null,
   });
 
   // 7. Mark complete
@@ -126,6 +161,10 @@ export async function processEvent(
   if (completeError) {
     throw new Error(`Failed to complete sync event: ${completeError.message}`);
   }
+
+  console.info('[Sync] Event completed', {
+    eventId: event.id,
+  });
 
   return { rowIndex: syncResult.rowIndex };
 }
@@ -213,23 +252,32 @@ export async function processSyncForApplication(applicationId: string, userId?: 
   }
 
   // Attempt to claim and process directly
-  const claimToken = `immediate-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-  const { data: claimed, error: claimErr } = await supabase
-    .from('sync_events')
-    .update({
-      status: 'processing',
-      claim_token: claimToken,
-      processing_started_at: new Date().toISOString(),
-    })
-    .eq('id', syncEvent.id)
-    .in('status', ['pending', 'failed'])
-    .select('*')
-    .maybeSingle();
+  const { data: claimedEvents, error: claimErr } = await supabase.rpc('claim_sync_event', {
+    p_event_id: syncEvent.id,
+  });
 
-  if (claimErr || !claimed) {
-    // Event may already be claimed or completed
-    return { ok: true, status: syncEvent.status };
+  if (claimErr) {
+    console.error('[Sync] Failed to claim event', {
+      eventId: syncEvent.id,
+      applicationId,
+      error: claimErr.message,
+    });
+    return {
+      ok: false,
+      status: 'failed',
+      error: claimErr.message,
+    };
   }
+
+  if (!claimedEvents || claimedEvents.length === 0) {
+    return {
+      ok: false,
+      status: 'pending',
+      error: 'Sync event could not be claimed because it may already be processing or completed.',
+    };
+  }
+
+  const claimed = claimedEvents[0];
 
   try {
     const result = await processEvent(supabase, {
@@ -242,7 +290,7 @@ export async function processSyncForApplication(applicationId: string, userId?: 
       attempts: claimed.attempts,
       max_attempts: claimed.max_attempts,
       payload: claimed.payload,
-      claim_token: claimToken,
+      claim_token: claimed.claim_token,
     });
 
     return { ok: true, status: 'synced', rowIndex: result.rowIndex };
@@ -253,12 +301,12 @@ export async function processSyncForApplication(applicationId: string, userId?: 
 
     await supabase.rpc('fail_sync_event', {
       p_event_id: claimed.id,
-      p_claim_token: claimToken,
-      p_error_message: errorMsg,
+      p_claim_token: claimed.claim_token,
+      p_error_message: errorMsg.substring(0, 500),
       p_retry_delay_seconds: retryDelay,
       p_is_non_retryable: !isRetryable,
     });
 
-    return { ok: false, error: errorMsg };
+    return { ok: false, status: 'failed', error: errorMsg };
   }
 }

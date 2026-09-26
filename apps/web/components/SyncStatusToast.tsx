@@ -20,7 +20,7 @@ export const SyncStatusToast: React.FC<SyncStatusToastProps> = ({
   onDismiss,
 }) => {
   const [status, setStatus] = useState<SyncStatus>('polling');
-  const [message, setMessage] = useState('Syncing to Google Sheets…');
+  const [message, setMessage] = useState('Checking sync status…');
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
   const [spreadsheetName, setSpreadsheetName] = useState<string>('Google Sheet');
   const [sheetName, setSheetName] = useState<string>('Sheet1');
@@ -78,23 +78,26 @@ export const SyncStatusToast: React.FC<SyncStatusToastProps> = ({
       switch (matchingEvent.status) {
         case 'synced':
           setStatus('synced');
-          setMessage('Synced to Google Sheets');
+          setMessage('Added to Google Sheets');
           break;
         case 'pending':
-        case 'processing':
-          if (pollCountRef.current >= 12) {
-            setStatus('pending');
-            setMessage('Sync queued in background');
-            return;
-          }
+          setStatus('pending');
+          setMessage('Queued for Google Sheets');
           pollCountRef.current++;
-          setMessage('Writing row to Google Sheets…');
+          if (pollCountRef.current < 20) {
+            timerRef.current = setTimeout(pollSyncStatus, 2000);
+          }
+          break;
+        case 'processing':
+          setStatus('polling'); // Keeps the spinner active
+          setMessage('Writing to Google Sheets…');
+          pollCountRef.current++;
           timerRef.current = setTimeout(pollSyncStatus, 1500);
           break;
         case 'failed':
         case 'dead_letter':
           setStatus('failed');
-          setMessage(matchingEvent.lastError ? `Sync failed: ${matchingEvent.lastError.substring(0, 60)}…` : 'Sync failed');
+          setMessage(matchingEvent.lastError ? `Google Sheets sync failed: ${matchingEvent.lastError.substring(0, 60)}…` : 'Google Sheets sync failed');
           break;
         default:
           pollCountRef.current++;

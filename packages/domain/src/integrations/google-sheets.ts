@@ -125,6 +125,7 @@ export interface SyncToSheetParams {
 export interface SyncToSheetResult {
   action: 'appended' | 'updated';
   rowIndex?: number;
+  updatedRange?: string;
 }
 
 /**
@@ -157,7 +158,7 @@ export async function syncApplicationToGoogleSheet(
 
   if (!getRes.ok) {
     const errText = await getRes.text();
-    throw new Error(`Failed to read spreadsheet column A (${getRes.status}): ${errText}`);
+    throw new Error(`Google Sheets column read failed (${getRes.status}): ${errText}`);
   }
 
   const getData = (await getRes.json()) as { values?: string[][] };
@@ -193,10 +194,12 @@ export async function syncApplicationToGoogleSheet(
 
     if (!updateRes.ok) {
       const errText = await updateRes.text();
-      throw new Error(`Failed to update spreadsheet row (${updateRes.status}): ${errText}`);
+      throw new Error(`Google Sheets row update failed (${updateRes.status}): ${errText}`);
     }
 
-    return { action: 'updated', rowIndex: existingIndex };
+    const updateData = await updateRes.json().catch(() => ({}));
+
+    return { action: 'updated', rowIndex: existingIndex, updatedRange: updateData.updatedRange };
   } else {
     const colCount = Math.max(rowValues.length, 1);
     const lastCol = String.fromCharCode(65 + Math.min(colCount - 1, 25));
@@ -216,10 +219,20 @@ export async function syncApplicationToGoogleSheet(
 
     if (!appendRes.ok) {
       const errText = await appendRes.text();
-      throw new Error(`Failed to append to spreadsheet (${appendRes.status}): ${errText}`);
+      throw new Error(`Google Sheets row append failed (${appendRes.status}): ${errText}`);
     }
 
-    return { action: 'appended' };
+    const appendData = await appendRes.json().catch(() => ({}));
+    let rowIndex: number | undefined;
+    const updatedRange = appendData.updates?.updatedRange;
+    if (updatedRange) {
+      const match = /![A-Z]+(\d+):/.exec(updatedRange);
+      if (match && match[1]) {
+        rowIndex = parseInt(match[1], 10);
+      }
+    }
+
+    return { action: 'appended', rowIndex, updatedRange };
   }
 }
 

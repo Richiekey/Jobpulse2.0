@@ -1,6 +1,7 @@
 import { AuthGuard } from './auth-guard';
 import { ApiResponse } from './api-response';
 import { createAdminClient } from './supabase/admin';
+import { processSyncForApplication } from './sync-processor';
 
 export interface SyncRetryParams {
   eventId?: string;
@@ -98,7 +99,15 @@ export class SyncRetryService {
         );
       }
 
-      return ApiResponse.success({ retriedCount: 1 });
+      // Invoke the normal immediate processor and return its result
+      let syncResult;
+      try {
+        syncResult = await processSyncForApplication(event.application_id, user.id);
+      } catch (err: any) {
+        syncResult = { ok: false, error: err?.message || String(err) };
+      }
+
+      return ApiResponse.success({ retriedCount: 1, syncResult });
     } else if (organizationId) {
       const orgCheck = await AuthGuard.requireOrgAdmin(organizationId, clientOverride);
       if ('errorResponse' in orgCheck) {
