@@ -7,10 +7,10 @@ export const DEFAULT_JOBPULSE_SHEET_HEADERS = [
   'Location',
   'Status',
   'Applied At',
-  'Verification Status',
   'Direct Apply URL',
-  'Notes',
-  'Updated At',
+  'Resume URL',
+  'Worker Notes',
+  'Last Updated',
 ] as const;
 
 export type JobPulseSheetHeader = (typeof DEFAULT_JOBPULSE_SHEET_HEADERS)[number];

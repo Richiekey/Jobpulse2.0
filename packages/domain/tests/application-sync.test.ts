@@ -15,8 +15,8 @@ describe('Batch O — Domain Application Sync Unit Tests', () => {
       location: 'San Francisco, CA (Hybrid)',
       status: 'interview',
       appliedAt: '2026-09-01T12:00:00Z',
-      verificationStatus: 'verified',
       directApplyUrl: 'https://acme.com/careers/senior-eng',
+      resumeUrl: 'https://drive.google.com/file/d/123/view',
       notes: 'Initial screening completed with HR on Tuesday.',
       updatedAt: '2026-09-02T15:30:00Z',
     };
@@ -32,8 +32,8 @@ describe('Batch O — Domain Application Sync Unit Tests', () => {
     expect(row[3]).toBe('San Francisco, CA (Hybrid)');
     expect(row[4]).toBe('interview');
     expect(row[5]).toBe('2026-09-01T12:00:00Z');
-    expect(row[6]).toBe('verified');
-    expect(row[7]).toBe('https://acme.com/careers/senior-eng');
+    expect(row[6]).toBe('https://acme.com/careers/senior-eng');
+    expect(row[7]).toBe('https://drive.google.com/file/d/123/view');
     expect(row[8]).toBe('Initial screening completed with HR on Tuesday.');
     expect(row[9]).toBe('2026-09-02T15:30:00Z');
   });
@@ -55,7 +55,7 @@ describe('Batch O — Domain Application Sync Unit Tests', () => {
     expect(row[2]).toBe('Unknown Company');
     expect(row[3]).toBe('N/A');
     expect(row[4]).toBe('applied');
-    expect(row[6]).toBe('pending');
+    expect(row[6]).toBe('');
     expect(row[7]).toBe('');
     expect(row[8]).toBe('');
   });

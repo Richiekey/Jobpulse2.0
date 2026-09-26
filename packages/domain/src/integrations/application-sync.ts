@@ -13,8 +13,8 @@ export function formatApplicationSheetRow(payload: SyncEventPayload): string[] {
     payload.location || 'N/A',
     payload.status || 'applied',
     payload.appliedAt || new Date().toISOString(),
-    payload.verificationStatus || 'pending',
     payload.directApplyUrl || '',
+    payload.resumeUrl || '',
     payload.notes || '',
     payload.updatedAt || new Date().toISOString(),
   ];

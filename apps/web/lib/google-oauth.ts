@@ -305,7 +305,7 @@ export class GoogleOAuthService {
       return true;
     }
 
-    const range = `${encodeURIComponent(sheetName)}!A1:H1`;
+    const range = `${encodeURIComponent(sheetName)}!A1:J1`;
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=RAW`;
 
     const response = await fetch(url, {
