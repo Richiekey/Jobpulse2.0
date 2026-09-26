@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
 import { processSyncForApplication } from '@/lib/sync-processor';
+import { resolveJobrightDetail } from '@jobpulse/ats';
+import { URLResolver } from '@jobpulse/url-resolution';
 import { z } from 'zod';
 
 const ApplicationSchema = z.object({
@@ -129,6 +131,49 @@ export async function POST(request: NextRequest) {
     if (organizationId) {
       insertPayload.organization_id = organizationId;
       insertPayload.worker_id = user.id;
+    }
+
+    // Lazily resolve Jobright URLs before creating the application so the sync trigger gets the ATS link
+    if (jobId) {
+      const { data: job } = await supabase.from('jobs').select('canonical_url, apply_url, source_job_url, source_metadata').eq('id', jobId).maybeSingle();
+      if (job) {
+        const metadata = (job.source_metadata as Record<string, any>) || {};
+        if (!metadata.direct_ats_url) {
+          const externalIdMatch =
+            job.apply_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/) ||
+            job.canonical_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/) ||
+            job.source_job_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/);
+          
+          if (externalIdMatch?.[1]) {
+            const externalJobId = externalIdMatch[1];
+            try {
+              const detail = await resolveJobrightDetail(externalJobId);
+              if (detail?.directUrl) {
+                const directUrl = detail.directUrl;
+                const isDirectAts = URLResolver.isDirectAtsUrl(directUrl);
+                
+                await supabase.from('jobs').update({
+                  apply_url: directUrl,
+                  original_apply_url: directUrl,
+                  canonical_url: directUrl,
+                  source_metadata: {
+                    ...metadata,
+                    direct_ats_url: directUrl,
+                    jobright_reference_url: `https://jobright.ai/jobs/info/${externalJobId}`,
+                    enrichment_status: 'enriched',
+                    enriched_at: new Date().toISOString(),
+                  },
+                  url_resolution_method: isDirectAts ? 'direct_ats' : 'employer_application',
+                  url_resolution_confidence: isDirectAts ? 0.95 : 0.85,
+                  updated_at: new Date().toISOString(),
+                }).eq('id', jobId);
+              }
+            } catch (err) {
+              console.error('[Applications] Failed to resolve jobright url inline:', err);
+            }
+          }
+        }
+      }
     }
 
     const { data, error: insertError } = await supabase

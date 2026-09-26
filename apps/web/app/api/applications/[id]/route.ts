@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { AuthGuard } from '@/lib/auth-guard';
 import { ApiResponse } from '@/lib/api-response';
+import { resolveJobrightDetail } from '@jobpulse/ats';
+import { URLResolver } from '@jobpulse/url-resolution';
 import { z } from 'zod';
 
 const UpdateApplicationSchema = z.object({
@@ -54,7 +56,7 @@ export async function PATCH(
     // Fetch application to verify existence and ownership
     const { data: existingApp, error: fetchError } = await supabase
       .from('applications')
-      .select('id, user_id, organization_id, deleted_at')
+      .select('id, user_id, organization_id, job_id, deleted_at')
       .eq('id', applicationId)
       .is('deleted_at', null)
       .maybeSingle();
@@ -78,6 +80,49 @@ export async function PATCH(
       }
     } else if (!isOwner) {
       return ApiResponse.error('Application not found or unauthorized to modify.', null, 404);
+    }
+
+    // Lazily resolve Jobright URLs before updating the application so the sync trigger gets the ATS link
+    if (existingApp.job_id) {
+      const { data: job } = await supabase.from('jobs').select('canonical_url, apply_url, source_job_url, source_metadata').eq('id', existingApp.job_id).maybeSingle();
+      if (job) {
+        const metadata = (job.source_metadata as Record<string, any>) || {};
+        if (!metadata.direct_ats_url) {
+          const externalIdMatch =
+            job.apply_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/) ||
+            job.canonical_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/) ||
+            job.source_job_url?.match(/jobright\.ai\/jobs\/info\/([a-zA-Z0-9_-]+)/);
+          
+          if (externalIdMatch?.[1]) {
+            const externalJobId = externalIdMatch[1];
+            try {
+              const detail = await resolveJobrightDetail(externalJobId);
+              if (detail?.directUrl) {
+                const directUrl = detail.directUrl;
+                const isDirectAts = URLResolver.isDirectAtsUrl(directUrl);
+                
+                await supabase.from('jobs').update({
+                  apply_url: directUrl,
+                  original_apply_url: directUrl,
+                  canonical_url: directUrl,
+                  source_metadata: {
+                    ...metadata,
+                    direct_ats_url: directUrl,
+                    jobright_reference_url: `https://jobright.ai/jobs/info/${externalJobId}`,
+                    enrichment_status: 'enriched',
+                    enriched_at: new Date().toISOString(),
+                  },
+                  url_resolution_method: isDirectAts ? 'direct_ats' : 'employer_application',
+                  url_resolution_confidence: isDirectAts ? 0.95 : 0.85,
+                  updated_at: new Date().toISOString(),
+                }).eq('id', existingApp.job_id);
+              }
+            } catch (err) {
+              console.error('[Applications] Failed to resolve jobright url inline during PATCH:', err);
+            }
+          }
+        }
+      }
     }
 
     let updateQuery = supabase
