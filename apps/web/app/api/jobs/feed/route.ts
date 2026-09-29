@@ -401,7 +401,20 @@ export async function GET(request: NextRequest) {
 
     const scoredJobs = rawItems.map((job) => scoreJob(job as any, curationCriteria));
     const curationResult = balanceJobDiversity(scoredJobs, curationCriteria);
-    const dedupedItems = curationResult.selectedJobs;
+    let dedupedItems = curationResult.selectedJobs;
+
+    // Re-apply the requested sort order because balanceJobDiversity interleaves and scrambles by company
+    if (sort === 'posted_at_asc') {
+      dedupedItems.sort((a, b) => new Date((a as any).posted_at).getTime() - new Date((b as any).posted_at).getTime());
+    } else if (sort === 'salary_desc') {
+      dedupedItems.sort((a, b) => ((b as any).salary_max || 0) - ((a as any).salary_max || 0) || new Date((b as any).posted_at).getTime() - new Date((a as any).posted_at).getTime());
+    } else if (sort === 'salary_asc') {
+      dedupedItems.sort((a, b) => ((a as any).salary_min || Number.MAX_SAFE_INTEGER) - ((b as any).salary_min || Number.MAX_SAFE_INTEGER) || new Date((b as any).posted_at).getTime() - new Date((a as any).posted_at).getTime());
+    } else {
+      // Default: posted_at_desc
+      dedupedItems.sort((a, b) => new Date((b as any).posted_at).getTime() - new Date((a as any).posted_at).getTime());
+    }
+
     const hasMore = rawItems.length > limit;
     const resultItems = dedupedItems.slice(0, limit);
 
