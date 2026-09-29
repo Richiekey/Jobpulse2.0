@@ -14,14 +14,15 @@ export interface RetentionCleanupOptions {
 export interface RetentionCleanupResult {
   jobsDeleted: number;
   jobsProtected: number;
+  orphansDeleted: number;
   payloadsDeleted: number;
   durationMs: number;
   storageMetrics?: Record<string, any>;
 }
 
 export class RetentionService {
-  public static DEFAULT_JOB_RETENTION_DAYS = 30;
-  public static DEFAULT_PAYLOAD_RETENTION_DAYS = 7;
+  public static DEFAULT_JOB_RETENTION_DAYS = 14;
+  public static DEFAULT_PAYLOAD_RETENTION_DAYS = 2;
   public static DEFAULT_JOB_BATCH_SIZE = 500;
   public static DEFAULT_PAYLOAD_BATCH_SIZE = 1000;
   public static DEFAULT_MAX_BATCHES = 10;
@@ -47,6 +48,7 @@ export class RetentionService {
       return {
         jobsDeleted: 0,
         jobsProtected: 0,
+        orphansDeleted: 0,
         payloadsDeleted: 0,
         durationMs: 0,
       };
@@ -62,6 +64,7 @@ export class RetentionService {
 
     let jobsDeleted = 0;
     let jobsProtected = 0;
+    let orphansDeleted = 0;
     let protectedApplicationLinkedCount = 0;
     let protectedAssignmentLinkedCount = 0;
     let payloadsDeleted = 0;
@@ -87,6 +90,25 @@ export class RetentionService {
       }
     } catch (err) {
       logger.warn('Retention purge exception for jobs:', { error: String(err) });
+    }
+
+    // 1.5 Purge orphaned jobs
+    try {
+      const { data: orphanPurgeData, error: orphanPurgeError } = await supabase.rpc(
+        'purge_orphaned_jobs',
+        {
+          p_batch_size: jobBatchSize,
+          p_max_batches: maxBatches,
+        }
+      );
+
+      if (orphanPurgeError) {
+        logger.warn('Retention purge notice for orphans:', { error: orphanPurgeError.message });
+      } else if (orphanPurgeData) {
+        orphansDeleted = orphanPurgeData.deleted_orphans_count || 0;
+      }
+    } catch (err) {
+      logger.warn('Retention purge exception for orphans:', { error: String(err) });
     }
 
     // 2. Purge stale raw payloads
@@ -126,12 +148,14 @@ export class RetentionService {
 
     // Section 8 required structured telemetry logs
     logger.info(`Expired jobs deleted: ${jobsDeleted}`, { count: jobsDeleted });
+    logger.info(`Orphaned jobs deleted: ${orphansDeleted}`, { count: orphansDeleted });
     logger.info(`Protected application-linked jobs: ${protectedApplicationLinkedCount}`, { count: protectedApplicationLinkedCount });
     logger.info(`Protected assignment-linked jobs: ${protectedAssignmentLinkedCount}`, { count: protectedAssignmentLinkedCount });
     logger.info(`Raw payloads deleted: ${payloadsDeleted}`, { count: payloadsDeleted });
     logger.info('Retention cleanup completed', {
       jobsDeleted,
       jobsProtected,
+      orphansDeleted,
       protectedApplicationLinkedCount,
       protectedAssignmentLinkedCount,
       payloadsDeleted,
@@ -142,6 +166,7 @@ export class RetentionService {
     return {
       jobsDeleted,
       jobsProtected,
+      orphansDeleted,
       payloadsDeleted,
       durationMs,
       storageMetrics,

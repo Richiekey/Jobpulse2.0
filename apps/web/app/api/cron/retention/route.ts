@@ -39,13 +39,13 @@ async function runRetention(): Promise<PurgeResult> {
     result.db_size_before = JSON.stringify(sizeBefore);
   }
 
-  // 1. Purge raw payloads — 3-day retention, small batches to stay within 10s limit
+  // 1. Purge raw payloads — 2-day retention, small batches to stay within 10s limit
   const { data: payloadResult, error: payloadError } = await supabase.rpc(
     'purge_stale_raw_payloads',
     {
       p_batch_size: 500,
       p_max_batches: 5,
-      p_retention_days: 3,
+      p_retention_days: 2,
     }
   );
 

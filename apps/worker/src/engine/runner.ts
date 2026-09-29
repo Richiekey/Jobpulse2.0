@@ -10,6 +10,7 @@ import { logger } from '@jobpulse/shared';
 import { supabase } from '../db.js';
 import { IngestionPipeline } from './pipeline.js';
 import { RetentionService } from './retention.js';
+import { StorageGuard } from './storage-guard.js';
 
 export type ScrapeExecutionMode =
   | 'scheduled'
@@ -535,6 +536,9 @@ export class ScraperRunner {
         return runId!;
       }
 
+      // 3.5 Layer A - Pre-scrape protection
+      await StorageGuard.executePreScrapeGuard();
+
       // 4. Process each eligible company source concurrently with strict error isolation
       const sourceResults = await this.processSources(eligibleSources, runId!, options.concurrency);
 
@@ -648,6 +652,9 @@ export class ScraperRunner {
           failedJobs: summary.failedJobs,
         });
       }
+
+      // 7.5 Layer B - Post-scrape protection
+      await StorageGuard.executePostScrapeGuard();
 
       if (!runId) {
         throw new Error('Uninitialized run ID');
