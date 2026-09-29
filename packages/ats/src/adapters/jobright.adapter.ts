@@ -169,6 +169,7 @@ export class JobrightAdapter implements ATSAdapter {
     let headerIndices: { company: number; title: number; location: number; workplace: number; link: number; date: number } | null = null;
     let rowsParsed = 0;
     let rowsRejected = 0;
+    const maxAgeMs = 14 * 24 * 60 * 60 * 1000;
 
     const splitMarkdownRow = (rawLineText: string): string[] => {
       const cells: string[] = [];
@@ -245,6 +246,13 @@ export class JobrightAdapter implements ATSAdapter {
       if (wpLower.includes('remote')) workplaceType = 'remote'; else if (wpLower.includes('hybrid')) workplaceType = 'hybrid'; else if (wpLower.includes('on site') || wpLower.includes('on-site') || wpLower.includes('onsite')) workplaceType = 'onsite';
       const rawDateCell = headerIndices.date !== -1 && cells[headerIndices.date] ? cells[headerIndices.date]! : '';
       const postedAt = this.parseDate(rawDateCell, crawlDate);
+      
+      const parsedDate = new Date(postedAt);
+      if (crawlDate.getTime() - parsedDate.getTime() > maxAgeMs) {
+        rowsRejected++;
+        continue;
+      }
+
       const rowMarkdownLinks: Array<{ text: string; url: string }> = [];
       const markdownRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
       for (const cell of cells) { let match: RegExpExecArray | null; while ((match = markdownRegex.exec(cell)) !== null) { const text = match[1]; const url = match[2]; if (text && url) rowMarkdownLinks.push({ text: text.trim(), url: url.trim() }); } }
