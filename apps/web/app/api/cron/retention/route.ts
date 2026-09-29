@@ -10,7 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
  * Called by Vercel Cron (daily at 03:00 UTC). Protected by CRON_SECRET.
  *
  * Retention policy:
- *   - raw_job_payloads: 3-day retention (largest table, ~63 MB/day)
+ *   - raw_job_payloads: 2-day retention
  *   - jobs (expired/stale): 14-day retention (protects applied/assigned jobs)
  */
 export const maxDuration = 10; // Vercel Hobby plan limit
