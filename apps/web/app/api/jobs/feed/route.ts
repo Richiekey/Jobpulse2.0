@@ -372,7 +372,9 @@ export async function GET(request: NextRequest) {
       dbQuery = dbQuery.order('posted_at', { ascending: false }).order('id', { ascending: false });
     }
 
-    dbQuery = dbQuery.limit(limit + 1);
+    // Fetch a larger pool to ensure we can fill the requested limit after curation drops duplicates/excess company jobs
+    const fetchPoolSize = limit * 4;
+    dbQuery = dbQuery.limit(fetchPoolSize + 1);
 
     const { data: rows, error: queryError } = await dbQuery;
 
@@ -396,7 +398,7 @@ export async function GET(request: NextRequest) {
       skills: querySkills.length > 0 ? querySkills : undefined,
       targetRoles: queryRoles.length > 0 ? queryRoles : undefined,
       maxJobsPerCompany: 3,
-      targetTotalJobs: limit,
+      targetTotalJobs: fetchPoolSize, // Allow curation to keep up to the pool size
     };
 
     const scoredJobs = rawItems.map((job) => scoreJob(job as any, curationCriteria));
@@ -415,7 +417,8 @@ export async function GET(request: NextRequest) {
       dedupedItems.sort((a, b) => new Date((b as any).posted_at).getTime() - new Date((a as any).posted_at).getTime());
     }
 
-    const hasMore = rawItems.length > limit;
+    // We have more jobs in the database if either we kept more than the limit, or the DB returned more than our pool
+    const hasMore = dedupedItems.length > limit || rawItems.length > fetchPoolSize;
     const resultItems = dedupedItems.slice(0, limit);
 
     // Batch query user's applications for these jobs to ensure authoritative application state
