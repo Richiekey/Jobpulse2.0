@@ -18,6 +18,7 @@ export const maxDuration = 10; // Vercel Hobby plan limit
 interface PurgeResult {
   raw_payloads: Record<string, unknown> | null;
   stale_jobs: Record<string, unknown> | null;
+  orphan_jobs: Record<string, unknown> | null;
   db_size_before: string | null;
   db_size_after: string | null;
   error: string | null;
@@ -28,6 +29,7 @@ async function runRetention(): Promise<PurgeResult> {
   const result: PurgeResult = {
     raw_payloads: null,
     stale_jobs: null,
+    orphan_jobs: null,
     db_size_before: null,
     db_size_after: null,
     error: null,
@@ -70,6 +72,22 @@ async function runRetention(): Promise<PurgeResult> {
     return result;
   }
   result.stale_jobs = jobResult;
+
+  // 3. Purge only stale/expired orphan jobs; applications/assignments are protected in the RPC.
+  const { data: orphanResult, error: orphanError } = await supabase.rpc(
+    'purge_orphaned_jobs',
+    {
+      p_batch_size: 500,
+      p_max_batches: 5,
+      p_retention_days: 14,
+    }
+  );
+
+  if (orphanError) {
+    result.error = `orphan_jobs purge failed: ${orphanError.message}`;
+    return result;
+  }
+  result.orphan_jobs = orphanResult;
 
   // Measure DB size after
   const { data: sizeAfter } = await supabase.rpc('get_retention_and_storage_metrics');
