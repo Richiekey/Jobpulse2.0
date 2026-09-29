@@ -346,6 +346,7 @@ export class IngestionPipeline {
           p_location_region: parsedLocation.region,
           p_location_city: parsedLocation.city,
           p_is_remote: isRemote,
+          p_store_raw_payload: false,
         }
       );
 

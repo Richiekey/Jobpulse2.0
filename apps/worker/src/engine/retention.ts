@@ -24,7 +24,7 @@ export interface RetentionCleanupResult {
 
 export class RetentionService {
   public static DEFAULT_JOB_RETENTION_DAYS = 14;
-  public static DEFAULT_PAYLOAD_RETENTION_DAYS = 2;
+  public static DEFAULT_PAYLOAD_RETENTION_DAYS = 1;
   public static DEFAULT_JOB_BATCH_SIZE = 500;
   public static DEFAULT_PAYLOAD_BATCH_SIZE = 1000;
   public static DEFAULT_MAX_BATCHES = 10;
