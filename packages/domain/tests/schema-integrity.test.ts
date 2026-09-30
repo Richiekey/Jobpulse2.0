@@ -113,4 +113,23 @@ describe('Schema Integrity & Migration Invariants (P0 Gate)', () => {
       expect(combinedSql).toMatch(fnRegex);
     }
   });
+
+  it('should not contain ambiguous column references in claim_next_pending_scrape_run', () => {
+    const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql'));
+    const combinedSql = files.map((f) => fs.readFileSync(path.join(migrationsDir, f), 'utf-8')).join('\n');
+    
+    // In our migration history, the claim function must use fully qualified 'public.scrape_runs.status'
+    // to avoid the 42702 Ambiguous Column Reference error.
+    // The negative lookbehind/lookahead ensures it doesn't match qualified names.
+    // We just look for "WHERE status =" or "WHERE status=" without a table prefix.
+    const ambiguousStatusRegex = /WHERE\s+status\s*=\s*'running'/i;
+    
+    // Extract the most recent definition of claim_next_pending_scrape_run
+    const functionDefinitions = combinedSql.match(/CREATE OR REPLACE FUNCTION public\.claim_next_pending_scrape_run[\s\S]*?\$\$;/gi);
+    expect(functionDefinitions).toBeTruthy();
+    
+    const latestDefinition = functionDefinitions![functionDefinitions!.length - 1];
+    expect(latestDefinition).not.toMatch(ambiguousStatusRegex);
+    expect(latestDefinition).toMatch(/public\.scrape_runs\.status\s*=\s*'running'/i);
+  });
 });
