@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { JobrightAdapter } from '../src/adapters/jobright.adapter.js';
 import { httpClient } from '@jobpulse/shared';
 import type { CompanySourceConfig } from '@jobpulse/domain';
@@ -28,12 +28,18 @@ describe('JobrightAdapter Restoration & GitHub Discovery Suite', () => {
 | **[Datadog](https://datadog.com)** | **[Backend Systems Engineer](https://jobright.ai/jobs/info/6a2345678901234567890123?utm_campaign=SWE)** | Boston, MA | Onsite | Aug 27 |
 | **[Snowflake](https://snowflake.com)** | **[Core DB Engineer](https://jobright.ai/jobs/info/6a3456789012345678901234?utm_campaign=SWE)** | San Mateo, CA | Hybrid | Aug 25 |
 | **[Palantir](https://palantir.com)** | **[Forward Deployed Engineer](https://jobright.ai/jobs/info/6a4567890123456789012345?utm_campaign=SWE)** | New York, NY | On-site | Aug 20 |
-| **[Figma](https://figma.com)** | **[Graphics Platform Engineer](https://jobright.ai/jobs/info/6a5678901234567890123456?utm_campaign=SWE)** | San Francisco, CA | Remote | Aug 15 |
+| **[Figma](https://figma.com)** | **[Graphics Platform Engineer](https://jobright.ai/jobs/info/6a5678901234567890123456?utm_campaign=SWE)** | San Francisco, CA | Remote | Aug 25 |
 `;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:00Z'));
     adapter = new JobrightAdapter();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('Test 1 — README discovery: Mock GitHub raw README and verify successful retrieval', async () => {
