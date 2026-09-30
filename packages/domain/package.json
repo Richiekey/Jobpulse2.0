@@ -30,6 +30,11 @@
       "types": "./dist/normalizer.d.ts",
       "import": "./dist/normalizer.js",
       "default": "./dist/normalizer.js"
+    },
+    "./entitlements": {
+      "types": "./dist/entitlements.d.ts",
+      "import": "./dist/entitlements.js",
+      "default": "./dist/entitlements.js"
     }
   },
   "scripts": {
