@@ -221,6 +221,10 @@ export class WorkableAdapter implements ATSAdapter {
     const sourceJobUrl = data.url || `https://apply.workable.com/j/${externalJobId}`;
     const applyUrl = data.application_url || data.url || undefined;
 
+    // Derive company slug from sourceJobUrl: https://apply.workable.com/{slug}/j/{id}/
+    const slugMatch = sourceJobUrl.match(/apply\.workable\.com\/([^/]+)/);
+    const companySlug = slugMatch ? slugMatch[1] : externalJobId;
+
     return {
       sourceId: rawPayload.sourceId,
       externalJobId,
@@ -232,7 +236,7 @@ export class WorkableAdapter implements ATSAdapter {
       rawPostedAt: data.created_at || data.published_on,
       rawApplyUrl: applyUrl,
       sourceJobUrl,
-      discoveryUrl: `https://apply.workable.com/api/v1/widget/accounts/jobs/${externalJobId}`,
+      discoveryUrl: `https://apply.workable.com/api/v1/widget/accounts/${companySlug}`,
       sourceMetadata: {
         department: data.department,
       },
