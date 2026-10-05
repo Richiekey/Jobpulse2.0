@@ -9,6 +9,7 @@ export interface HttpClientOptions {
   maxRetries?: number;
   followRedirects?: boolean;
   maxRedirectHops?: number;
+  throwOn404?: boolean;
 }
 
 export interface HttpResponse<T = unknown> {
@@ -146,7 +147,7 @@ export class HttpClient {
               throw new Error(`SERVER_ERROR: Status ${response.status} from ${currentUrl}`);
             }
 
-            if (!response.ok && response.status !== 404) {
+            if (!response.ok) {
               throw new Error(`HTTP_ERROR: Status ${response.status} from ${currentUrl}`);
             }
 
@@ -248,7 +249,7 @@ export class HttpClient {
             throw new Error(`SERVER_ERROR: Status ${response.status} from ${initialUrl}`);
           }
 
-          if (!response.ok && response.status !== 404) {
+          if (!response.ok) {
             throw new Error(`HTTP_ERROR: Status ${response.status} from ${initialUrl}`);
           }
 

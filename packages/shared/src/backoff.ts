@@ -56,7 +56,14 @@ export async function withRetry<T>(
         throw error;
       }
 
-      const delayMs = calculateBackoffDelay(attempt, options);
+      let delayMs = calculateBackoffDelay(attempt, options);
+      if (error instanceof Error) {
+        const rateLimitMatch = error.message.match(/retry after (\d+)s/);
+        if (rateLimitMatch && rateLimitMatch[1]) {
+          delayMs = parseInt(rateLimitMatch[1], 10) * 1000;
+        }
+      }
+
       if (options.onRetry) {
         options.onRetry(error, attempt, delayMs);
       }

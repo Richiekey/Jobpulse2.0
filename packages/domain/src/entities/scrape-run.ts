@@ -35,7 +35,17 @@ export interface ScrapeRunSource {
   id: string;
   scrapeRunId: string;
   companySourceId: string;
-  status: 'succeeded' | 'failed' | 'skipped';
+  status:
+    | 'succeeded'
+    | 'failed'
+    | 'skipped'
+    | 'partial_failure'
+    | 'empty'
+    | 'invalid_configuration'
+    | 'rate_limited'
+    | 'http_error'
+    | 'adapter_error'
+    | 'healthy';
   jobsDiscovered: number;
   jobsInserted: number;
   jobsUpdated: number;

@@ -37,7 +37,17 @@ export interface SourceRunResult {
   sourceId: string;
   sourceIdentifier: string;
   adapterName: string;
-  status: 'succeeded' | 'partial_failure' | 'failed' | 'skipped';
+  status:
+    | 'succeeded'
+    | 'partial_failure'
+    | 'failed'
+    | 'skipped'
+    | 'empty'
+    | 'invalid_configuration'
+    | 'rate_limited'
+    | 'http_error'
+    | 'adapter_error'
+    | 'healthy';
   discovered: number;
   inserted: number;
   updated: number;
@@ -45,6 +55,7 @@ export interface SourceRunResult {
   failed: number;
   durationMs: number;
   errorMessage?: string | null;
+  rejectionBreakdown?: Record<string, number>;
 }
 
 const GLOBAL_SCRAPE_LOCK_KEY = 'jobpulse_scraper_global_lock';
@@ -215,20 +226,22 @@ export class ScraperRunner {
       }
 
       // Determine truthful source status and health
-      const isAllCandidatesFailed = discoveredCount > 0 && failed === discoveredCount;
-      const hasPartialCandidateFailures = failed > 0 && (inserted > 0 || updated > 0);
-      const sourceStatus: 'succeeded' | 'partial_failure' | 'failed' = isAllCandidatesFailed
-        ? 'failed'
-        : hasPartialCandidateFailures
-          ? 'partial_failure'
-          : 'succeeded';
-      const sourceError = isAllCandidatesFailed
-        ? `All ${failed} candidates failed ingestion`
-        : hasPartialCandidateFailures
-          ? `Partial failure: ${failed}/${discoveredCount} candidates failed ingestion`
-          : null;
+      let sourceStatus: SourceRunResult['status'] = 'healthy';
+      let sourceError: string | null = null;
+      let isSuccessForHealth = true;
 
-      await this.updateSourceHealth(companySource, !isAllCandidatesFailed, sourceError, isAllCandidatesFailed ? 0 : discoveredCount);
+      if (discoveredCount === 0) {
+        sourceStatus = 'empty';
+      } else if (failed === discoveredCount) {
+        sourceStatus = 'failed';
+        sourceError = `All ${failed} candidates failed ingestion`;
+        isSuccessForHealth = false;
+      } else if (failed > 0 && (inserted > 0 || updated > 0)) {
+        sourceStatus = 'partial_failure';
+        sourceError = `Partial failure: ${failed}/${discoveredCount} candidates failed ingestion`;
+      }
+
+      await this.updateSourceHealth(companySource, isSuccessForHealth, sourceError, discoveredCount);
       await this.recordSourceTelemetry(
         runId,
         companySource,
@@ -258,22 +271,25 @@ export class ScraperRunner {
         failed,
         durationMs,
         errorMessage: sourceError,
+        rejectionBreakdown,
       };
     } catch (srcErr) {
       const durationMs = Date.now() - startSourceTime;
       const errorMsg = srcErr instanceof Error ? srcErr.message : String(srcErr);
-      logger.error(`Failed scraping for ${companySource.sourceIdentifier}:`, { error: errorMsg });
+      
+      let failureStatus: SourceRunResult['status'] = 'adapter_error';
+      if (errorMsg.includes('RATE_LIMITED')) failureStatus = 'rate_limited';
+      else if (errorMsg.includes('INVALID_CONFIGURATION') || errorMsg.includes('Status 404')) failureStatus = 'invalid_configuration';
+      else if (errorMsg.includes('HTTP_ERROR') || errorMsg.includes('SERVER_ERROR') || errorMsg.includes('fetch failed') || errorMsg.includes('ECONNRESET')) failureStatus = 'http_error';
+
+      logger.error(`Failed scraping for ${companySource.sourceIdentifier} [${failureStatus}]:`, { error: errorMsg });
 
       await this.updateSourceHealth(companySource, false, errorMsg, 0);
       await this.recordSourceTelemetry(
         runId,
         companySource,
-        'failed',
-        0,
-        0,
-        0,
-        0,
-        0,
+        failureStatus,
+        0, 0, 0, 0, 0,
         errorMsg,
         durationMs,
         adapter.parserVersion
@@ -285,7 +301,7 @@ export class ScraperRunner {
         sourceId: companySource.sourceId,
         sourceIdentifier: companySource.sourceIdentifier,
         adapterName: adapter.platformSlug,
-        status: 'failed',
+        status: failureStatus,
         discovered: 0,
         inserted: 0,
         updated: 0,
@@ -544,16 +560,25 @@ export class ScraperRunner {
 
       // 5. Aggregate Results deterministically
       const summary = sourceResults.reduce(
-        (acc, r) => ({
-          attempted: acc.attempted + 1,
-          succeeded: acc.succeeded + (r.status === 'succeeded' || r.status === 'partial_failure' ? 1 : 0),
-          failed: acc.failed + (r.status === 'failed' ? 1 : 0),
-          discovered: acc.discovered + r.discovered,
-          inserted: acc.inserted + r.inserted,
-          updated: acc.updated + r.updated,
-          rejected: acc.rejected + r.rejected,
-          failedJobs: acc.failedJobs + r.failed,
-        }),
+        (acc, r) => {
+          const accBreakdown = { ...acc.rejectionBreakdown };
+          if (r.rejectionBreakdown) {
+            for (const [reason, count] of Object.entries(r.rejectionBreakdown)) {
+              accBreakdown[reason] = (accBreakdown[reason] || 0) + count;
+            }
+          }
+          return {
+            attempted: acc.attempted + 1,
+            succeeded: acc.succeeded + (r.status === 'succeeded' || r.status === 'partial_failure' ? 1 : 0),
+            failed: acc.failed + (r.status === 'failed' ? 1 : 0),
+            discovered: acc.discovered + r.discovered,
+            inserted: acc.inserted + r.inserted,
+            updated: acc.updated + r.updated,
+            rejected: acc.rejected + r.rejected,
+            failedJobs: acc.failedJobs + r.failed,
+            rejectionBreakdown: accBreakdown,
+          };
+        },
         {
           attempted: 0,
           succeeded: 0,
@@ -563,6 +588,7 @@ export class ScraperRunner {
           updated: 0,
           rejected: 0,
           failedJobs: 0,
+          rejectionBreakdown: {} as Record<string, number>,
         }
       );
 
@@ -606,6 +632,7 @@ export class ScraperRunner {
         sources_succeeded: summary.succeeded,
         sources_failed: summary.failed,
         failed_jobs_count: summary.failedJobs,
+        rejection_breakdown: summary.rejectionBreakdown,
       };
 
       await supabase
@@ -767,7 +794,7 @@ export class ScraperRunner {
   private async recordSourceTelemetry(
     runId: string,
     companySource: CompanySourceConfig,
-    status: 'succeeded' | 'partial_failure' | 'failed' | 'skipped',
+    status: SourceRunResult['status'],
     discovered: number,
     inserted: number,
     updated: number,
