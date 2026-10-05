@@ -321,6 +321,20 @@ export const ATS_DEFINITIONS: Record<string, ATSDefinition> = {
       requiresBrowserRendering: true,
     },
   },
+  jobdiva: {
+    id: '00000000-0000-0000-0000-000000000021',
+    name: 'JobDiva',
+    slug: 'jobdiva',
+    isImplemented: true,
+    domains: ['jobdiva.com', 'www.jobdiva.com'],
+    jobUrlPatterns: [/jobdiva\.com\/portal\/?\?.*portalid=([a-zA-Z0-9_-]+)/i],
+    capabilities: {
+      hasPublicApi: true,
+      supportsIncrementalSync: false,
+      providesStructuredData: true,
+      requiresBrowserRendering: false,
+    },
+  },
 };
 
 export class ATSAdapterRegistry {

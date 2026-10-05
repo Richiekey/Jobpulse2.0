@@ -74,6 +74,17 @@ export async function GET(_request: NextRequest) {
       { slug: 'successfactors', name: 'SAP SuccessFactors', count: platformCounts['successfactors'] || 0 },
       { slug: 'oracle', name: 'Oracle Cloud HCM', count: platformCounts['oracle'] || 0 },
       { slug: 'jobright', name: 'Jobright Aggregator', count: platformCounts['jobright'] || 0 },
+      { slug: 'workable', name: 'Workable', count: platformCounts['workable'] || 0 },
+      { slug: 'bamboohr', name: 'BambooHR', count: platformCounts['bamboohr'] || 0 },
+      { slug: 'rippling', name: 'Rippling', count: platformCounts['rippling'] || 0 },
+      { slug: 'jobvite', name: 'Jobvite', count: platformCounts['jobvite'] || 0 },
+      { slug: 'recruitee', name: 'Recruitee', count: platformCounts['recruitee'] || 0 },
+      { slug: 'applytojob', name: 'ApplyToJob (JazzHR)', count: platformCounts['applytojob'] || 0 },
+      { slug: 'teamtailor', name: 'Teamtailor', count: platformCounts['teamtailor'] || 0 },
+      { slug: 'breezy', name: 'Breezy HR', count: platformCounts['breezy'] || 0 },
+      { slug: 'personio', name: 'Personio', count: platformCounts['personio'] || 0 },
+      { slug: 'adp', name: 'ADP Workforce Now', count: platformCounts['adp'] || 0 },
+      { slug: 'jobdiva', name: 'JobDiva', count: platformCounts['jobdiva'] || 0 },
     ];
 
     // Workplace Types

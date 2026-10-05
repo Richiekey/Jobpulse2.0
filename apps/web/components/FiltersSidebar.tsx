@@ -168,6 +168,17 @@ export const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
     successfactors: { bg: 'rgba(99, 102, 241, 0.12)', text: '#818cf8', border: 'rgba(99, 102, 241, 0.3)' },
     oracle: { bg: 'rgba(239, 68, 68, 0.12)', text: '#f87171', border: 'rgba(239, 68, 68, 0.3)' },
     jobright: { bg: 'rgba(100, 116, 139, 0.12)', text: '#94a3b8', border: 'rgba(100, 116, 139, 0.3)' },
+    workable: { bg: 'rgba(34, 197, 94, 0.12)', text: '#4ade80', border: 'rgba(34, 197, 94, 0.3)' },
+    bamboohr: { bg: 'rgba(115, 191, 69, 0.12)', text: '#86d94f', border: 'rgba(115, 191, 69, 0.3)' },
+    rippling: { bg: 'rgba(251, 191, 36, 0.12)', text: '#fcd34d', border: 'rgba(251, 191, 36, 0.3)' },
+    jobvite: { bg: 'rgba(6, 182, 212, 0.12)', text: '#22d3ee', border: 'rgba(6, 182, 212, 0.3)' },
+    recruitee: { bg: 'rgba(244, 114, 182, 0.12)', text: '#f9a8d4', border: 'rgba(244, 114, 182, 0.3)' },
+    applytojob: { bg: 'rgba(139, 92, 246, 0.12)', text: '#a78bfa', border: 'rgba(139, 92, 246, 0.3)' },
+    teamtailor: { bg: 'rgba(20, 184, 166, 0.12)', text: '#2dd4bf', border: 'rgba(20, 184, 166, 0.3)' },
+    breezy: { bg: 'rgba(56, 189, 248, 0.12)', text: '#7dd3fc', border: 'rgba(56, 189, 248, 0.3)' },
+    personio: { bg: 'rgba(192, 132, 252, 0.12)', text: '#d8b4fe', border: 'rgba(192, 132, 252, 0.3)' },
+    adp: { bg: 'rgba(248, 113, 113, 0.12)', text: '#fca5a5', border: 'rgba(248, 113, 113, 0.3)' },
+    jobdiva: { bg: 'rgba(251, 146, 60, 0.12)', text: '#fdba74', border: 'rgba(251, 146, 60, 0.3)' },
   };
 
   return (

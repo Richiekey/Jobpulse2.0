@@ -20,6 +20,7 @@ export * from './adapters/teamtailor.adapter.js';
 export * from './adapters/breezy.adapter.js';
 export * from './adapters/personio.adapter.js';
 export * from './adapters/adp.adapter.js';
+export * from './adapters/jobdiva.adapter.js';
 export * from './discovery/ats-detector.js';
 export * from './discovery/source-validator.js';
 
@@ -44,6 +45,7 @@ import { TeamtailorAdapter } from './adapters/teamtailor.adapter.js';
 import { BreezyAdapter } from './adapters/breezy.adapter.js';
 import { PersonioAdapter } from './adapters/personio.adapter.js';
 import { ADPAdapter } from './adapters/adp.adapter.js';
+import { JobDivaAdapter } from './adapters/jobdiva.adapter.js';
 
 // Auto-register core ATS adapters into the registry
 ATSAdapterRegistry.register('greenhouse', () => new GreenhouseAdapter());
@@ -65,6 +67,7 @@ ATSAdapterRegistry.register('teamtailor', () => new TeamtailorAdapter());
 ATSAdapterRegistry.register('breezy', () => new BreezyAdapter());
 ATSAdapterRegistry.register('personio', () => new PersonioAdapter());
 ATSAdapterRegistry.register('adp', () => new ADPAdapter());
+ATSAdapterRegistry.register('jobdiva', () => new JobDivaAdapter());
 
 /**
  * Resolves an ATSAdapter instance via ATSAdapterRegistry.
