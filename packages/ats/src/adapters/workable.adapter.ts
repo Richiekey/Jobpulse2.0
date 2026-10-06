@@ -151,16 +151,19 @@ export class WorkableAdapter implements ATSAdapter {
   }
 
   public async fetch(candidate: JobCandidate): Promise<RawJobPayload> {
-    const detailUrl = `https://apply.workable.com/api/v1/widget/accounts/${candidate.companyIdentifier}/jobs/${candidate.externalJobId}`;
-    let payload: Record<string, unknown> = {};
+    const detailUrl = `https://apply.workable.com/api/v2/accounts/${candidate.companyIdentifier}/jobs/${candidate.externalJobId}`;
+    let payload: Record<string, unknown>;
 
     try {
       const response = await httpClient.get<Record<string, unknown>>(detailUrl, { timeoutMs: 12000 });
       if (response.status === 200 && response.data) {
         payload = response.data;
+      } else {
+        throw new Error(`HTTP ${response.status}`);
       }
-    } catch {
-      payload = { shortcode: candidate.externalJobId, url: candidate.sourceJobUrl };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Workable detail fetch failed for ${candidate.externalJobId}: ${msg}`);
     }
 
     const payloadHash = DeduplicationEngine.hashPayload(payload);
