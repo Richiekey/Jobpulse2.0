@@ -6,7 +6,7 @@ import type {
 } from '@jobpulse/domain';
 import { SourceScheduler, SourceHealthEngine, JobLifecycleService, CrawlExecutionResult } from '@jobpulse/domain';
 import { getAdapterForSource } from '@jobpulse/ats';
-import { logger } from '@jobpulse/shared';
+import { logger, HttpError } from '@jobpulse/shared';
 import { supabase } from '../db.js';
 import { IngestionPipeline } from './pipeline.js';
 import { RetentionService } from './retention.js';
@@ -278,9 +278,15 @@ export class ScraperRunner {
       const errorMsg = srcErr instanceof Error ? srcErr.message : String(srcErr);
       
       let failureStatus: SourceRunResult['status'] = 'adapter_error';
-      if (errorMsg.includes('RATE_LIMITED')) failureStatus = 'rate_limited';
-      else if (errorMsg.includes('INVALID_CONFIGURATION') || errorMsg.includes('Status 404')) failureStatus = 'invalid_configuration';
-      else if (errorMsg.includes('HTTP_ERROR') || errorMsg.includes('SERVER_ERROR') || errorMsg.includes('fetch failed') || errorMsg.includes('ECONNRESET')) failureStatus = 'http_error';
+      if (srcErr instanceof HttpError) {
+        if (srcErr.status === 429) failureStatus = 'rate_limited';
+        else if (srcErr.status === 404 || srcErr.status === 401 || srcErr.status === 403) failureStatus = 'invalid_configuration';
+        else failureStatus = 'http_error';
+      } else if (errorMsg.includes('fetch failed') || errorMsg.includes('ECONNRESET') || errorMsg.includes('timeout')) {
+        failureStatus = 'http_error';
+      } else if (errorMsg.includes('INVALID_CONFIGURATION')) {
+        failureStatus = 'invalid_configuration';
+      }
 
       logger.error(`Failed scraping for ${companySource.sourceIdentifier} [${failureStatus}]:`, { error: errorMsg });
 
@@ -567,9 +573,12 @@ export class ScraperRunner {
               accBreakdown[reason] = (accBreakdown[reason] || 0) + count;
             }
           }
+          const statusCounts = { ...acc.statusCounts };
+          statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+
           return {
             attempted: acc.attempted + 1,
-            succeeded: acc.succeeded + (r.status === 'succeeded' || r.status === 'partial_failure' ? 1 : 0),
+            succeeded: acc.succeeded + (r.status === 'healthy' || r.status === 'succeeded' ? 1 : 0),
             failed: acc.failed + (r.status === 'failed' ? 1 : 0),
             discovered: acc.discovered + r.discovered,
             inserted: acc.inserted + r.inserted,
@@ -577,6 +586,7 @@ export class ScraperRunner {
             rejected: acc.rejected + r.rejected,
             failedJobs: acc.failedJobs + r.failed,
             rejectionBreakdown: accBreakdown,
+            statusCounts,
           };
         },
         {
@@ -589,6 +599,7 @@ export class ScraperRunner {
           rejected: 0,
           failedJobs: 0,
           rejectionBreakdown: {} as Record<string, number>,
+          statusCounts: {} as Record<string, number>,
         }
       );
 
@@ -631,6 +642,12 @@ export class ScraperRunner {
         sources_attempted: summary.attempted,
         sources_succeeded: summary.succeeded,
         sources_failed: summary.failed,
+        sources_healthy: summary.statusCounts['healthy'] || 0,
+        sources_empty: summary.statusCounts['empty'] || 0,
+        sources_rate_limited: summary.statusCounts['rate_limited'] || 0,
+        sources_invalid_configuration: summary.statusCounts['invalid_configuration'] || 0,
+        sources_http_error: summary.statusCounts['http_error'] || 0,
+        sources_adapter_error: summary.statusCounts['adapter_error'] || 0,
         failed_jobs_count: summary.failedJobs,
         rejection_breakdown: summary.rejectionBreakdown,
       };

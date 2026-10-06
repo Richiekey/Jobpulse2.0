@@ -93,7 +93,7 @@ export class WorkableAdapter implements ATSAdapter {
     const url = `https://apply.workable.com/api/v1/widget/accounts/${slug}`;
 
     try {
-      const response = await httpClient.get<WorkableWidgetResponse>(url, { timeoutMs: 10000, maxRetries: 4 });
+      const response = await httpClient.get<WorkableWidgetResponse>(url, { timeoutMs: 10000 });
       const durationMs = Date.now() - start;
 
       if (response.status === 200 && response.data && Array.isArray(response.data.jobs)) {
@@ -133,7 +133,7 @@ export class WorkableAdapter implements ATSAdapter {
     const slug = companySource.sourceIdentifier;
     const url = `https://apply.workable.com/api/v1/widget/accounts/${slug}`;
 
-    const response = await httpClient.get<WorkableWidgetResponse>(url, { throwOn404: true, maxRetries: 4 });
+    const response = await httpClient.get<WorkableWidgetResponse>(url, { throwOn404: true });
     if (!response.data || !Array.isArray(response.data.jobs)) {
       return [];
     }
@@ -155,7 +155,7 @@ export class WorkableAdapter implements ATSAdapter {
     let payload: Record<string, unknown> = {};
 
     try {
-      const response = await httpClient.get<Record<string, unknown>>(detailUrl, { timeoutMs: 12000, maxRetries: 4 });
+      const response = await httpClient.get<Record<string, unknown>>(detailUrl, { timeoutMs: 12000 });
       if (response.status === 200 && response.data) {
         payload = response.data;
       }

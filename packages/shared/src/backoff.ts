@@ -57,10 +57,10 @@ export async function withRetry<T>(
       }
 
       let delayMs = calculateBackoffDelay(attempt, options);
-      if (error instanceof Error) {
-        const rateLimitMatch = error.message.match(/retry after (\d+)s/);
-        if (rateLimitMatch && rateLimitMatch[1]) {
-          delayMs = parseInt(rateLimitMatch[1], 10) * 1000;
+      if (error && typeof error === 'object' && 'name' in error && error.name === 'HttpError') {
+        const httpError = error as any;
+        if (typeof httpError.retryAfterSec === 'number') {
+          delayMs = httpError.retryAfterSec * 1000;
         }
       }
 

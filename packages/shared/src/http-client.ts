@@ -2,6 +2,18 @@ import net from 'node:net';
 import { withRetry } from './backoff.js';
 import { logger } from './logger.js';
 
+export class HttpError extends Error {
+  public status: number;
+  public retryAfterSec?: number;
+
+  constructor(status: number, message: string, retryAfterSec?: number) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+    this.retryAfterSec = retryAfterSec;
+  }
+}
+
 export interface HttpClientOptions {
   timeoutMs?: number;
   maxSizeBytes?: number;
@@ -140,15 +152,15 @@ export class HttpClient {
             if (response.status === 429) {
               const retryAfterHeader = response.headers.get('Retry-After');
               const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5;
-              throw new Error(`RATE_LIMITED: 429 encountered, retry after ${retryAfterSec}s`);
+              throw new HttpError(429, `RATE_LIMITED: 429 encountered`, retryAfterSec);
             }
 
-            if (response.status >= 500) {
-              throw new Error(`SERVER_ERROR: Status ${response.status} from ${currentUrl}`);
-            }
-
-            if (!response.ok) {
-              throw new Error(`HTTP_ERROR: Status ${response.status} from ${currentUrl}`);
+            if (response.status === 404 && options.throwOn404 === false) {
+              // Explicitly bypass throw on 404
+            } else if (response.status >= 500) {
+              throw new HttpError(response.status, `SERVER_ERROR: Status ${response.status} from ${currentUrl}`);
+            } else if (!response.ok) {
+              throw new HttpError(response.status, `HTTP_ERROR: Status ${response.status} from ${currentUrl}`);
             }
 
             // Check Content-Length header
@@ -242,15 +254,15 @@ export class HttpClient {
           if (response.status === 429) {
             const retryAfterHeader = response.headers.get('Retry-After');
             const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5;
-            throw new Error(`RATE_LIMITED: 429 encountered, retry after ${retryAfterSec}s`);
+            throw new HttpError(429, `RATE_LIMITED: 429 encountered`, retryAfterSec);
           }
 
-          if (response.status >= 500) {
-            throw new Error(`SERVER_ERROR: Status ${response.status} from ${initialUrl}`);
-          }
-
-          if (!response.ok) {
-            throw new Error(`HTTP_ERROR: Status ${response.status} from ${initialUrl}`);
+          if (response.status === 404 && options.throwOn404 === false) {
+            // Explicitly bypass throw on 404
+          } else if (response.status >= 500) {
+            throw new HttpError(response.status, `SERVER_ERROR: Status ${response.status} from ${initialUrl}`);
+          } else if (!response.ok) {
+            throw new HttpError(response.status, `HTTP_ERROR: Status ${response.status} from ${initialUrl}`);
           }
 
           const contentLength = response.headers.get('content-length');
