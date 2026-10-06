@@ -3,7 +3,7 @@ import { HttpClient } from '@jobpulse/shared';
 import { HackerNewsHiringProvider } from '../../src/providers/hn-hiring.provider.js';
 
 describe('HackerNewsHiringProvider', () => {
-  it('parses typical HN hiring comments correctly', () => {
+  it('parses typical HN hiring comments correctly', async () => {
     const provider = new HackerNewsHiringProvider();
 
     const sampleHit = {
@@ -17,7 +17,7 @@ describe('HackerNewsHiringProvider', () => {
       `,
     };
 
-    const candidate = provider.parseComment(sampleHit);
+    const candidate = await provider.parseComment(sampleHit);
     expect(candidate).not.toBeNull();
     expect(candidate!.company_name).toBe('Acme Corp');
     expect(candidate!.company_domain).toBe('acme.com');
@@ -29,7 +29,7 @@ describe('HackerNewsHiringProvider', () => {
     expect(candidate!.evidence[0]!.provider).toBe('hn-hiring');
   });
 
-  it('handles comments without direct ATS links by capturing company website', () => {
+  it('handles comments without direct ATS links by capturing company website', async () => {
     const provider = new HackerNewsHiringProvider();
 
     const sampleHit = {
@@ -41,7 +41,7 @@ describe('HackerNewsHiringProvider', () => {
       `,
     };
 
-    const candidate = provider.parseComment(sampleHit);
+    const candidate = await provider.parseComment(sampleHit);
     expect(candidate).not.toBeNull();
     expect(candidate!.company_name).toBe('Linear');
     expect(candidate!.company_domain).toBe('linear.app');
@@ -49,7 +49,7 @@ describe('HackerNewsHiringProvider', () => {
     expect(candidate!.job_evidence.length).toBe(1);
   });
 
-  it('gracefully ignores non-hiring short comments', () => {
+  it('gracefully ignores non-hiring short comments', async () => {
     const provider = new HackerNewsHiringProvider();
 
     const shortHit = {
@@ -58,10 +58,10 @@ describe('HackerNewsHiringProvider', () => {
       comment_text: 'Thanks for the post!',
     };
 
-    expect(provider.parseComment(shortHit)).toBeNull();
+    expect(await provider.parseComment(shortHit)).toBeNull();
   });
 
-  it('does not invent fake domains from ATS boards', () => {
+  it('does not invent fake domains from ATS boards', async () => {
     const provider = new HackerNewsHiringProvider();
 
     const shortHit = {
@@ -71,7 +71,37 @@ describe('HackerNewsHiringProvider', () => {
       comment_text: 'Apply here: https://boards.greenhouse.io/myunknownco',
     };
 
-    const candidate = provider.parseComment(shortHit);
+    const candidate = await provider.parseComment(shortHit);
     expect(candidate).toBeNull();
+  });
+
+  it('rejects candidate if only generic domains like linkedin are present', async () => {
+    const provider = new HackerNewsHiringProvider();
+    const hit = {
+      objectID: '333',
+      created_at: '2026-10-06T12:00:00Z',
+      comment_text: '<p>Apply at https://linkedin.com/company/acme/jobs or https://github.com/acme</p>',
+    };
+    expect(await provider.parseComment(hit)).toBeNull();
+  });
+
+  it('resolves actual company domain from ATS board if missing from comment', async () => {
+    const mockHttpClient = {
+      get: vi.fn().mockResolvedValue({
+        status: 200,
+        data: '<html><a href="https://actual-company.com">Homepage</a></html>',
+      }),
+    } as unknown as HttpClient;
+
+    const provider = new HackerNewsHiringProvider(mockHttpClient);
+    const hit = {
+      objectID: '444',
+      created_at: '2026-10-06T12:00:00Z',
+      comment_text: '<p>Software Engineer. Apply: https://boards.greenhouse.io/myco</p>',
+    };
+
+    const candidate = await provider.parseComment(hit);
+    expect(candidate).not.toBeNull();
+    expect(candidate!.company_domain).toBe('actual-company.com');
   });
 });

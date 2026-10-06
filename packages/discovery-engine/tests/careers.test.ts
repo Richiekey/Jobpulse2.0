@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HttpClient } from '@jobpulse/shared';
-import { enrichCandidate, discoverCareersUrl } from '../src/careers.js';
+import { enrichCandidate, discoverCareersUrl, isLikelyCareersPage } from '../src/careers.js';
 import { DiscoveryCandidate } from '../src/types.js';
 
 describe('Careers Discovery & ATS Enrichment', () => {
@@ -21,6 +21,30 @@ describe('Careers Discovery & ATS Enrichment', () => {
 
     const careersUrl = await discoverCareersUrl('acme.com', mockHttpClient);
     expect(careersUrl).toBe('https://acme.com/careers');
+  });
+
+  describe('isLikelyCareersPage', () => {
+    it('accepts https://acme.com/careers with careers content', () => {
+      expect(isLikelyCareersPage('https://acme.com/careers', '<html><body>We are hiring!</body></html>')).toBe(true);
+    });
+
+    it('accepts https://acme.com/jobs with jobs content', () => {
+      expect(isLikelyCareersPage('https://acme.com/jobs', '<html><body>See our open positions</body></html>')).toBe(true);
+    });
+
+    it('accepts ATS-backed careers page', () => {
+      expect(isLikelyCareersPage('https://acme.com/company', '<html><body><a href="https://boards.greenhouse.io/acme">Apply</a></body></html>')).toBe(true);
+    });
+
+    it('rejects homepage saying "We are passionate about careers..." but otherwise normal', () => {
+      const html = '<html><body>We are passionate about our careers but this is a marketing page.</body></html>';
+      expect(isLikelyCareersPage('https://acme.com', html)).toBe(false);
+    });
+
+    it('rejects generic page containing word jobs once', () => {
+      const html = '<html><body>Steve Jobs was a visionary.</body></html>';
+      expect(isLikelyCareersPage('https://acme.com', html)).toBe(false);
+    });
   });
 
   it('detects ATS from careers page HTML and enriches candidate', async () => {

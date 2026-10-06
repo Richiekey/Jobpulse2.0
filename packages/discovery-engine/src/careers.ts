@@ -5,10 +5,35 @@ import { DiscoveryCandidate, DiscoveryEvidence } from './types.js';
 import { normalizeUrl } from './normalization.js';
 import { DiscoveryRateLimiter, DomainCircuitBreaker } from './safety.js';
 
-function isLikelyCareersPage(html: string): boolean {
+export function isLikelyCareersPage(url: string, html: string): boolean {
   if (!html) return false;
+
+  // 1. URL path is a known careers/jobs path
+  try {
+    const parsed = new URL(url);
+    if (/(careers|jobs|join-us|work-with-us|open-positions)/i.test(parsed.pathname)) {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2. ATS fingerprint recognized by ATSDetector
+  const atsResult = ATSDetector.detect(url, html);
+  if (atsResult.detected) return true;
+
   const lowerHtml = html.toLowerCase();
-  return /(careers|jobs|open positions|openings|join us|work with us|ats|boards\.)/i.test(lowerHtml);
+  
+  // 3. Clear careers/jobs heading or title
+  if (/<title>[^<]*(careers|jobs|open positions)[^<]*<\/title>/i.test(lowerHtml)) return true;
+  if (/<h[1-2][^>]*>[^<]*(careers|jobs|open positions|join our team)[^<]*<\/h[1-2]>/i.test(lowerHtml)) return true;
+
+  // 4. Multiple careers-specific signals (at least 3 occurrences)
+  const signalRegex = /(careers|open positions|openings|join us|work with us|apply now)/ig;
+  const matches = lowerHtml.match(signalRegex);
+  if (matches && matches.length >= 3) return true;
+
+  return false;
 }
 
 const CANDIDATE_PATHS = [
@@ -50,7 +75,7 @@ export async function discoverCareersUrl(
         });
 
         if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
-          if (isLikelyCareersPage(res.data)) {
+          if (isLikelyCareersPage(candidateUrl, res.data)) {
             circuitBreaker?.recordSuccess(cleanDomain);
             return normalizeUrl(res.url) || candidateUrl;
           }
@@ -76,7 +101,7 @@ export async function discoverCareersUrl(
         });
 
         if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
-          if (isLikelyCareersPage(res.data)) {
+          if (isLikelyCareersPage(candidateUrl, res.data)) {
             circuitBreaker?.recordSuccess(cleanDomain);
             return normalizeUrl(res.url) || candidateUrl;
           }

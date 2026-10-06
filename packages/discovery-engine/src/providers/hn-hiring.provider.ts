@@ -62,7 +62,7 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
           if (candidates.length >= limit) break;
           if (!hit.comment_text) continue;
 
-          const candidate = this.parseComment(hit);
+          const candidate = await this.parseComment(hit);
           if (candidate) {
             candidates.push(candidate);
           }
@@ -78,7 +78,7 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
   /**
    * Parses an HN hiring comment into a DiscoveryCandidate if viable.
    */
-  public parseComment(hit: AlgoliaHit): DiscoveryCandidate | null {
+  public async parseComment(hit: AlgoliaHit): Promise<DiscoveryCandidate | null> {
     const rawText = hit.comment_text;
     if (!rawText || rawText.length < 20) return null;
 
@@ -114,9 +114,23 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
     }
 
     // If no primary company domain found from plain links, but ATS found:
-    // We strictly do NOT fallback to `${boardIdentifier}.com` to avoid fake domains.
+    if (!primaryCompanyDomain && atsUrl && boardIdentifier) {
+      try {
+        const res = await this.httpClient.get<string>(atsUrl, { maxRetries: 0, timeoutMs: 3000 });
+        if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
+          // Look for a link that is NOT an ATS link to find the company website
+          const hrefRegex = /href=["'](https?:\/\/(?!boards\.greenhouse\.io|jobs\.lever\.co|jobs\.ashbyhq\.com|apply\.workable\.com)[^"']+)["']/i;
+          const match = res.data.match(hrefRegex);
+          if (match && match[1]) {
+            primaryCompanyDomain = normalizeDomain(match[1]);
+          }
+        }
+      } catch (err) {
+        // ignore fetch failures for ATS domain resolution
+      }
+    }
 
-    if (!primaryCompanyDomain) return null;
+    if (!primaryCompanyDomain || this.isGenericDomain(primaryCompanyDomain)) return null;
 
     // Extract company name and roles
     const { companyName, jobTitle } = this.extractNameAndJobTitle(rawText, primaryCompanyDomain);
@@ -262,7 +276,19 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
       'bit.ly',
       't.co',
       'wikipedia.org',
+      'indeed.com',
+      'wellfound.com',
+      'greenhouse.io',
+      'lever.co',
+      'ashbyhq.com',
+      'workable.com',
+      'facebook.com',
+      'reddit.com',
+      'hn.algolia.com',
+      'docs.google.com',
+      'forms.gle'
     ];
-    return generic.includes(domain.toLowerCase());
+    const lower = domain.toLowerCase();
+    return generic.some((g) => lower === g || lower.endsWith(`.${g}`));
   }
 }
