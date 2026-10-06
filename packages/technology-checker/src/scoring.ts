@@ -129,7 +129,7 @@ export class DiscoveryScorer {
    * Score all records in the discovery_registry in-process.
    * This mirrors the DB function but can be run without a DB migration.
    */
-  public async scoreAll(): Promise<ScoringMetrics> {
+  public async scoreAll(options: { dryRun?: boolean } = {}): Promise<ScoringMetrics> {
     const metrics: ScoringMetrics = {
       totalScored: 0,
       highPriority: 0,
@@ -155,10 +155,12 @@ export class DiscoveryScorer {
       try {
         const score = computeDiscoveryPriority(record as ScoringInput);
 
-        await this.db
-          .from('discovery_registry')
-          .update({ priority_score: score })
-          .eq('id', record.id);
+        if (!options.dryRun) {
+          await this.db
+            .from('discovery_registry')
+            .update({ priority_score: score })
+            .eq('id', record.id);
+        }
 
         metrics.totalScored++;
         if (score >= 60) {

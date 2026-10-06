@@ -87,16 +87,26 @@ $$;
 -- The previous migration mapped them to JobDiva, which has no public API.
 -- ============================================================================
 
-SELECT public.reconcile_company_source(
-    'artech',
-    'smartrecruiters',
-    'Artech',
-    'https://jobs.smartrecruiters.com/Artech'
-);
+DO $$
+BEGIN
+  PERFORM public.reconcile_company_source(
+      'artech',
+      'smartrecruiters',
+      'Artech',
+      'https://jobs.smartrecruiters.com/Artech'
+  );
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'reconcile_company_source(artech) skipped: %', SQLERRM;
+END $$;
 
-SELECT public.reconcile_company_source(
-    'cynet systems',
-    'workable',
-    'cynet-corp',
-    'https://apply.workable.com/cynet-corp'
-);
+DO $$
+BEGIN
+  PERFORM public.reconcile_company_source(
+      'cynet systems',
+      'workable',
+      'cynet-corp',
+      'https://apply.workable.com/cynet-corp'
+  );
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'reconcile_company_source(cynet) skipped: %', SQLERRM;
+END $$;

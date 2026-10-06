@@ -22,7 +22,8 @@ export class TechnologyCheckerVerifier {
    * then resolve to VERIFIED (or a terminal verification state).
    * Does NOT mix with job parsing failures.
    */
-  public async verifyPending(limit: number = 100): Promise<VerificationMetrics> {
+  public async verifyPending(options: { limit?: number; dryRun?: boolean } = {}): Promise<VerificationMetrics> {
+    const limit = options.limit || 100;
     const metrics: VerificationMetrics = {
       totalProcessed: 0,
       verified: 0,
@@ -50,25 +51,27 @@ export class TechnologyCheckerVerifier {
       return metrics;
     }
 
-    // Transition all claimed records to VERIFYING atomically
-    const claimedIds = records.map((r: any) => r.id);
-    await this.db
-      .from('discovery_registry')
-      .update({ discovery_status: 'VERIFYING' })
-      .in('id', claimedIds);
+    if (!options.dryRun) {
+      // Transition all claimed records to VERIFYING atomically
+      const claimedIds = records.map((r: any) => r.id);
+      await this.db
+        .from('discovery_registry')
+        .update({ discovery_status: 'VERIFYING' })
+        .in('id', claimedIds);
+    }
 
     for (const record of records) {
-      await this.verifyRecord(record, metrics);
+      await this.verifyRecord(record, metrics, options.dryRun);
     }
 
     return metrics;
   }
 
-  private async verifyRecord(record: any, metrics: VerificationMetrics) {
+  private async verifyRecord(record: any, metrics: VerificationMetrics, dryRun: boolean = false) {
     metrics.totalProcessed++;
     let verificationStatus = 'unresolved';
     let discoveryStatus = 'FAILED';
-    let detectionUrl: string | null = null;
+    let detectionUrl: string | null = record.detection_url || null;
     let confidence = 0;
     let adapterSlug: string | null = null;
     let adapterStatus: string | null = null;
@@ -77,13 +80,21 @@ export class TechnologyCheckerVerifier {
 
     try {
       const domain = record.domain;
-      const testUrls = [
+      const testUrls: string[] = [];
+      
+      // Issue 4: Prioritize TechnologyChecker detection URL/domain first
+      if (record.detection_url) {
+        testUrls.push(record.detection_url);
+      }
+      
+      // Then fallback guesses
+      testUrls.push(
         `https://${domain}/careers`,
         `https://${domain}/jobs`,
         `https://careers.${domain}`,
         `https://jobs.${domain}`,
-        `https://${domain}`,
-      ];
+        `https://${domain}`
+      );
 
       let html = '';
       let finalUrl = '';
@@ -182,20 +193,24 @@ export class TechnologyCheckerVerifier {
       logger.error(`Error verifying record ${record.id}`, { error: String(err) });
     }
 
-    // Update the record with verification result AND queue state
-    await this.db
-      .from('discovery_registry')
-      .update({
-        discovery_status: discoveryStatus,
-        verification_status: verificationStatus,
-        detection_url: detectionUrl,
-        discovery_confidence: confidence > 0 ? confidence : null,
-        adapter: adapterSlug,
-        adapter_status: adapterStatus,
-        board_identifier: boardIdentifier,
-        discovery_error: discoveryError,
-        last_verified_at: new Date().toISOString(),
-      })
-      .eq('id', record.id);
+    if (dryRun) {
+      logger.info(`[DryRun] Would update discovery record ${record.id} with status ${discoveryStatus}, verification ${verificationStatus}`);
+    } else {
+      // Update the record with verification result AND queue state
+      await this.db
+        .from('discovery_registry')
+        .update({
+          discovery_status: discoveryStatus,
+          verification_status: verificationStatus,
+          detection_url: detectionUrl,
+          discovery_confidence: confidence > 0 ? confidence : null,
+          adapter: adapterSlug,
+          adapter_status: adapterStatus,
+          board_identifier: boardIdentifier,
+          discovery_error: discoveryError,
+          last_verified_at: new Date().toISOString(),
+        })
+        .eq('id', record.id);
+    }
   }
 }

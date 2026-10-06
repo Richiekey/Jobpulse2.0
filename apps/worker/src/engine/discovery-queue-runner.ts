@@ -10,8 +10,8 @@ import { logger } from '@jobpulse/shared';
  * This is completely separate from the job ingestion pipeline.
  */
 export class DiscoveryQueueRunner {
-  public async runQueue(options: { limit?: number } = {}) {
-    logger.info(`Starting discovery queue processing (Limit: ${options.limit || 100})...`);
+  public async runQueue(options: { limit?: number; dryRun?: boolean } = {}) {
+    logger.info(`Starting discovery queue processing (Limit: ${options.limit || 100}, DryRun: ${!!options.dryRun})...`);
     
     const processor = new DiscoveryQueueProcessor(supabase);
     const scorer = new DiscoveryScorer(supabase);
@@ -19,22 +19,27 @@ export class DiscoveryQueueRunner {
 
     // Step 1: VERIFIED → ADAPTER_RESOLVED
     logger.info('[Queue] Phase 5: Resolving adapters for VERIFIED records...');
-    const adapterMetrics = await processor.resolveAdapters(limit);
+    const adapterMetrics = await processor.resolveAdapters({ limit, dryRun: options.dryRun });
     logger.info('[Queue] Adapter resolution complete.', { metrics: adapterMetrics });
 
-    // Step 2: ADAPTER_RESOLVED → CRAWL_QUEUED (promote to production company_sources)
+    // Step 2: ADAPTER_RESOLVED → CRAWL_QUEUED (Queuing only)
     logger.info('[Queue] Phase 6: Enqueuing ADAPTER_RESOLVED records for crawl...');
-    const enqueueMetrics = await processor.enqueueCrawl(limit);
+    const enqueueMetrics = await processor.enqueueCrawl({ limit, dryRun: options.dryRun });
     logger.info('[Queue] Crawl enqueue complete.', { metrics: enqueueMetrics });
 
-    // Step 3: CRAWL_QUEUED → SUCCESS/EMPTY/FAILED (trial crawl)
+    // Step 3: CRAWL_QUEUED → TRIAL_CRAWLING → SUCCESS/EMPTY/FAILED (trial crawl)
     logger.info('[Queue] Phase 6: Running trial crawls for CRAWL_QUEUED records...');
-    const crawlMetrics = await processor.trialCrawl(Math.min(limit, 20)); // Cap trial crawls
+    const crawlMetrics = await processor.trialCrawl({ limit: Math.min(limit, 20), dryRun: options.dryRun }); // Cap trial crawls
     logger.info('[Queue] Trial crawl complete.', { metrics: crawlMetrics });
+
+    // Step 3.5: SUCCESS → PROMOTED (promote to production company_sources)
+    logger.info('[Queue] Phase 6: Promoting SUCCESS records to production...');
+    const promotionMetrics = await processor.promoteSuccessfulDiscovery({ limit, dryRun: options.dryRun });
+    logger.info('[Queue] Promotion complete.', { metrics: promotionMetrics });
 
     // Step 4: Phase 7 — Refresh priority scores
     logger.info('[Queue] Phase 7: Refreshing priority scores...');
-    const scoringMetrics = await scorer.scoreAll();
+    const scoringMetrics = await scorer.scoreAll({ dryRun: options.dryRun });
     logger.info('[Queue] Scoring complete.', { metrics: scoringMetrics });
 
     // Aggregate summary
@@ -45,7 +50,8 @@ export class DiscoveryQueueRunner {
       crawlSuccess: crawlMetrics.crawlSuccess,
       crawlEmpty: crawlMetrics.crawlEmpty,
       crawlFailed: crawlMetrics.crawlFailed + enqueueMetrics.crawlFailed,
-      totalErrors: adapterMetrics.errors + enqueueMetrics.errors + crawlMetrics.errors,
+      promoted: promotionMetrics.promoted,
+      totalErrors: adapterMetrics.errors + enqueueMetrics.errors + crawlMetrics.errors + promotionMetrics.errors,
       scoring: scoringMetrics,
     };
 

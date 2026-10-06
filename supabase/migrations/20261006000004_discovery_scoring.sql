@@ -138,6 +138,7 @@ GRANT EXECUTE ON FUNCTION public.compute_discovery_priority(text, text, text, in
 GRANT EXECUTE ON FUNCTION public.refresh_discovery_scores() TO service_role;
 
 -- Enhanced funnel metrics RPC with priority breakdown
+DROP FUNCTION IF EXISTS public.get_discovery_funnel_metrics();
 CREATE OR REPLACE FUNCTION public.get_discovery_funnel_metrics()
 RETURNS TABLE (
   ats_provider text,

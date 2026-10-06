@@ -3,9 +3,21 @@
 -- Description: Subscriptions, plans, payments, and webhook idempotency.
 -- ============================================================================
 
-CREATE TYPE subscription_status_enum AS ENUM ('active', 'non_renewing', 'attention', 'cancelled', 'completed');
-CREATE TYPE payment_status_enum AS ENUM ('pending', 'success', 'failed');
-CREATE TYPE webhook_status_enum AS ENUM ('pending', 'processed', 'failed');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status_enum') THEN
+    CREATE TYPE subscription_status_enum AS ENUM ('active', 'non_renewing', 'attention', 'cancelled', 'completed');
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status_enum') THEN
+    CREATE TYPE payment_status_enum AS ENUM ('pending', 'success', 'failed');
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'webhook_status_enum') THEN
+    CREATE TYPE webhook_status_enum AS ENUM ('pending', 'processed', 'failed');
+  END IF;
+END $$;
 
 -- 1. BILLING PLANS
 CREATE TABLE IF NOT EXISTS public.billing_plans (
@@ -92,19 +104,23 @@ ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.billing_webhook_events ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public can view active billing plans" ON public.billing_plans;
 CREATE POLICY "Public can view active billing plans" 
     ON public.billing_plans FOR SELECT 
     USING (is_active = true OR public.is_admin());
 
+DROP POLICY IF EXISTS "Users can view their own subscriptions" ON public.subscriptions;
 CREATE POLICY "Users can view their own subscriptions" 
     ON public.subscriptions FOR SELECT 
     USING (auth.uid() = user_id OR public.is_admin());
 
+DROP POLICY IF EXISTS "Users can view their own payments" ON public.payments;
 CREATE POLICY "Users can view their own payments" 
     ON public.payments FOR SELECT 
     USING (auth.uid() = user_id OR public.is_admin());
 
 -- Webhook events are entirely restricted to service_role and admin
+DROP POLICY IF EXISTS "Admins can view webhook events" ON public.billing_webhook_events;
 CREATE POLICY "Admins can view webhook events" 
     ON public.billing_webhook_events FOR SELECT 
     USING (public.is_admin());

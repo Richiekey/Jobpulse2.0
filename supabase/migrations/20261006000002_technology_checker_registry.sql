@@ -1,9 +1,13 @@
-CREATE TYPE verification_status_enum AS ENUM (
-  'pending',
-  'verified',
-  'failed',
-  'ignored'
-);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_status_enum') THEN
+    CREATE TYPE verification_status_enum AS ENUM (
+      'pending',
+      'verified',
+      'failed',
+      'ignored'
+    );
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.discovery_registry (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

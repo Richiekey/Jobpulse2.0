@@ -16,10 +16,10 @@ export class FullSyncRunner {
     const discoveryMetrics = await discoveryRunner.runDiscovery({ dryRun: options.dryRun });
     
     // 2. Verification
-    const verificationMetrics = await verificationRunner.runVerification({ limit: options.limit });
+    const verificationMetrics = await verificationRunner.runVerification({ limit: options.limit, dryRun: options.dryRun });
 
     // 3. Queue Processing (Adapters & Trial Crawls) & Scoring
-    const queueMetrics = await queueRunner.runQueue({ limit: options.limit });
+    const queueMetrics = await queueRunner.runQueue({ limit: options.limit, dryRun: options.dryRun });
 
     // 4. Observability Report
     this.printSyncReport({
@@ -43,7 +43,7 @@ export class FullSyncRunner {
     logger.info(`New Companies:            ${metrics.discovery.companiesInserted || 0}`);
     logger.info(`Existing Companies:       ${(metrics.discovery.companiesFetched || 0) - (metrics.discovery.companiesInserted || 0)}`);
     logger.info(`Duplicates/Skipped:       ${metrics.discovery.domainsRemoved || 0} (Removed/Stale)`);
-    logger.info(`API Credits Consumed:     ${Math.ceil((metrics.discovery.companiesFetched || 0) / 100)}`);
+    logger.info(`API Credits Consumed:     ${metrics.discovery.apiRequests || 0}`);
     logger.info(`API Errors:               ${metrics.discovery.errors || 0}`);
     logger.info(`Pagination Failures:      ${metrics.discovery.errors || 0}`);
 
@@ -57,6 +57,7 @@ export class FullSyncRunner {
     // Queue / Adapters
     logger.info(`Adapters Resolved:        ${metrics.queue.adaptersResolved || 0}`);
     logger.info(`Crawl Candidates Created: ${metrics.queue.crawlQueued || 0}`);
+    logger.info(`Promoted Sources:         ${metrics.queue.promoted || 0}`);
     
     logger.info('==================================================');
   }

@@ -10,6 +10,7 @@ export interface DiscoveryOptions {
 
 export interface DiscoveryMetrics {
   technologiesResolved: number;
+  apiRequests: number;
   companiesFetched: number;
   atsCandidatesDetected: number;
   sourcesVerified: number;
@@ -32,6 +33,7 @@ export class TechnologyCheckerDiscovery {
   public async discover(technologyNames: string[], options: DiscoveryOptions = {}): Promise<DiscoveryMetrics> {
     const metrics: DiscoveryMetrics = {
       technologiesResolved: 0,
+      apiRequests: 0,
       companiesFetched: 0,
       atsCandidatesDetected: 0,
       sourcesVerified: 0,
@@ -45,6 +47,7 @@ export class TechnologyCheckerDiscovery {
     for (const techName of technologyNames) {
       try {
         const id = await this.client.getTechnologyId(techName);
+        metrics.apiRequests++;
         if (!id) {
           logger.warn(`TechnologyChecker: Technology '${techName}' not found`);
           continue;
@@ -67,6 +70,7 @@ export class TechnologyCheckerDiscovery {
   public async discoverFromSignals(options: DiscoveryOptions = {}): Promise<DiscoveryMetrics> {
     const metrics: DiscoveryMetrics = {
       technologiesResolved: 0,
+      apiRequests: 0,
       companiesFetched: 0,
       atsCandidatesDetected: 0,
       sourcesVerified: 0,
@@ -88,6 +92,7 @@ export class TechnologyCheckerDiscovery {
       // 1. Process adoptions
       while (hasMore) {
         const res = await this.client.getAdoptionSignals({ limit, offset, days });
+        metrics.apiRequests++;
         metrics.signalsProcessed += res.signals.length;
 
         for (const signal of res.signals) {
@@ -122,6 +127,7 @@ export class TechnologyCheckerDiscovery {
 
       while (hasMore) {
         const res = await this.client.getChurnSignals({ limit, offset, days });
+        metrics.apiRequests++;
         metrics.signalsProcessed += res.signals.length;
 
         for (const signal of res.signals) {
@@ -184,11 +190,23 @@ export class TechnologyCheckerDiscovery {
     const limit = 100;
     let offset = 0;
     let hasMore = true;
+    let syncSuccess = true;
+    let syncErrorMsg = '';
     const fetchedDomains = new Set<string>();
+
+    if (!options.dryRun) {
+      await this.db.from('discovery_sync_state').upsert({
+        ats_provider: normalizedTech,
+        technology_checker_id: techId,
+        sync_status: 'running',
+        sync_error: null,
+      }, { onConflict: 'ats_provider' });
+    }
 
     while (hasMore) {
       try {
         const res = await this.client.getCompaniesByTechnology(techId, { limit, offset });
+        metrics.apiRequests++;
         const companies = res.companies;
         metrics.companiesFetched += companies.length;
 
@@ -203,53 +221,71 @@ export class TechnologyCheckerDiscovery {
         offset += limit;
       } catch (err) {
         metrics.errors++;
-        logger.error(`Error fetching companies for tech ${techName} (offset ${offset})`, { error: String(err) });
+        syncSuccess = false;
+        syncErrorMsg = err instanceof Error ? err.message : String(err);
+        logger.error(`Error fetching companies for tech ${techName} (offset ${offset})`, { error: syncErrorMsg });
         break; 
       }
     }
 
-    if (!options.dryRun && fetchedDomains.size > 0) {
-      // Detect removed domains (present in DB but not in API fetch)
-      const { data: dbRecords } = await this.db
-        .from('discovery_registry')
-        .select('id, domain')
-        .eq('ats_provider', normalizedTech);
+    if (!options.dryRun) {
+      if (syncSuccess && fetchedDomains.size > 0) {
+        // Detect removed domains ONLY IF FULL SYNC COMPLETED SAFELY
+        const { data: dbRecords } = await this.db
+          .from('discovery_registry')
+          .select('id, domain')
+          .eq('ats_provider', normalizedTech);
 
-      if (dbRecords && dbRecords.length > 0) {
-        const removedIds: string[] = [];
-        for (const record of dbRecords) {
-          if (!fetchedDomains.has(record.domain)) {
-            removedIds.push(record.id);
+        if (dbRecords && dbRecords.length > 0) {
+          const removedIds: string[] = [];
+          for (const record of dbRecords) {
+            if (!fetchedDomains.has(record.domain)) {
+              removedIds.push(record.id);
+            }
+          }
+
+          if (removedIds.length > 0) {
+            // Mark as stale/failed
+            await this.db
+              .from('discovery_registry')
+              .update({
+                discovery_status: 'FAILED',
+                verification_status: 'stale',
+                discovery_error: 'Domain removed from TechnologyChecker dataset in latest sync'
+              })
+              .in('id', removedIds);
+            
+            metrics.domainsRemoved += removedIds.length;
+            logger.info(`Marked ${removedIds.length} domains as stale for ${techName}`);
           }
         }
 
-        if (removedIds.length > 0) {
-          // Mark as stale/failed
-          await this.db
-            .from('discovery_registry')
-            .update({
-              discovery_status: 'FAILED',
-              verification_status: 'stale',
-              discovery_error: 'Domain removed from TechnologyChecker dataset in latest sync'
-            })
-            .in('id', removedIds);
-          
-          metrics.domainsRemoved += removedIds.length;
-          logger.info(`Marked ${removedIds.length} domains as stale for ${techName}`);
-        }
+        // Update sync state
+        await this.db
+          .from('discovery_sync_state')
+          .upsert({
+            ats_provider: normalizedTech,
+            technology_checker_id: techId,
+            last_sync_at: new Date().toISOString(),
+            last_full_sync_at: new Date().toISOString(), // Safe to update because full sync succeeded
+            total_companies: fetchedDomains.size,
+            sync_status: 'success',
+            sync_error: null,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'ats_provider' });
+      } else if (!syncSuccess) {
+        // Abort reconciliation! Sync failed!
+        logger.warn(`Aborting stale reconciliation for ${techName} due to partial sync failure.`);
+        await this.db
+          .from('discovery_sync_state')
+          .upsert({
+            ats_provider: normalizedTech,
+            technology_checker_id: techId,
+            sync_status: 'failed',
+            sync_error: syncErrorMsg,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'ats_provider' });
       }
-
-      // Update sync state
-      await this.db
-        .from('discovery_sync_state')
-        .upsert({
-          ats_provider: normalizedTech,
-          technology_checker_id: techId,
-          last_sync_at: new Date().toISOString(),
-          last_full_sync_at: isInitialSeed ? new Date().toISOString() : syncState?.last_full_sync_at,
-          total_companies: fetchedDomains.size,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'ats_provider' });
     }
   }
 

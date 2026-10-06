@@ -3,13 +3,13 @@ import { supabase } from '../db.js';
 import { logger } from '@jobpulse/shared';
 
 export class VerificationRunner {
-  public async runVerification(options: { limit?: number } = {}) {
-    logger.info(`Starting ATS verification for pending discovery registry candidates (Limit: ${options.limit || 100})...`);
+  public async runVerification(options: { limit?: number; dryRun?: boolean } = {}) {
+    logger.info(`Starting ATS verification for pending discovery registry candidates (Limit: ${options.limit || 100}, DryRun: ${!!options.dryRun})...`);
     
     const verifier = new TechnologyCheckerVerifier(supabase);
 
     try {
-      const metrics = await verifier.verifyPending(options.limit || 100);
+      const metrics = await verifier.verifyPending({ limit: options.limit || 100, dryRun: options.dryRun });
       
       logger.info('Verification run completed.', {
         metrics
