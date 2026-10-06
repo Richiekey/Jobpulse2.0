@@ -53,4 +53,46 @@ describe('AtsDirectoryProvider', () => {
     expect(slugs).toContain('figma');
     expect(slugs).not.toContain('embed');
   });
+
+  it('buildCandidate resolves actual domains via fetch and does not invent them', async () => {
+    const mockHttpClient = {
+      get: async () => ({
+        status: 200,
+        data: '<html><body><a href="https://realcompany.io">Back to home</a></body></html>'
+      })
+    } as any;
+
+    const provider = new AtsDirectoryProvider(mockHttpClient);
+    const target = {
+      atsType: 'greenhouse',
+      sitemapUrl: 'https://boards.greenhouse.io/sitemap.xml',
+      slugPattern: /^https?:\/\/boards\.greenhouse\.io\/([a-zA-Z0-9_-]+)/i,
+      boardUrlTemplate: (slug: string) => `https://boards.greenhouse.io/${slug}`,
+    };
+
+    const candidate = await provider.buildCandidate('realcompany', target);
+    expect(candidate).not.toBeNull();
+    expect(candidate!.company_domain).toBe('realcompany.io');
+    expect(candidate!.company_domain).not.toBe('realcompany.com');
+  });
+
+  it('buildCandidate returns null if domain cannot be resolved', async () => {
+    const mockHttpClient = {
+      get: async () => ({
+        status: 404,
+        data: 'Not found'
+      })
+    } as any;
+
+    const provider = new AtsDirectoryProvider(mockHttpClient);
+    const target = {
+      atsType: 'greenhouse',
+      sitemapUrl: 'https://boards.greenhouse.io/sitemap.xml',
+      slugPattern: /^https?:\/\/boards\.greenhouse\.io\/([a-zA-Z0-9_-]+)/i,
+      boardUrlTemplate: (slug: string) => `https://boards.greenhouse.io/${slug}`,
+    };
+
+    const candidate = await provider.buildCandidate('ghost', target);
+    expect(candidate).toBeNull();
+  });
 });

@@ -13,6 +13,10 @@ ALTER TABLE public.discovery_registry
 ALTER TABLE public.discovery_registry
   ADD COLUMN IF NOT EXISTS careers_url text;
 
+-- Job evidence tracking (array of job URLs)
+ALTER TABLE public.discovery_registry
+  ADD COLUMN IF NOT EXISTS job_evidence jsonb DEFAULT '[]'::jsonb;
+
 -- Job evidence count (proof of active hiring)
 ALTER TABLE public.discovery_registry
   ADD COLUMN IF NOT EXISTS job_evidence_count integer DEFAULT 0;

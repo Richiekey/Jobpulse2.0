@@ -3,6 +3,13 @@ import { logger } from '@jobpulse/shared';
 import { ATSDetector } from '@jobpulse/ats';
 import { DiscoveryCandidate, DiscoveryEvidence } from './types.js';
 import { normalizeUrl } from './normalization.js';
+import { DiscoveryRateLimiter, DomainCircuitBreaker } from './safety.js';
+
+function isLikelyCareersPage(html: string): boolean {
+  if (!html) return false;
+  const lowerHtml = html.toLowerCase();
+  return /(careers|jobs|open positions|openings|join us|work with us|ats|boards\.)/i.test(lowerHtml);
+}
 
 const CANDIDATE_PATHS = [
   '/careers',
@@ -19,50 +26,72 @@ const CANDIDATE_PATHS = [
  */
 export async function discoverCareersUrl(
   domain: string,
-  httpClient?: HttpClient
+  httpClient?: HttpClient,
+  rateLimiter?: DiscoveryRateLimiter,
+  circuitBreaker?: DomainCircuitBreaker
 ): Promise<string | null> {
   const client = httpClient || new HttpClient({ timeoutMs: 6000 });
   const cleanDomain = domain.toLowerCase().trim();
 
+  if (circuitBreaker?.isOpen(cleanDomain)) {
+    logger.warn(`Circuit breaker open for ${cleanDomain}, skipping careers discovery.`);
+    return null;
+  }
+
   // 1. Try known paths on the primary domain
   for (const path of CANDIDATE_PATHS) {
     const candidateUrl = `https://${cleanDomain}${path}`;
-    try {
-      const res = await client.get<string>(candidateUrl, {
-        maxSizeBytes: 64 * 1024,
-        maxRetries: 0,
-        timeoutMs: 3500,
-      });
+      if (rateLimiter) await rateLimiter.acquire(cleanDomain);
+      try {
+        const res = await client.get<string>(candidateUrl, {
+          maxSizeBytes: 64 * 1024,
+          maxRetries: 0,
+          timeoutMs: 3500,
+        });
 
-      if (res.status >= 200 && res.status < 400) {
-        return normalizeUrl(res.url) || candidateUrl;
+        if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
+          if (isLikelyCareersPage(res.data)) {
+            circuitBreaker?.recordSuccess(cleanDomain);
+            return normalizeUrl(res.url) || candidateUrl;
+          }
+        }
+      } catch {
+        circuitBreaker?.recordFailure(cleanDomain);
+        if (circuitBreaker?.isOpen(cleanDomain)) return null;
+      } finally {
+        if (rateLimiter) rateLimiter.release(cleanDomain);
       }
-    } catch {
-      // Continue trying next path
-    }
   }
 
   // 2. Try common subdomains
   const subdomains = [`careers.${cleanDomain}`, `jobs.${cleanDomain}`];
   for (const sub of subdomains) {
     const candidateUrl = `https://${sub}`;
-    try {
-      const res = await client.get<string>(candidateUrl, {
-        maxSizeBytes: 64 * 1024,
-        maxRetries: 0,
-        timeoutMs: 3500,
-      });
+      if (rateLimiter) await rateLimiter.acquire(cleanDomain);
+      try {
+        const res = await client.get<string>(candidateUrl, {
+          maxSizeBytes: 64 * 1024,
+          maxRetries: 0,
+          timeoutMs: 3500,
+        });
 
-      if (res.status >= 200 && res.status < 400) {
-        return normalizeUrl(res.url) || candidateUrl;
+        if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
+          if (isLikelyCareersPage(res.data)) {
+            circuitBreaker?.recordSuccess(cleanDomain);
+            return normalizeUrl(res.url) || candidateUrl;
+          }
+        }
+      } catch {
+        circuitBreaker?.recordFailure(cleanDomain);
+        if (circuitBreaker?.isOpen(cleanDomain)) return null;
+      } finally {
+        if (rateLimiter) rateLimiter.release(cleanDomain);
       }
-    } catch {
-      // Continue
-    }
   }
 
   // 3. Homepage link scan fallback
   try {
+    if (rateLimiter) await rateLimiter.acquire(cleanDomain);
     const homeUrl = `https://${cleanDomain}`;
     const res = await client.get<string>(homeUrl, {
       maxSizeBytes: 128 * 1024,
@@ -77,12 +106,15 @@ export async function discoverCareersUrl(
           matched = `https://${cleanDomain}${matched}`;
         }
         if (matched.startsWith('http://') || matched.startsWith('https://')) {
+          circuitBreaker?.recordSuccess(cleanDomain);
           return normalizeUrl(matched);
         }
       }
     }
   } catch {
-    // Homepage unreachable
+    circuitBreaker?.recordFailure(cleanDomain);
+  } finally {
+    if (rateLimiter) rateLimiter.release(cleanDomain);
   }
 
   return null;
@@ -96,6 +128,8 @@ export async function enrichCandidate(
   options: {
     httpClient?: HttpClient;
     discoverCareers?: boolean;
+    rateLimiter?: DiscoveryRateLimiter;
+    circuitBreaker?: DomainCircuitBreaker;
   } = {}
 ): Promise<DiscoveryCandidate> {
   const client = options.httpClient || new HttpClient({ timeoutMs: 8000 });
@@ -109,7 +143,7 @@ export async function enrichCandidate(
   // 1. Discover careers page if absent and requested
   if (!careersUrl && options.discoverCareers !== false) {
     try {
-      const found = await discoverCareersUrl(candidate.company_domain, client);
+      const found = await discoverCareersUrl(candidate.company_domain, client, options.rateLimiter, options.circuitBreaker);
       if (found) {
         careersUrl = found;
         evidence.push({
@@ -129,6 +163,7 @@ export async function enrichCandidate(
   // 2. ATS Detection if ATS not yet identified
   if ((!detectedAts || detectedAts === 'UNKNOWN') && careersUrl) {
     try {
+      if (options.rateLimiter) await options.rateLimiter.acquire(candidate.company_domain);
       const res = await client.get<string>(careersUrl, {
         maxSizeBytes: 128 * 1024,
         maxRetries: 1,
@@ -153,10 +188,14 @@ export async function enrichCandidate(
           },
         });
       }
+      options.circuitBreaker?.recordSuccess(candidate.company_domain);
     } catch (err) {
+      options.circuitBreaker?.recordFailure(candidate.company_domain);
       logger.debug(`Failed ATS detection for ${candidate.company_domain}`, {
         error: String(err),
       });
+    } finally {
+      if (options.rateLimiter) options.rateLimiter.release(candidate.company_domain);
     }
   }
 
@@ -172,12 +211,17 @@ export async function enrichCandidate(
 }
 
 export class DefaultDiscoveryEnricher {
+  private rateLimiter = new DiscoveryRateLimiter();
+  private circuitBreaker = new DomainCircuitBreaker();
+
   constructor(private readonly httpClient?: HttpClient) {}
 
   async enrich(candidate: DiscoveryCandidate): Promise<DiscoveryCandidate> {
     return enrichCandidate(candidate, {
       httpClient: this.httpClient,
       discoverCareers: true,
+      rateLimiter: this.rateLimiter,
+      circuitBreaker: this.circuitBreaker,
     });
   }
 }

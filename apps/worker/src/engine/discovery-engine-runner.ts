@@ -28,8 +28,7 @@ export class DiscoveryEngineRunner {
       limit: options.limit || 'unlimited',
     });
 
-    const dbStore = new SupabaseStateStore(supabase);
-    const store = options.store || (isDryRun ? new InMemoryStateStore(dbStore) : dbStore);
+    const store = options.store || (isDryRun ? new InMemoryStateStore() : new SupabaseStateStore(supabase));
 
     const providers = this.resolveProviders(options.provider);
     const enricher = new DefaultDiscoveryEnricher();
@@ -63,7 +62,10 @@ export class DiscoveryEngineRunner {
 
     if (providerName) {
       const filtered = all.filter((p) => p.name.toLowerCase() === providerName.toLowerCase());
-      if (filtered.length > 0) return filtered;
+      if (filtered.length === 0) {
+        throw new Error(`Unknown discovery provider: ${providerName}`);
+      }
+      return filtered;
     }
     return all;
   }

@@ -114,9 +114,7 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
     }
 
     // If no primary company domain found from plain links, but ATS found:
-    if (!primaryCompanyDomain && boardIdentifier) {
-      primaryCompanyDomain = `${boardIdentifier}.com`;
-    }
+    // We strictly do NOT fallback to `${boardIdentifier}.com` to avoid fake domains.
 
     if (!primaryCompanyDomain) return null;
 

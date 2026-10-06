@@ -60,4 +60,18 @@ describe('HackerNewsHiringProvider', () => {
 
     expect(provider.parseComment(shortHit)).toBeNull();
   });
+
+  it('does not invent fake domains from ATS boards', () => {
+    const provider = new HackerNewsHiringProvider();
+
+    const shortHit = {
+      objectID: '222',
+      created_at: '2026-10-06T12:00:00Z',
+      // Contains an ATS link but NO primary company website link
+      comment_text: 'Apply here: https://boards.greenhouse.io/myunknownco',
+    };
+
+    const candidate = provider.parseComment(shortHit);
+    expect(candidate).toBeNull();
+  });
 });

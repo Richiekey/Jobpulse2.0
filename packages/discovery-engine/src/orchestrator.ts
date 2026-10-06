@@ -33,7 +33,8 @@ export class DiscoveryOrchestrator {
     // 1. Resolve active providers
     let activeProviders = this.providers;
     if (options.provider) {
-      activeProviders = this.providers.filter((p) => p.name === options.provider);
+      const normalizedReq = options.provider.toLowerCase();
+      activeProviders = this.providers.filter((p) => p.name.toLowerCase() === normalizedReq);
       if (activeProviders.length === 0) {
         logger.warn(`No discovery provider matched name: ${options.provider}`);
         metrics.duration_ms = Date.now() - startTime;
@@ -87,18 +88,16 @@ export class DiscoveryOrchestrator {
 
     // 5. Enrichment (Careers Discovery & ATS Detection) if enricher configured
     if (this.enricher) {
-      const enrichedList: DiscoveryCandidate[] = [];
-      for (const candidate of uniqueCandidates) {
+      const enrichPromises = uniqueCandidates.map(async (candidate) => {
         try {
-          const enriched = await this.enricher.enrich(candidate);
-          enrichedList.push(enriched);
+          return await this.enricher!.enrich(candidate);
         } catch (err) {
           metrics.errors++;
           logger.warn(`Enrichment failed for ${candidate.company_domain}:`, { error: String(err) });
-          enrichedList.push(candidate);
+          return candidate;
         }
-      }
-      uniqueCandidates = enrichedList;
+      });
+      uniqueCandidates = await Promise.all(enrichPromises);
     }
 
     // 6. Scoring if scorer configured
@@ -146,16 +145,26 @@ export class DiscoveryOrchestrator {
           const existingEvidence: any[] = Array.isArray(existing.discovery_evidence)
             ? existing.discovery_evidence
             : [];
-          const mergedEvidence = [...existingEvidence, ...candidate.evidence];
+          const evidenceKey = (e: any) => `${e.provider}:${e.evidence_type}:${e.url || ''}`;
+          const evidenceMap = new Map();
+          for (const ev of existingEvidence) evidenceMap.set(evidenceKey(ev), ev);
+          for (const ev of candidate.evidence) evidenceMap.set(evidenceKey(ev), ev);
+          const mergedEvidence = Array.from(evidenceMap.values());
 
-          const currentJobCount = typeof existing.job_evidence_count === 'number' ? existing.job_evidence_count : 0;
-          const newJobCount = currentJobCount + candidate.job_evidence.length;
+          const existingJobs: any[] = Array.isArray(existing.job_evidence)
+            ? existing.job_evidence
+            : [];
+          const jobMap = new Map();
+          for (const j of existingJobs) jobMap.set(j.job_url, j);
+          for (const j of candidate.job_evidence) jobMap.set(j.job_url, j);
+          const mergedJobs = Array.from(jobMap.values());
 
           const updatePayload: Record<string, any> = {
             last_seen_at: now,
             discovery_providers: mergedProviders,
             discovery_evidence: mergedEvidence,
-            job_evidence_count: newJobCount,
+            job_evidence: mergedJobs,
+            job_evidence_count: mergedJobs.length,
           };
 
           if (candidate.detected_ats && (!existing.ats_provider || existing.ats_provider === 'UNKNOWN')) {
@@ -187,6 +196,7 @@ export class DiscoveryOrchestrator {
             discovery_source: candidate.discovered_from,
             discovery_providers: providerList,
             discovery_evidence: candidate.evidence,
+            job_evidence: candidate.job_evidence,
             careers_url: candidate.careers_url ?? null,
             detection_url: candidate.ats_url ?? candidate.careers_url ?? candidate.source_url ?? null,
             ats_provider: candidate.detected_ats ?? 'UNKNOWN',

@@ -86,6 +86,32 @@ describe('Persistence & Idempotency', () => {
     expect(updated.discovery_providers).toContain('test-p1');
     expect(updated.discovery_providers).toContain('test-p2');
     expect(updated.discovery_evidence!.length).toBe(2);
-    expect(updated.job_evidence_count).toBe(2);
+    expect(updated.job_evidence_count).toBe(1); // Deduped based on job_url
+  });
+
+  it('completely deduplicates identical repeated runs', async () => {
+    const store = new InMemoryStateStore();
+
+    const candidate: DiscoveryCandidate = {
+      company_name: 'Acme',
+      company_domain: 'acme.corp',
+      job_evidence: [{ job_url: 'https://acme.corp/job/1', job_title: 'Engineer', discovered_at: 'now', source_provider: 'p' }],
+      discovered_from: 'p',
+      discovered_at: 'now',
+      evidence: [{ provider: 'p', evidence_type: 'post', url: 'https://acme.corp', timestamp: 'now' }],
+      confidence: 1,
+    };
+
+    const mockProvider: DiscoveryProvider = { name: 'p', discover: async () => [candidate] };
+    const orchestrator = new DiscoveryOrchestrator([mockProvider], store);
+
+    await orchestrator.run();
+    await orchestrator.run();
+    await orchestrator.run();
+
+    const stored = await store.findRecord({ domain: 'acme.corp' });
+    expect(stored!.discovery_evidence.length).toBe(1);
+    expect(stored!.job_evidence.length).toBe(1);
+    expect(stored!.job_evidence_count).toBe(1);
   });
 });
