@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HttpClient } from '@jobpulse/shared';
 import { HackerNewsHiringProvider } from '../../src/providers/hn-hiring.provider.js';
+import { DiscoveryRateLimiter, DomainCircuitBreaker } from '../../src/safety.js';
 
 describe('HackerNewsHiringProvider', () => {
   it('parses typical HN hiring comments correctly', async () => {
@@ -103,5 +104,34 @@ describe('HackerNewsHiringProvider', () => {
     const candidate = await provider.parseComment(hit);
     expect(candidate).not.toBeNull();
     expect(candidate!.company_domain).toBe('actual-company.com');
+  });
+
+  it('routes ATS board resolution through rate limiter and circuit breaker', async () => {
+    let callCount = 0;
+    const mockHttpClient = {
+      get: async () => {
+        callCount++;
+        throw new Error('Timeout');
+      }
+    } as any;
+
+    const provider = new HackerNewsHiringProvider(mockHttpClient);
+    const rateLimiter = new DiscoveryRateLimiter();
+    const circuitBreaker = new DomainCircuitBreaker({ failureThreshold: 2, resetAfterMs: 5000 });
+    const options = { rateLimiter, circuitBreaker };
+
+    const hit = {
+      objectID: '555',
+      created_at: '2026-10-06T12:00:00Z',
+      comment_text: '<p>Software Engineer. Apply: https://boards.greenhouse.io/myco</p>',
+    };
+
+    await provider.parseComment(hit, options);
+    await provider.parseComment(hit, options);
+    // 3rd time should be short-circuited
+    await provider.parseComment(hit, options);
+
+    expect(callCount).toBe(2);
+    expect(circuitBreaker.isOpen('boards.greenhouse.io')).toBe(true);
   });
 });

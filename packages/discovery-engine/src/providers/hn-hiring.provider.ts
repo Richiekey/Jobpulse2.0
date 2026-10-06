@@ -3,7 +3,7 @@ import { logger } from '@jobpulse/shared';
 import { ATSDetector } from '@jobpulse/ats';
 import { DiscoveryCandidate, JobEvidence, DiscoveryEvidence } from '../types.js';
 import { DiscoveryOptions, DiscoveryProvider } from './provider.interface.js';
-import { normalizeDomain, normalizeUrl } from '../normalization.js';
+import { normalizeDomain, normalizeUrl, isGenericDomain, extractCorporateDomainFromHtml } from '../normalization.js';
 
 interface AlgoliaHit {
   objectID: string;
@@ -62,7 +62,7 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
           if (candidates.length >= limit) break;
           if (!hit.comment_text) continue;
 
-          const candidate = await this.parseComment(hit);
+          const candidate = await this.parseComment(hit, options);
           if (candidate) {
             candidates.push(candidate);
           }
@@ -78,7 +78,7 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
   /**
    * Parses an HN hiring comment into a DiscoveryCandidate if viable.
    */
-  public async parseComment(hit: AlgoliaHit): Promise<DiscoveryCandidate | null> {
+  public async parseComment(hit: AlgoliaHit, options: DiscoveryOptions = {}): Promise<DiscoveryCandidate | null> {
     const rawText = hit.comment_text;
     if (!rawText || rawText.length < 20) return null;
 
@@ -102,7 +102,7 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
       } else {
         const domain = normalizeDomain(url);
         // Exclude generic social/hosting domains
-        if (domain && !this.isGenericDomain(domain)) {
+        if (domain && !isGenericDomain(domain)) {
           if (!primaryCompanyDomain) {
             primaryCompanyDomain = domain;
           }
@@ -115,22 +115,24 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
 
     // If no primary company domain found from plain links, but ATS found:
     if (!primaryCompanyDomain && atsUrl && boardIdentifier) {
-      try {
-        const res = await this.httpClient.get<string>(atsUrl, { maxRetries: 0, timeoutMs: 3000 });
-        if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
-          // Look for a link that is NOT an ATS link to find the company website
-          const hrefRegex = /href=["'](https?:\/\/(?!boards\.greenhouse\.io|jobs\.lever\.co|jobs\.ashbyhq\.com|apply\.workable\.com)[^"']+)["']/i;
-          const match = res.data.match(hrefRegex);
-          if (match && match[1]) {
-            primaryCompanyDomain = normalizeDomain(match[1]);
+      const boardDomain = new URL(atsUrl).hostname;
+      if (!options.circuitBreaker?.isOpen(boardDomain)) {
+        try {
+          if (options.rateLimiter) await options.rateLimiter.acquire(boardDomain);
+          const res = await this.httpClient.get<string>(atsUrl, { maxRetries: 0, timeoutMs: 3000 });
+          if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
+            options.circuitBreaker?.recordSuccess(boardDomain);
+            primaryCompanyDomain = extractCorporateDomainFromHtml(res.data);
           }
+        } catch (err) {
+          options.circuitBreaker?.recordFailure(boardDomain);
+        } finally {
+          if (options.rateLimiter) options.rateLimiter.release(boardDomain);
         }
-      } catch (err) {
-        // ignore fetch failures for ATS domain resolution
       }
     }
 
-    if (!primaryCompanyDomain || this.isGenericDomain(primaryCompanyDomain)) return null;
+    if (!primaryCompanyDomain || isGenericDomain(primaryCompanyDomain)) return null;
 
     // Extract company name and roles
     const { companyName, jobTitle } = this.extractNameAndJobTitle(rawText, primaryCompanyDomain);
@@ -262,33 +264,5 @@ export class HackerNewsHiringProvider implements DiscoveryProvider {
     return { companyName, jobTitle };
   }
 
-  private isGenericDomain(domain: string): boolean {
-    const generic = [
-      'ycombinator.com',
-      'github.com',
-      'google.com',
-      'twitter.com',
-      'x.com',
-      'linkedin.com',
-      'youtube.com',
-      'medium.com',
-      'substack.com',
-      'bit.ly',
-      't.co',
-      'wikipedia.org',
-      'indeed.com',
-      'wellfound.com',
-      'greenhouse.io',
-      'lever.co',
-      'ashbyhq.com',
-      'workable.com',
-      'facebook.com',
-      'reddit.com',
-      'hn.algolia.com',
-      'docs.google.com',
-      'forms.gle'
-    ];
-    const lower = domain.toLowerCase();
-    return generic.some((g) => lower === g || lower.endsWith(`.${g}`));
-  }
+
 }

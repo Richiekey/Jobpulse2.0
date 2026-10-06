@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AtsDirectoryProvider } from '../../src/providers/ats-directory.provider.js';
+import { DiscoveryRateLimiter, DomainCircuitBreaker } from '../../src/safety.js';
 
 describe('AtsDirectoryProvider', () => {
   it('parses directory markdown table rows correctly', () => {
@@ -94,5 +95,37 @@ describe('AtsDirectoryProvider', () => {
 
     const candidate = await provider.buildCandidate('ghost', target);
     expect(candidate).toBeNull();
+  });
+
+  it('buildCandidate routes through rate limiter and circuit breaker', async () => {
+    let callCount = 0;
+    const mockHttpClient = {
+      get: async () => {
+        callCount++;
+        throw new Error('Timeout');
+      }
+    } as any;
+
+    const provider = new AtsDirectoryProvider(mockHttpClient);
+    const target = {
+      atsType: 'greenhouse',
+      sitemapUrl: 'https://boards.greenhouse.io/sitemap.xml',
+      slugPattern: /^https?:\/\/boards\.greenhouse\.io\/([a-zA-Z0-9_-]+)/i,
+      boardUrlTemplate: (slug: string) => `https://boards.greenhouse.io/${slug}`,
+    };
+
+    const rateLimiter = new DiscoveryRateLimiter();
+    const circuitBreaker = new DomainCircuitBreaker({ failureThreshold: 2, resetAfterMs: 5000 });
+
+    const options = { rateLimiter, circuitBreaker };
+
+    await provider.buildCandidate('test1', target, options);
+    await provider.buildCandidate('test2', target, options);
+    // 3rd attempt should be blocked by circuit breaker
+    await provider.buildCandidate('test3', target, options);
+
+    // Should only have attempted 2 HTTP calls before tripping breaker
+    expect(callCount).toBe(2);
+    expect(circuitBreaker.isOpen('boards.greenhouse.io')).toBe(true);
   });
 });

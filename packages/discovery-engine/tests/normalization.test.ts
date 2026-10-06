@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDomain, normalizeUrl, normalizeCandidate } from '../src/normalization.js';
+import { normalizeDomain, normalizeUrl, normalizeCandidate, extractCorporateDomainFromHtml } from '../src/normalization.js';
 import { DiscoveryCandidate } from '../src/types.js';
 
 describe('Normalization Module', () => {
@@ -100,6 +100,32 @@ describe('Normalization Module', () => {
       };
 
       expect(normalizeCandidate(candidate)).toBeNull();
+    });
+  });
+
+  describe('extractCorporateDomainFromHtml', () => {
+    it('returns the most frequent non-generic domain', () => {
+      const html = `
+        <a href="https://linkedin.com/company/acme">LinkedIn</a>
+        <a href="https://greenhouse.io">Greenhouse</a>
+        <a href="https://acme.com/about">About</a>
+        <a href="https://acme.com/jobs">Jobs</a>
+        <a href="https://other.com/partner">Partner</a>
+      `;
+      expect(extractCorporateDomainFromHtml(html)).toBe('acme.com');
+    });
+
+    it('ignores generic domains like linkedin and greenhouse', () => {
+      const html = `
+        <a href="https://linkedin.com/company/acme">LinkedIn</a>
+        <a href="https://boards.greenhouse.io/acme">Greenhouse</a>
+      `;
+      expect(extractCorporateDomainFromHtml(html)).toBeNull();
+    });
+
+    it('returns null for empty or invalid html', () => {
+      expect(extractCorporateDomainFromHtml('')).toBeNull();
+      expect(extractCorporateDomainFromHtml('no links here')).toBeNull();
     });
   });
 });

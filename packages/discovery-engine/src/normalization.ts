@@ -53,3 +53,49 @@ export function normalizeCandidate(candidate: DiscoveryCandidate): DiscoveryCand
     })),
   };
 }
+
+/**
+ * Checks if a domain is a known generic hosting, social, or job board platform.
+ */
+export function isGenericDomain(domain: string): boolean {
+  const generic = [
+    'ycombinator.com', 'github.com', 'google.com', 'twitter.com', 'x.com',
+    'linkedin.com', 'youtube.com', 'medium.com', 'substack.com', 'bit.ly',
+    't.co', 'wikipedia.org', 'indeed.com', 'wellfound.com', 'greenhouse.io',
+    'lever.co', 'ashbyhq.com', 'workable.com', 'facebook.com', 'reddit.com',
+    'hn.algolia.com', 'docs.google.com', 'forms.gle', 'apple.com', 'instagram.com'
+  ];
+  const lower = domain.toLowerCase().trim();
+  return generic.some((g) => lower === g || lower.endsWith(`.${g}`));
+}
+
+/**
+ * Extracts the most likely corporate domain from a block of HTML (like an ATS board).
+ * Evidence-based: finds all hrefs, filters out generic platforms, and picks the most frequent.
+ */
+export function extractCorporateDomainFromHtml(html: string): string | null {
+  if (!html) return null;
+  const hrefRegex = /href=["'](https?:\/\/[^"']+)["']/gi;
+  const domains = new Map<string, number>();
+  
+  let match;
+  while ((match = hrefRegex.exec(html)) !== null) {
+    if (match[1]) {
+      const d = normalizeDomain(match[1]);
+      if (d && !isGenericDomain(d)) {
+        domains.set(d, (domains.get(d) || 0) + 1);
+      }
+    }
+  }
+
+  let bestDomain = null;
+  let maxCount = 0;
+  for (const [domain, count] of domains.entries()) {
+    if (count > maxCount) {
+      maxCount = count;
+      bestDomain = domain;
+    }
+  }
+
+  return bestDomain;
+}

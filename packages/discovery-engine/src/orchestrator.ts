@@ -10,8 +10,12 @@ import { normalizeCandidate } from './normalization.js';
 import { deduplicateCandidates } from './deduplication.js';
 import { createInitialMetrics } from './metrics.js';
 
+import { DiscoveryRateLimiter, DomainCircuitBreaker } from './safety.js';
+
 export interface DiscoveryEnricher {
   enrich(candidate: DiscoveryCandidate): Promise<DiscoveryCandidate>;
+  readonly rateLimiter?: DiscoveryRateLimiter;
+  readonly circuitBreaker?: DomainCircuitBreaker;
 }
 
 export interface DiscoveryScorer {
@@ -56,6 +60,8 @@ export class DiscoveryOrchestrator {
           limit: options.limit,
           dryRun: options.dryRun,
           verbose: options.verbose,
+          rateLimiter: this.enricher?.rateLimiter,
+          circuitBreaker: this.enricher?.circuitBreaker,
         });
         metrics.providers_succeeded++;
         allRawCandidates.push(...candidates);

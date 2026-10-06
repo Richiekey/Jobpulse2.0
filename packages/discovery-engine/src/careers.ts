@@ -236,8 +236,8 @@ export async function enrichCandidate(
 }
 
 export class DefaultDiscoveryEnricher {
-  private rateLimiter = new DiscoveryRateLimiter();
-  private circuitBreaker = new DomainCircuitBreaker();
+  public readonly rateLimiter = new DiscoveryRateLimiter();
+  public readonly circuitBreaker = new DomainCircuitBreaker();
 
   constructor(private readonly httpClient?: HttpClient) {}
 

@@ -3,7 +3,7 @@ import { logger } from '@jobpulse/shared';
 import { ATSDetector } from '@jobpulse/ats';
 import { DiscoveryCandidate, JobEvidence, DiscoveryEvidence } from '../types.js';
 import { DiscoveryOptions, DiscoveryProvider } from './provider.interface.js';
-import { normalizeDomain, normalizeUrl } from '../normalization.js';
+import { normalizeDomain, normalizeUrl, extractCorporateDomainFromHtml } from '../normalization.js';
 
 interface AtsTargetConfig {
   atsType: string;
@@ -110,7 +110,7 @@ export class AtsDirectoryProvider implements DiscoveryProvider {
 
         for (const slug of slugs) {
           if (candidates.length >= limit) break;
-          const candidate = await this.buildCandidate(slug, target);
+          const candidate = await this.buildCandidate(slug, target, options);
           if (candidate) {
             candidates.push(candidate);
           }
@@ -257,24 +257,29 @@ export class AtsDirectoryProvider implements DiscoveryProvider {
   /**
    * Constructs a DiscoveryCandidate from an ATS slug.
    */
-  public async buildCandidate(slug: string, target: AtsTargetConfig): Promise<DiscoveryCandidate | null> {
+  public async buildCandidate(slug: string, target: AtsTargetConfig, options: DiscoveryOptions = {}): Promise<DiscoveryCandidate | null> {
     const boardUrl = target.boardUrlTemplate(slug);
     const companyName = this.humanizeSlug(slug);
     
-    // We must resolve the actual domain instead of guessing \`\${slug}.com\`
     let domain: string | null = null;
+    const boardDomain = new URL(boardUrl).hostname;
+    
+    if (options.circuitBreaker?.isOpen(boardDomain)) {
+      return null;
+    }
+
     try {
+      if (options.rateLimiter) await options.rateLimiter.acquire(boardDomain);
       const res = await this.httpClient.get<string>(boardUrl, { maxRetries: 0, timeoutMs: 3000 });
+      
       if (res.status >= 200 && res.status < 400 && typeof res.data === 'string') {
-        // Look for a link that is NOT an ATS link to find the company website
-        const hrefRegex = /href=["'](https?:\/\/(?!boards\.greenhouse\.io|jobs\.lever\.co|jobs\.ashbyhq\.com|apply\.workable\.com)[^"']+)["']/i;
-        const match = res.data.match(hrefRegex);
-        if (match && match[1]) {
-          domain = normalizeDomain(match[1]);
-        }
+        options.circuitBreaker?.recordSuccess(boardDomain);
+        domain = extractCorporateDomainFromHtml(res.data);
       }
     } catch {
-      // Failed to resolve domain
+      options.circuitBreaker?.recordFailure(boardDomain);
+    } finally {
+      if (options.rateLimiter) options.rateLimiter.release(boardDomain);
     }
 
     if (!domain) return null;
