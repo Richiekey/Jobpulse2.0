@@ -3,7 +3,7 @@ import { supabase } from '../db.js';
 import { logger } from '@jobpulse/shared';
 
 export class DiscoveryRunner {
-  public async runDiscovery(options: { dryRun?: boolean } = {}) {
+  public async runDiscovery(options: { dryRun?: boolean; store?: StateStore } = {}) {
     logger.info(`Starting ATS discovery via TechnologyChecker... (Dry Run: ${!!options.dryRun})`);
     
     // Check if API key is present
@@ -15,7 +15,7 @@ export class DiscoveryRunner {
 
     const client = new TechnologyCheckerClient(apiKey);
     const dbStore = new SupabaseStateStore(supabase);
-    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const store: StateStore = options.store || (options.dryRun ? new InMemoryStateStore(dbStore) : dbStore);
     const discovery = new TechnologyCheckerDiscovery(client, store, supabase);
 
     // Initial technology names required by the Phase 1 specification
@@ -47,7 +47,7 @@ export class DiscoveryRunner {
     }
   }
 
-  public async runSignals(options: { dryRun?: boolean } = {}) {
+  public async runSignals(options: { dryRun?: boolean; store?: StateStore } = {}) {
     logger.info(`Starting ATS discovery via TechnologyChecker Signals... (Dry Run: ${!!options.dryRun})`);
     
     // Check if API key is present
@@ -59,7 +59,7 @@ export class DiscoveryRunner {
 
     const client = new TechnologyCheckerClient(apiKey);
     const dbStore = new SupabaseStateStore(supabase);
-    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const store: StateStore = options.store || (options.dryRun ? new InMemoryStateStore(dbStore) : dbStore);
     const discovery = new TechnologyCheckerDiscovery(client, store, supabase);
 
     try {

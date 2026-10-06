@@ -6,6 +6,7 @@
   "main": "./dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "discovery:once": "tsx src/index.ts --discovery-engine --once",
     "scrape:once": "tsx src/index.ts --once",
     "scrape:prod": "node dist/index.js --once",
     "start": "node dist/index.js",
@@ -15,8 +16,10 @@
   },
   "dependencies": {
     "@jobpulse/ats": "workspace:*",
+    "@jobpulse/discovery-engine": "workspace:*",
     "@jobpulse/domain": "workspace:*",
     "@jobpulse/shared": "workspace:*",
+    "@jobpulse/shared-state": "workspace:*",
     "@jobpulse/url-resolution": "workspace:*",
     "@jobpulse/validation": "workspace:*",
     "@jobpulse/technology-checker": "workspace:*",

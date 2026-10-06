@@ -3,11 +3,11 @@ import { supabase } from '../db.js';
 import { logger } from '@jobpulse/shared';
 
 export class VerificationRunner {
-  public async runVerification(options: { limit?: number; dryRun?: boolean } = {}) {
+  public async runVerification(options: { limit?: number; dryRun?: boolean; store?: StateStore } = {}) {
     logger.info(`Starting ATS verification for pending discovery registry candidates (Limit: ${options.limit || 100}, DryRun: ${!!options.dryRun})...`);
     
     const dbStore = new SupabaseStateStore(supabase);
-    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const store: StateStore = options.store || (options.dryRun ? new InMemoryStateStore(dbStore) : dbStore);
     const verifier = new TechnologyCheckerVerifier(store);
 
     try {

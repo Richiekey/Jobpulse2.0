@@ -4,6 +4,7 @@ import { DiscoveryRunner } from './engine/discovery-runner.js';
 import { VerificationRunner } from './engine/verification-runner.js';
 import { DiscoveryQueueRunner } from './engine/discovery-queue-runner.js';
 import { FullSyncRunner } from './engine/full-sync-runner.js';
+import { DiscoveryEngineRunner } from './engine/discovery-engine-runner.js';
 import { logger } from '@jobpulse/shared';
 import { validateWorkerEnvironment, GracefulShutdownManager } from './lifecycle.js';
 
@@ -28,8 +29,9 @@ async function main() {
   const isScore = args.includes('--score');
   const isSync = args.includes('--sync');
   const isSignals = args.includes('--signals');
+  const isDiscoveryEngine = args.includes('--discovery-engine');
   const isDryRun = args.includes('--dry-run');
-  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg) || Boolean(runIdArg) || isDiscover || isVerify || isQueue || isFunnel || isScore || isSync || isSignals;
+  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg) || Boolean(runIdArg) || isDiscover || isVerify || isQueue || isFunnel || isScore || isSync || isSignals || isDiscoveryEngine;
   const isDaemon = args.includes('--daemon') || !isOnce;
 
   logger.info('Starting JobPulse Worker Process...', {
@@ -61,6 +63,23 @@ async function main() {
     const completeTask = shutdownManager.registerTask();
     try {
       let runId: string | null = null;
+
+      // 0. If executing Discovery Engine V1
+      if (isDiscoveryEngine) {
+        const providerArg = args.find((a) => a.startsWith('--provider='))?.split('=')[1] || (args.includes('--provider') ? args[args.indexOf('--provider') + 1] : undefined);
+        const verboseArg = args.includes('--verbose');
+        logger.info('Executing Discovery Engine V1 run...');
+        const engineRunner = new DiscoveryEngineRunner();
+        await engineRunner.run({
+          provider: providerArg,
+          limit: limitArg ? parseInt(limitArg, 10) : undefined,
+          dryRun: isDryRun,
+          verbose: verboseArg,
+        });
+        completeTask();
+        process.exit(0);
+        return;
+      }
 
       // 1. If executing discovery (legacy or single step)
       if (isDiscover) {

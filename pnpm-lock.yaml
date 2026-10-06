@@ -105,12 +105,18 @@ importers:
       '@jobpulse/ats':
         specifier: workspace:*
         version: link:../../packages/ats
+      '@jobpulse/discovery-engine':
+        specifier: workspace:*
+        version: link:../../packages/discovery-engine
       '@jobpulse/domain':
         specifier: workspace:*
         version: link:../../packages/domain
       '@jobpulse/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@jobpulse/shared-state':
+        specifier: workspace:*
+        version: link:../../packages/shared-state
       '@jobpulse/technology-checker':
         specifier: workspace:*
         version: link:../../packages/technology-checker
@@ -198,6 +204,34 @@ importers:
         specifier: ^3.0.6
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)
 
+  packages/discovery-engine:
+    dependencies:
+      '@jobpulse/ats':
+        specifier: workspace:*
+        version: link:../ats
+      '@jobpulse/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@jobpulse/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@jobpulse/shared-state':
+        specifier: workspace:*
+        version: link:../shared-state
+      '@supabase/supabase-js':
+        specifier: ^2.45.6
+        version: 2.112.4
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.5
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.6
+        version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)
+
   packages/domain:
     dependencies:
       '@jobpulse/shared':
@@ -230,6 +264,22 @@ importers:
         specifier: ^3.0.6
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)
 
+  packages/shared-state:
+    dependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.45.6
+        version: 2.112.4
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.5
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.6
+        version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)
+
   packages/technology-checker:
     dependencies:
       '@jobpulse/ats':
@@ -241,6 +291,9 @@ importers:
       '@jobpulse/shared':
         specifier: workspace:*
         version: link:../shared
+      '@jobpulse/shared-state':
+        specifier: workspace:*
+        version: link:../shared-state
       '@supabase/supabase-js':
         specifier: ^2.45.6
         version: 2.112.4

@@ -10,11 +10,10 @@ import { logger } from '@jobpulse/shared';
  * This is completely separate from the job ingestion pipeline.
  */
 export class DiscoveryQueueRunner {
-  public async runQueue(options: { limit?: number; dryRun?: boolean } = {}) {
+  public async runQueue(options: { limit?: number; dryRun?: boolean; store?: StateStore } = {}) {
     logger.info(`Starting discovery queue processing (Limit: ${options.limit || 100}, DryRun: ${!!options.dryRun})...`);
-    
     const dbStore = new SupabaseStateStore(supabase);
-    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const store: StateStore = options.store || (options.dryRun ? new InMemoryStateStore(dbStore) : dbStore);
     
     const processor = new DiscoveryQueueProcessor(store, supabase);
     const scorer = new DiscoveryScorer(store, supabase);
@@ -66,10 +65,10 @@ export class DiscoveryQueueRunner {
   /**
    * Phase 7: Score all discovery records and report breakdown.
    */
-  public async runScoring(options: { dryRun?: boolean } = {}) {
+  public async runScoring(options: { dryRun?: boolean; store?: StateStore } = {}) {
     logger.info('[Scoring] Starting priority score refresh...');
     const dbStore = new SupabaseStateStore(supabase);
-    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const store: StateStore = options.store || (options.dryRun ? new InMemoryStateStore(dbStore) : dbStore);
     const scorer = new DiscoveryScorer(store, supabase);
     const metrics = await scorer.scoreAll({ dryRun: options.dryRun });
     logger.info('[Scoring] Complete.', { metrics });
