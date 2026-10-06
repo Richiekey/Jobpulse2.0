@@ -3,6 +3,7 @@ import { logger } from '@jobpulse/shared';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { CompanySourceNormalizer, CompanyNormalizer, CompanySourceConfig } from '@jobpulse/domain';
 import { ATSAdapterRegistry, ATSDetector } from '@jobpulse/ats';
+import { StateStore } from './state-store.js';
 
 export interface DiscoveryOptions {
   dryRun?: boolean;
@@ -24,6 +25,7 @@ export interface DiscoveryMetrics {
 export class TechnologyCheckerDiscovery {
   constructor(
     private readonly client: TechnologyCheckerClient,
+    private readonly store: StateStore,
     private readonly db: SupabaseClient
   ) {}
 
@@ -134,26 +136,20 @@ export class TechnologyCheckerDiscovery {
           const techName = signal.technology.name.toLowerCase();
           const normalizedDomain = CompanyNormalizer.extractRegistrableDomain(`https://${signal.domain}`) || signal.domain;
 
-          if (!options.dryRun) {
-            const { data: existing } = await this.db
-              .from('discovery_registry')
-              .select('id')
-              .eq('domain', normalizedDomain)
-              .eq('ats_provider', techName)
-              .maybeSingle();
+          // StateStore handles dry-run vs production — no guard needed
+          const existing = await this.store.findRecord({
+            domain: normalizedDomain,
+            ats_provider: techName
+          });
 
-            if (existing) {
-              await this.db
-                .from('discovery_registry')
-                .update({
-                  discovery_status: 'FAILED',
-                  verification_status: 'stale',
-                  discovery_error: 'Received churn signal from TechnologyChecker'
-                })
-                .eq('id', existing.id);
-              metrics.domainsRemoved++;
-              logger.info(`Marked ${normalizedDomain} as stale for ${techName} due to churn signal`);
-            }
+          if (existing) {
+            await this.store.updateRecord(existing.id, {
+              discovery_status: 'FAILED',
+              verification_status: 'stale',
+              discovery_error: 'Received churn signal from TechnologyChecker'
+            });
+            metrics.domainsRemoved++;
+            logger.info(`Marked ${normalizedDomain} as stale for ${techName} due to churn signal`);
           }
         }
 
@@ -246,14 +242,11 @@ export class TechnologyCheckerDiscovery {
 
           if (removedIds.length > 0) {
             // Mark as stale/failed
-            await this.db
-              .from('discovery_registry')
-              .update({
-                discovery_status: 'FAILED',
-                verification_status: 'stale',
-                discovery_error: 'Domain removed from TechnologyChecker dataset in latest sync'
-              })
-              .in('id', removedIds);
+            await this.store.bulkUpdateStatus(removedIds, {
+              discovery_status: 'FAILED',
+              verification_status: 'stale',
+              discovery_error: 'Domain removed from TechnologyChecker dataset in latest sync'
+            });
             
             metrics.domainsRemoved += removedIds.length;
             logger.info(`Marked ${removedIds.length} domains as stale for ${techName}`);
@@ -301,15 +294,12 @@ export class TechnologyCheckerDiscovery {
       const normalizedDomain = CompanyNormalizer.extractRegistrableDomain(`https://${domain}`) || domain;
       const normalizedTech = techName.toLowerCase();
       
-      if (options.dryRun) {
-        logger.info(`[Dry Run] Would persist source ${normalizedTech} for company ${company.name}`);
-        return;
-      }
-
       // Phase 2 + Phase 6: Persist into discovery registry with DISCOVERED queue state
-      const { error } = await this.db
-        .from('discovery_registry')
-        .insert({
+      // NOTE: No dryRun guard here — the StateStore abstraction handles the difference.
+      // In production: SupabaseStateStore writes to the DB.
+      // In dry-run: InMemoryStateStore holds state in memory, enabling downstream phases.
+      try {
+        await this.store.insertRecord({
           domain: normalizedDomain,
           company_name: company.name,
           ats_provider: normalizedTech,
@@ -322,38 +312,29 @@ export class TechnologyCheckerDiscovery {
           discovery_status: 'DISCOVERED',
           verification_status: 'pending',
           first_discovered_at: new Date().toISOString()
-        })
-        .select('id')
-        .maybeSingle();
-
-      if (error) {
-        if (error.code === '23505') {
+        });
+        metrics.companiesInserted++;
+      } catch (error: any) {
+        if (error.message.includes('duplicate key value') || error.message.includes('23505') || error.message.includes('violates unique constraint')) {
           // Unique constraint violation (domain, ats_provider)
           // Reverifying stale mappings if necessary
-          const { data: existing } = await this.db
-            .from('discovery_registry')
-            .select('id, verification_status')
-            .eq('domain', normalizedDomain)
-            .eq('ats_provider', normalizedTech)
-            .maybeSingle();
+          const existing = await this.store.findRecord({
+            domain: normalizedDomain,
+            ats_provider: normalizedTech
+          });
             
           if (existing && existing.verification_status === 'stale') {
-            await this.db
-              .from('discovery_registry')
-              .update({
-                discovery_status: 'DISCOVERED',
-                verification_status: 'pending',
-                discovery_error: null,
-              })
-              .eq('id', existing.id);
+            await this.store.updateRecord(existing.id, {
+              discovery_status: 'DISCOVERED',
+              verification_status: 'pending',
+              discovery_error: null,
+            });
             logger.info(`Re-queued stale discovery for ${normalizedDomain}`);
           }
         } else {
           metrics.errors++;
           logger.error(`Failed to insert discovery registry for company ${company.name}`, { error: error.message });
         }
-      } else {
-        metrics.companiesInserted++;
       }
     } catch (err) {
       metrics.errors++;

@@ -2,6 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { logger, httpClient, HttpError } from '@jobpulse/shared';
 import { ATSDetector, ATSAdapterRegistry } from '@jobpulse/ats';
 import { CompanyNormalizer } from '@jobpulse/domain';
+import { StateStore, DiscoveryRecord } from './state-store.js';
 
 export interface VerificationMetrics {
   totalProcessed: number;
@@ -14,8 +15,21 @@ export interface VerificationMetrics {
   errors: number;
 }
 
+export function buildVerificationUrls(record: { domain: string; detection_url?: string | null }): string[] {
+  const urls: string[] = [];
+  if (record.detection_url) urls.push(record.detection_url);
+  urls.push(
+    `https://${record.domain}/careers`,
+    `https://${record.domain}/jobs`,
+    `https://careers.${record.domain}`,
+    `https://jobs.${record.domain}`,
+    `https://${record.domain}`
+  );
+  return urls;
+}
+
 export class TechnologyCheckerVerifier {
-  constructor(private readonly db: SupabaseClient) {}
+  constructor(private readonly store: StateStore) {}
 
   /**
    * Phase 4 + Phase 6: Claim DISCOVERED records, transition to VERIFYING,
@@ -36,38 +50,30 @@ export class TechnologyCheckerVerifier {
     };
 
     // Claim: fetch DISCOVERED records
-    const { data: records, error } = await this.db
-      .from('discovery_registry')
-      .select('*')
-      .eq('discovery_status', 'DISCOVERED')
-      .limit(limit);
-
-    if (error) {
+    let records: DiscoveryRecord[];
+    try {
+      records = await this.store.queryByStatus('DISCOVERED', {}, limit);
+    } catch (error: any) {
       logger.error('Failed to fetch DISCOVERED records', { error: error.message });
-      throw new Error(`DB Error: ${error.message}`);
+      throw new Error(`Store Error: ${error.message}`);
     }
 
     if (!records || records.length === 0) {
       return metrics;
     }
 
-    if (!options.dryRun) {
-      // Transition all claimed records to VERIFYING atomically
-      const claimedIds = records.map((r: any) => r.id);
-      await this.db
-        .from('discovery_registry')
-        .update({ discovery_status: 'VERIFYING' })
-        .in('id', claimedIds);
-    }
+    // Transition all claimed records to VERIFYING atomically
+    const claimedIds = records.map((r: any) => r.id);
+    await this.store.bulkUpdateStatus(claimedIds, { discovery_status: 'VERIFYING' });
 
     for (const record of records) {
-      await this.verifyRecord(record, metrics, options.dryRun);
+      await this.verifyRecord(record, metrics);
     }
 
     return metrics;
   }
 
-  private async verifyRecord(record: any, metrics: VerificationMetrics, dryRun: boolean = false) {
+  private async verifyRecord(record: any, metrics: VerificationMetrics) {
     metrics.totalProcessed++;
     let verificationStatus = 'unresolved';
     let discoveryStatus = 'FAILED';
@@ -79,22 +85,11 @@ export class TechnologyCheckerVerifier {
     let discoveryError: string | null = null;
 
     try {
-      const domain = record.domain;
-      const testUrls: string[] = [];
-      
       // Issue 4: Prioritize TechnologyChecker detection URL/domain first
-      if (record.detection_url) {
-        testUrls.push(record.detection_url);
-      }
-      
-      // Then fallback guesses
-      testUrls.push(
-        `https://${domain}/careers`,
-        `https://${domain}/jobs`,
-        `https://careers.${domain}`,
-        `https://jobs.${domain}`,
-        `https://${domain}`
-      );
+      const testUrls = buildVerificationUrls({
+        domain: record.domain,
+        detection_url: record.detection_url
+      });
 
       let html = '';
       let finalUrl = '';
@@ -193,24 +188,17 @@ export class TechnologyCheckerVerifier {
       logger.error(`Error verifying record ${record.id}`, { error: String(err) });
     }
 
-    if (dryRun) {
-      logger.info(`[DryRun] Would update discovery record ${record.id} with status ${discoveryStatus}, verification ${verificationStatus}`);
-    } else {
-      // Update the record with verification result AND queue state
-      await this.db
-        .from('discovery_registry')
-        .update({
-          discovery_status: discoveryStatus,
-          verification_status: verificationStatus,
-          detection_url: detectionUrl,
-          discovery_confidence: confidence > 0 ? confidence : null,
-          adapter: adapterSlug,
-          adapter_status: adapterStatus,
-          board_identifier: boardIdentifier,
-          discovery_error: discoveryError,
-          last_verified_at: new Date().toISOString(),
-        })
-        .eq('id', record.id);
-    }
+    // Update the record with verification result AND queue state
+    await this.store.updateRecord(record.id, {
+      discovery_status: discoveryStatus,
+      verification_status: verificationStatus,
+      detection_url: detectionUrl,
+      discovery_confidence: confidence > 0 ? confidence : null,
+      adapter: adapterSlug,
+      adapter_status: adapterStatus,
+      board_identifier: boardIdentifier,
+      discovery_error: discoveryError,
+      last_verified_at: new Date().toISOString(),
+    });
   }
 }

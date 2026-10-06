@@ -114,6 +114,8 @@ export function computeDiscoveryPriority(input: ScoringInput): number {
   return Math.max(0, Math.min(100, score));
 }
 
+import { StateStore, DiscoveryRecord } from './state-store.js';
+
 export interface ScoringMetrics {
   totalScored: number;
   highPriority: number;   // >= 60
@@ -123,7 +125,10 @@ export interface ScoringMetrics {
 }
 
 export class DiscoveryScorer {
-  constructor(private readonly db: SupabaseClient) {}
+  constructor(
+    private readonly store: StateStore,
+    private readonly db: SupabaseClient
+  ) {}
 
   /**
    * Score all records in the discovery_registry in-process.
@@ -138,13 +143,12 @@ export class DiscoveryScorer {
       errors: 0,
     };
 
-    const { data: records, error } = await this.db
-      .from('discovery_registry')
-      .select('id, verification_status, adapter_status, discovery_status, crawl_job_count, first_discovered_at, last_success_at, detection_url, board_identifier');
-
-    if (error) {
+    let records: DiscoveryRecord[];
+    try {
+      records = await this.store.queryAll();
+    } catch (error: any) {
       logger.error('Failed to fetch discovery records for scoring', { error: error.message });
-      throw new Error(`DB Error: ${error.message}`);
+      throw new Error(`Store Error: ${error.message}`);
     }
 
     if (!records || records.length === 0) {
@@ -156,10 +160,7 @@ export class DiscoveryScorer {
         const score = computeDiscoveryPriority(record as ScoringInput);
 
         if (!options.dryRun) {
-          await this.db
-            .from('discovery_registry')
-            .update({ priority_score: score })
-            .eq('id', record.id);
+          await this.store.updateRecord(record.id, { priority_score: score });
         }
 
         metrics.totalScored++;

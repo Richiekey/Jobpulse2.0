@@ -18,6 +18,7 @@ import type { CompanySourceConfig } from '@jobpulse/domain';
  */
 
 import { JobEligibilityPolicy, type JobCandidateData } from '@jobpulse/domain';
+import { StateStore, DiscoveryRecord } from './state-store.js';
 
 export interface QueueProcessorMetrics {
   adapterResolved: number;
@@ -31,7 +32,10 @@ export interface QueueProcessorMetrics {
 }
 
 export class DiscoveryQueueProcessor {
-  constructor(private readonly db: SupabaseClient) {}
+  constructor(
+    private readonly store: StateStore,
+    private readonly db: SupabaseClient
+  ) {}
 
   /**
    * Process VERIFIED records: resolve adapters and transition to ADAPTER_RESOLVED.
@@ -49,15 +53,12 @@ export class DiscoveryQueueProcessor {
       errors: 0,
     };
 
-    const { data: records, error } = await this.db
-      .from('discovery_registry')
-      .select('*')
-      .eq('discovery_status', 'VERIFIED')
-      .limit(limit);
-
-    if (error) {
+    let records: DiscoveryRecord[];
+    try {
+      records = await this.store.queryByStatus('VERIFIED', {}, limit);
+    } catch (error: any) {
       logger.error('Failed to fetch VERIFIED records for adapter resolution', { error: error.message });
-      throw new Error(`DB Error: ${error.message}`);
+      throw new Error(`Store Error: ${error.message}`);
     }
 
     if (!records || records.length === 0) {
@@ -70,33 +71,19 @@ export class DiscoveryQueueProcessor {
         const hasAdapter = ATSAdapterRegistry.hasAdapter(atsSlug);
 
         if (hasAdapter) {
-          if (!options.dryRun) {
-            await this.db
-              .from('discovery_registry')
-              .update({
-                discovery_status: 'ADAPTER_RESOLVED',
-                adapter: atsSlug,
-                adapter_status: 'ready',
-              })
-              .eq('id', record.id);
-          } else {
-            logger.info(`[DryRun] Would resolve adapter for ${record.domain}`);
-          }
+          await this.store.updateRecord(record.id, {
+            discovery_status: 'ADAPTER_RESOLVED',
+            adapter: atsSlug,
+            adapter_status: 'ready',
+          });
           metrics.adapterResolved++;
         } else {
           // Adapter not available — record it but don't silently discard
-          if (!options.dryRun) {
-            await this.db
-              .from('discovery_registry')
-              .update({
-                adapter: atsSlug,
-                adapter_status: 'unavailable',
-                discovery_error: `No adapter implementation for ${atsSlug}`,
-              })
-              .eq('id', record.id);
-          } else {
-            logger.info(`[DryRun] Would record unavailable adapter for ${record.domain}`);
-          }
+          await this.store.updateRecord(record.id, {
+            adapter: atsSlug,
+            adapter_status: 'unavailable',
+            discovery_error: `No adapter implementation for ${atsSlug}`,
+          });
           metrics.adapterUnavailable++;
           // NOTE: discovery_status stays VERIFIED — it can be re-processed when adapter is implemented
         }
@@ -125,16 +112,12 @@ export class DiscoveryQueueProcessor {
       errors: 0,
     };
 
-    const { data: records, error } = await this.db
-      .from('discovery_registry')
-      .select('*')
-      .eq('discovery_status', 'ADAPTER_RESOLVED')
-      .eq('adapter_status', 'ready')
-      .limit(limit);
-
-    if (error) {
+    let records: DiscoveryRecord[];
+    try {
+      records = await this.store.queryByStatus('ADAPTER_RESOLVED', { adapter_status: 'ready' }, limit);
+    } catch (error: any) {
       logger.error('Failed to fetch ADAPTER_RESOLVED records', { error: error.message });
-      throw new Error(`DB Error: ${error.message}`);
+      throw new Error(`Store Error: ${error.message}`);
     }
 
     if (!records || records.length === 0) {
@@ -144,45 +127,28 @@ export class DiscoveryQueueProcessor {
     for (const record of records) {
       try {
         if (!record.board_identifier) {
-          if (!options.dryRun) {
-            await this.db
-              .from('discovery_registry')
-              .update({
-                discovery_status: 'FAILED',
-                discovery_error: 'No board_identifier resolved during verification',
-              })
-              .eq('id', record.id);
-          }
+          await this.store.updateRecord(record.id, {
+            discovery_status: 'FAILED',
+            discovery_error: 'No board_identifier resolved during verification',
+          });
           metrics.crawlFailed++;
           continue;
         }
 
         // Only mark CRAWL_QUEUED here. Do NOT promote to production company_sources yet!
-        if (!options.dryRun) {
-          await this.db
-            .from('discovery_registry')
-            .update({
-              discovery_status: 'CRAWL_QUEUED',
-              discovery_error: null,
-            })
-            .eq('id', record.id);
-        } else {
-          logger.info(`[DryRun] Would queue crawl for ${record.domain}`);
-        }
+        await this.store.updateRecord(record.id, {
+          discovery_status: 'CRAWL_QUEUED',
+          discovery_error: null,
+        });
 
         metrics.crawlQueued++;
       } catch (err) {
         metrics.errors++;
         logger.error(`Error enqueuing crawl for record ${record.id}`, { error: String(err) });
-        if (!options.dryRun) {
-          await this.db
-            .from('discovery_registry')
-            .update({
-              discovery_status: 'FAILED',
-              discovery_error: `Enqueue error: ${err instanceof Error ? err.message : String(err)}`,
-            })
-            .eq('id', record.id);
-        }
+        await this.store.updateRecord(record.id, {
+          discovery_status: 'FAILED',
+          discovery_error: `Enqueue error: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
     }
 
@@ -206,15 +172,12 @@ export class DiscoveryQueueProcessor {
       errors: 0,
     };
 
-    const { data: records, error } = await this.db
-      .from('discovery_registry')
-      .select('*')
-      .eq('discovery_status', 'CRAWL_QUEUED')
-      .limit(limit);
-
-    if (error) {
+    let records: DiscoveryRecord[];
+    try {
+      records = await this.store.queryByStatus('CRAWL_QUEUED', {}, limit);
+    } catch (error: any) {
       logger.error('Failed to fetch CRAWL_QUEUED records', { error: error.message });
-      throw new Error(`DB Error: ${error.message}`);
+      throw new Error(`Store Error: ${error.message}`);
     }
 
     if (!records || records.length === 0) {
@@ -223,13 +186,8 @@ export class DiscoveryQueueProcessor {
 
     for (const record of records) {
       try {
-        if (!options.dryRun) {
-          // Transition to TRIAL_CRAWLING
-          await this.db
-            .from('discovery_registry')
-            .update({ discovery_status: 'TRIAL_CRAWLING' })
-            .eq('id', record.id);
-        }
+        // Transition to TRIAL_CRAWLING
+        await this.store.updateRecord(record.id, { discovery_status: 'TRIAL_CRAWLING' });
 
         const adapter = ATSAdapterRegistry.getAdapter(record.ats_provider);
 
@@ -280,56 +238,39 @@ export class DiscoveryQueueProcessor {
           }
         }
 
-        if (!options.dryRun) {
-          if (eligibleCount > 0) {
-            await this.db
-              .from('discovery_registry')
-              .update({
-                discovery_status: 'SUCCESS',
-                crawl_job_count: rawJobCount,
-                crawl_eligible_job_count: eligibleCount,
-                crawl_rejected_job_count: rejectedCount,
-                last_crawled_at: new Date().toISOString(),
-                last_success_at: new Date().toISOString(),
-                discovery_error: null,
-              })
-              .eq('id', record.id);
-            metrics.crawlSuccess++;
-          } else {
-            await this.db
-              .from('discovery_registry')
-              .update({
-                discovery_status: 'EMPTY',
-                crawl_job_count: rawJobCount,
-                crawl_eligible_job_count: 0,
-                crawl_rejected_job_count: rejectedCount,
-                last_crawled_at: new Date().toISOString(),
-                discovery_error: 'Trial crawl produced 0 eligible jobs',
-              })
-              .eq('id', record.id);
-            metrics.crawlEmpty++;
-          }
+        if (eligibleCount > 0) {
+          await this.store.updateRecord(record.id, {
+            discovery_status: 'SUCCESS',
+            crawl_job_count: rawJobCount,
+            crawl_eligible_job_count: eligibleCount,
+            crawl_rejected_job_count: rejectedCount,
+            last_crawled_at: new Date().toISOString(),
+            last_success_at: new Date().toISOString(),
+            discovery_error: null,
+          });
+          metrics.crawlSuccess++;
         } else {
-          logger.info(`[DryRun] Trial crawl for ${record.domain}: raw=${rawJobCount}, eligible=${eligibleCount}, rejected=${rejectedCount}`);
-          if (eligibleCount > 0) metrics.crawlSuccess++;
-          else metrics.crawlEmpty++;
+          await this.store.updateRecord(record.id, {
+            discovery_status: 'EMPTY',
+            crawl_job_count: rawJobCount,
+            crawl_eligible_job_count: 0,
+            crawl_rejected_job_count: rejectedCount,
+            last_crawled_at: new Date().toISOString(),
+            discovery_error: 'Trial crawl produced 0 eligible jobs',
+          });
+          metrics.crawlEmpty++;
         }
       } catch (err) {
         metrics.errors++;
         metrics.crawlFailed++;
         logger.error(`Trial crawl failed for record ${record.id}`, { error: String(err) });
         
-        if (!options.dryRun) {
-          await this.db
-            .from('discovery_registry')
-            .update({
-              discovery_status: 'FAILED',
-              last_crawled_at: new Date().toISOString(),
-              last_failure_at: new Date().toISOString(),
-              discovery_error: `Trial crawl error: ${err instanceof Error ? err.message : String(err)}`,
-            })
-            .eq('id', record.id);
-        }
+        await this.store.updateRecord(record.id, {
+          discovery_status: 'FAILED',
+          last_crawled_at: new Date().toISOString(),
+          last_failure_at: new Date().toISOString(),
+          discovery_error: `Trial crawl error: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
     }
 
@@ -354,16 +295,12 @@ export class DiscoveryQueueProcessor {
       errors: 0,
     };
 
-    const { data: records, error } = await this.db
-      .from('discovery_registry')
-      .select('*')
-      .eq('discovery_status', 'SUCCESS')
-      .is('promotion_status', null) // We'll add this column via migration to track explicitly
-      .limit(limit);
-
-    if (error) {
+    let records: DiscoveryRecord[];
+    try {
+      records = await this.store.queryByStatus('SUCCESS', { promotion_status: null }, limit);
+    } catch (error: any) {
       logger.error('Failed to fetch SUCCESS records for promotion', { error: error.message });
-      throw new Error(`DB Error: ${error.message}`);
+      throw new Error(`Store Error: ${error.message}`);
     }
 
     if (!records || records.length === 0) {
@@ -379,6 +316,7 @@ export class DiscoveryQueueProcessor {
 
         if (options.dryRun) {
           logger.info(`[DryRun] Would promote ${record.domain} to production company_sources.`);
+          await this.store.updateRecord(record.id, { promotion_status: 'promoted', promoted_at: new Date().toISOString() });
           metrics.promoted++;
           continue;
         }
@@ -386,13 +324,10 @@ export class DiscoveryQueueProcessor {
         // Look up or create the company
         const companyId = await this.resolveCompanyId(record);
         if (!companyId) {
-          await this.db
-            .from('discovery_registry')
-            .update({
-              promotion_status: 'not_promoted',
-              discovery_error: 'Failed to resolve or create company record during promotion',
-            })
-            .eq('id', record.id);
+          await this.store.updateRecord(record.id, {
+            promotion_status: 'not_promoted',
+            discovery_error: 'Failed to resolve or create company record during promotion',
+          });
           metrics.errors++;
           continue;
         }
@@ -405,13 +340,10 @@ export class DiscoveryQueueProcessor {
           .maybeSingle();
 
         if (!platform) {
-          await this.db
-            .from('discovery_registry')
-            .update({
-              promotion_status: 'not_promoted',
-              discovery_error: `ATS platform '${record.ats_provider}' not found in ats_platforms table`,
-            })
-            .eq('id', record.id);
+          await this.store.updateRecord(record.id, {
+            promotion_status: 'not_promoted',
+            discovery_error: `ATS platform '${record.ats_provider}' not found in ats_platforms table`,
+          });
           metrics.errors++;
           continue;
         }
@@ -458,13 +390,10 @@ export class DiscoveryQueueProcessor {
                 .maybeSingle();
               sourceId = found?.id;
             } else {
-              await this.db
-                .from('discovery_registry')
-                .update({
-                  promotion_status: 'not_promoted',
-                  discovery_error: `Failed to create company_source: ${insertError.message}`,
-                })
-                .eq('id', record.id);
+              await this.store.updateRecord(record.id, {
+                promotion_status: 'not_promoted',
+                discovery_error: `Failed to create company_source: ${insertError.message}`,
+              });
               metrics.errors++;
               continue;
             }
@@ -474,30 +403,22 @@ export class DiscoveryQueueProcessor {
         }
 
         // Link discovery record to the production source and mark PROMOTED
-        await this.db
-          .from('discovery_registry')
-          .update({
-            promotion_status: 'promoted',
-            promoted_at: new Date().toISOString(),
-            company_id: companyId,
-            company_source_id: sourceId!,
-            discovery_error: null,
-          })
-          .eq('id', record.id);
+        await this.store.updateRecord(record.id, {
+          promotion_status: 'promoted',
+          promoted_at: new Date().toISOString(),
+          company_id: companyId,
+          company_source_id: sourceId!,
+          discovery_error: null,
+        });
 
         metrics.promoted++;
       } catch (err) {
         metrics.errors++;
         logger.error(`Error promoting record ${record.id}`, { error: String(err) });
-        if (!options.dryRun) {
-          await this.db
-            .from('discovery_registry')
-            .update({
-              promotion_status: 'not_promoted',
-              discovery_error: `Promotion error: ${err instanceof Error ? err.message : String(err)}`,
-            })
-            .eq('id', record.id);
-        }
+        await this.store.updateRecord(record.id, {
+          promotion_status: 'not_promoted',
+          discovery_error: `Promotion error: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
     }
 

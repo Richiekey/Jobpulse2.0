@@ -1,4 +1,4 @@
-import { DiscoveryQueueProcessor, DiscoveryScorer } from '@jobpulse/technology-checker';
+import { DiscoveryQueueProcessor, DiscoveryScorer, SupabaseStateStore, InMemoryStateStore, StateStore } from '@jobpulse/technology-checker';
 import { supabase } from '../db.js';
 import { logger } from '@jobpulse/shared';
 
@@ -13,8 +13,11 @@ export class DiscoveryQueueRunner {
   public async runQueue(options: { limit?: number; dryRun?: boolean } = {}) {
     logger.info(`Starting discovery queue processing (Limit: ${options.limit || 100}, DryRun: ${!!options.dryRun})...`);
     
-    const processor = new DiscoveryQueueProcessor(supabase);
-    const scorer = new DiscoveryScorer(supabase);
+    const dbStore = new SupabaseStateStore(supabase);
+    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    
+    const processor = new DiscoveryQueueProcessor(store, supabase);
+    const scorer = new DiscoveryScorer(store, supabase);
     const limit = options.limit || 100;
 
     // Step 1: VERIFIED → ADAPTER_RESOLVED
@@ -63,10 +66,12 @@ export class DiscoveryQueueRunner {
   /**
    * Phase 7: Score all discovery records and report breakdown.
    */
-  public async runScoring() {
+  public async runScoring(options: { dryRun?: boolean } = {}) {
     logger.info('[Scoring] Starting priority score refresh...');
-    const scorer = new DiscoveryScorer(supabase);
-    const metrics = await scorer.scoreAll();
+    const dbStore = new SupabaseStateStore(supabase);
+    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const scorer = new DiscoveryScorer(store, supabase);
+    const metrics = await scorer.scoreAll({ dryRun: options.dryRun });
     logger.info('[Scoring] Complete.', { metrics });
     return metrics;
   }

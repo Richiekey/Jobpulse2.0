@@ -1,4 +1,4 @@
-import { TechnologyCheckerDiscovery, TechnologyCheckerClient } from '@jobpulse/technology-checker';
+import { TechnologyCheckerDiscovery, TechnologyCheckerClient, SupabaseStateStore, InMemoryStateStore, StateStore } from '@jobpulse/technology-checker';
 import { supabase } from '../db.js';
 import { logger } from '@jobpulse/shared';
 
@@ -14,7 +14,9 @@ export class DiscoveryRunner {
     }
 
     const client = new TechnologyCheckerClient(apiKey);
-    const discovery = new TechnologyCheckerDiscovery(client, supabase);
+    const dbStore = new SupabaseStateStore(supabase);
+    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const discovery = new TechnologyCheckerDiscovery(client, store, supabase);
 
     // Initial technology names required by the Phase 1 specification
     const atsNames = [
@@ -56,7 +58,9 @@ export class DiscoveryRunner {
     }
 
     const client = new TechnologyCheckerClient(apiKey);
-    const discovery = new TechnologyCheckerDiscovery(client, supabase);
+    const dbStore = new SupabaseStateStore(supabase);
+    const store: StateStore = options.dryRun ? new InMemoryStateStore(dbStore) : dbStore;
+    const discovery = new TechnologyCheckerDiscovery(client, store, supabase);
 
     try {
       const metrics = await discovery.discoverFromSignals({ dryRun: options.dryRun });
