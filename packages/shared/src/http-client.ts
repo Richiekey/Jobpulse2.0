@@ -3,8 +3,8 @@ import { withRetry } from './backoff.js';
 import { logger } from './logger.js';
 
 export class HttpError extends Error {
-  public status: number;
-  public retryAfterSec?: number;
+  public readonly status: number;
+  public readonly retryAfterSec: number | undefined;
 
   constructor(status: number, message: string, retryAfterSec?: number) {
     super(message);
@@ -12,6 +12,31 @@ export class HttpError extends Error {
     this.status = status;
     this.retryAfterSec = retryAfterSec;
   }
+}
+
+/**
+ * Parse Retry-After header safely.
+ * Handles: integer seconds, HTTP-date, garbage, NaN, negative, absurdly large.
+ * Returns seconds clamped to [1, 300] or the provided fallback.
+ */
+function parseRetryAfter(headerValue: string | null, fallbackSec = 5): number {
+  if (!headerValue) return fallbackSec;
+
+  // Try integer seconds first
+  const asInt = parseInt(headerValue, 10);
+  if (!Number.isNaN(asInt) && Number.isFinite(asInt)) {
+    // Clamp: at least 1s, at most 300s (5 min)
+    return Math.max(1, Math.min(asInt, 300));
+  }
+
+  // Try HTTP-date (e.g. "Wed, 21 Oct 2026 07:28:00 GMT")
+  const asDate = Date.parse(headerValue);
+  if (!Number.isNaN(asDate)) {
+    const deltaSec = Math.ceil((asDate - Date.now()) / 1000);
+    return Math.max(1, Math.min(deltaSec, 300));
+  }
+
+  return fallbackSec;
 }
 
 export interface HttpClientOptions {
@@ -150,9 +175,8 @@ export class HttpClient {
             }
 
             if (response.status === 429) {
-              const retryAfterHeader = response.headers.get('Retry-After');
-              const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5;
-              throw new HttpError(429, `RATE_LIMITED: 429 encountered`, retryAfterSec);
+              const retryAfterSec = parseRetryAfter(response.headers.get('Retry-After'));
+              throw new HttpError(429, `RATE_LIMITED: 429 from ${currentUrl}`, retryAfterSec);
             }
 
             if (response.status === 404 && options.throwOn404 === false) {
@@ -200,11 +224,16 @@ export class HttpClient {
       {
         maxRetries: options.maxRetries ?? 2,
         shouldRetry: (err) => {
-          if (err instanceof Error) {
-            if (err.message.includes('SSRF_REJECTED')) return false;
-            if (err.message.includes('Status 404')) return false;
-            if (err.message.includes('PAYLOAD_TOO_LARGE')) return false;
+          if (err instanceof Error && err.message.includes('SSRF_REJECTED')) return false;
+          if (err instanceof Error && err.message.includes('PAYLOAD_TOO_LARGE')) return false;
+          if (err instanceof Error && err.message.includes('MAX_REDIRECTS')) return false;
+          if (err instanceof HttpError) {
+            // 429 and 5xx are retryable
+            if (err.status === 429 || err.status >= 500) return true;
+            // All other HTTP errors (4xx) are not retryable
+            return false;
           }
+          // Network errors (fetch failed, ECONNRESET, timeout) are retryable
           return true;
         },
         onRetry: (err, attempt, delayMs) => {
@@ -252,9 +281,8 @@ export class HttpClient {
           clearTimeout(timeoutId);
 
           if (response.status === 429) {
-            const retryAfterHeader = response.headers.get('Retry-After');
-            const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5;
-            throw new HttpError(429, `RATE_LIMITED: 429 encountered`, retryAfterSec);
+            const retryAfterSec = parseRetryAfter(response.headers.get('Retry-After'));
+            throw new HttpError(429, `RATE_LIMITED: 429 from ${initialUrl}`, retryAfterSec);
           }
 
           if (response.status === 404 && options.throwOn404 === false) {
@@ -304,10 +332,11 @@ export class HttpClient {
       {
         maxRetries: options.maxRetries ?? 2,
         shouldRetry: (err) => {
-          if (err instanceof Error) {
-            if (err.message.includes('SSRF_REJECTED')) return false;
-            if (err.message.includes('Status 404')) return false;
-            if (err.message.includes('PAYLOAD_TOO_LARGE')) return false;
+          if (err instanceof Error && err.message.includes('SSRF_REJECTED')) return false;
+          if (err instanceof Error && err.message.includes('PAYLOAD_TOO_LARGE')) return false;
+          if (err instanceof HttpError) {
+            if (err.status === 429 || err.status >= 500) return true;
+            return false;
           }
           return true;
         },

@@ -58,11 +58,17 @@ export async function withRetry<T>(
 
       let delayMs = calculateBackoffDelay(attempt, options);
       if (error && typeof error === 'object' && 'name' in error && error.name === 'HttpError') {
-        const httpError = error as any;
-        if (typeof httpError.retryAfterSec === 'number') {
-          delayMs = httpError.retryAfterSec * 1000;
+        const httpError = error as { retryAfterSec?: number };
+        if (typeof httpError.retryAfterSec === 'number' && httpError.retryAfterSec > 0) {
+          // Use server-specified delay, but bounded: [1s, 300s]
+          const serverDelayMs = Math.max(1000, Math.min(httpError.retryAfterSec * 1000, 300_000));
+          // Add small jitter (±10%) to avoid thundering herd
+          const jitterMs = Math.floor(serverDelayMs * 0.1 * (Math.random() * 2 - 1));
+          delayMs = serverDelayMs + jitterMs;
         }
       }
+      // Minimum delay floor: never retry faster than 100ms
+      delayMs = Math.max(100, delayMs);
 
       if (options.onRetry) {
         options.onRetry(error, attempt, delayMs);
