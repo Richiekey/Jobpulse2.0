@@ -111,6 +111,9 @@ importers:
       '@jobpulse/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@jobpulse/technology-checker':
+        specifier: workspace:*
+        version: link:../../packages/technology-checker
       '@jobpulse/url-resolution':
         specifier: workspace:*
         version: link:../../packages/url-resolution
@@ -216,6 +219,31 @@ importers:
       p-limit:
         specifier: ^6.2.0
         version: 6.2.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.5
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.6
+        version: 3.2.7(@types/node@22.20.1)(tsx@4.23.12)
+
+  packages/technology-checker:
+    dependencies:
+      '@jobpulse/ats':
+        specifier: workspace:*
+        version: link:../ats
+      '@jobpulse/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@jobpulse/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@supabase/supabase-js':
+        specifier: ^2.45.6
+        version: 2.112.4
     devDependencies:
       '@types/node':
         specifier: ^22.13.5

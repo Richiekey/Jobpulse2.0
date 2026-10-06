@@ -1,5 +1,9 @@
 import { ScraperRunner } from './engine/runner.js';
 import { SyncRunner } from './engine/sync-runner.js';
+import { DiscoveryRunner } from './engine/discovery-runner.js';
+import { VerificationRunner } from './engine/verification-runner.js';
+import { DiscoveryQueueRunner } from './engine/discovery-queue-runner.js';
+import { FullSyncRunner } from './engine/full-sync-runner.js';
 import { logger } from '@jobpulse/shared';
 import { validateWorkerEnvironment, GracefulShutdownManager } from './lifecycle.js';
 
@@ -17,7 +21,15 @@ async function main() {
   const sourceArg = args.find((a) => a.startsWith('--source='))?.split('=')[1] || (args.includes('--source') ? args[args.indexOf('--source') + 1] : undefined);
   const limitArg = args.find((a) => a.startsWith('--limit='))?.split('=')[1] || (args.includes('--limit') ? args[args.indexOf('--limit') + 1] : undefined);
   const forceDue = args.includes('--force-due') || args.includes('--force');
-  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg) || Boolean(runIdArg);
+  const isDiscover = args.includes('--discover');
+  const isVerify = args.includes('--verify');
+  const isQueue = args.includes('--queue');
+  const isFunnel = args.includes('--funnel');
+  const isScore = args.includes('--score');
+  const isSync = args.includes('--sync');
+  const isSignals = args.includes('--signals');
+  const isDryRun = args.includes('--dry-run');
+  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg) || Boolean(runIdArg) || isDiscover || isVerify || isQueue || isFunnel || isScore || isSync || isSignals;
   const isDaemon = args.includes('--daemon') || !isOnce;
 
   logger.info('Starting JobPulse Worker Process...', {
@@ -31,6 +43,10 @@ async function main() {
 
   const runner = new ScraperRunner({ concurrency: 5 });
   const syncRunner = new SyncRunner({ batchSize: 10 });
+  const discoveryRunner = new DiscoveryRunner();
+  const verificationRunner = new VerificationRunner();
+  const queueRunner = new DiscoveryQueueRunner();
+  const fullSyncRunner = new FullSyncRunner();
   const shutdownManager = new GracefulShutdownManager();
 
   const handleSignal = async (signal: string) => {
@@ -46,7 +62,70 @@ async function main() {
     try {
       let runId: string | null = null;
 
-      // 1. If explicit runId is provided, adopt and execute that specific run
+      // 1. If executing discovery (legacy or single step)
+      if (isDiscover) {
+        logger.info('Executing TechnologyChecker ATS discovery run...');
+        await discoveryRunner.runDiscovery({ dryRun: isDryRun });
+        completeTask();
+        process.exit(0);
+        return;
+      }
+
+      // 1.5 If executing a full synchronized discovery run
+      if (isSync) {
+        logger.info('Executing Full TechnologyChecker Synchronization...');
+        await fullSyncRunner.runFullSync({ dryRun: isDryRun, limit: limitArg ? parseInt(limitArg, 10) : undefined });
+        completeTask();
+        process.exit(0);
+        return;
+      }
+
+      // 1a. If executing signals processing
+      if (isSignals) {
+        logger.info('Executing TechnologyChecker signals processing...');
+        await discoveryRunner.runSignals({ dryRun: isDryRun });
+        completeTask();
+        process.exit(0);
+        return;
+      }
+      
+      // 1b. If executing verification
+      if (isVerify) {
+        logger.info('Executing TechnologyChecker ATS verification run...');
+        await verificationRunner.runVerification({ limit: limitArg ? parseInt(limitArg, 10) : 100 });
+        completeTask();
+        process.exit(0);
+        return;
+      }
+
+      // 1c. If executing discovery queue processing
+      if (isQueue) {
+        logger.info('Executing discovery queue processing...');
+        await queueRunner.runQueue({ limit: limitArg ? parseInt(limitArg, 10) : 100 });
+        completeTask();
+        process.exit(0);
+        return;
+      }
+
+      // 1d. If printing funnel metrics
+      if (isFunnel) {
+        logger.info('Fetching discovery funnel metrics...');
+        await queueRunner.printFunnel();
+        completeTask();
+        process.exit(0);
+        return;
+      }
+
+      // 1e. If scoring discovery sources
+      if (isScore) {
+        logger.info('Executing discovery priority scoring...');
+        await queueRunner.runScoring();
+        completeTask();
+        process.exit(0);
+        return;
+      }
+
+      // 2. If explicit runId is provided, adopt and execute that specific run
       if (runIdArg) {
         logger.info(`Executing targeted one-shot scrape run adopting runId: ${runIdArg}...`, {
           runId: runIdArg,
