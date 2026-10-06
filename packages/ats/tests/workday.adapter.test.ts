@@ -13,9 +13,10 @@ describe('WorkdayAdapter — Comprehensive ATS Verification', () => {
   });
 
   describe('1. Tenant and Board Resolution (Multi-Tenant Parsing)', () => {
-    it('parses standard Workday URL without locale', () => {
+    // Test 1
+    it('parses canonical 3-part identifier (tenant/wdN/site)', () => {
       const config = WorkdayAdapter.parseConfig({
-        sourceUrl: 'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite',
+        sourceIdentifier: 'nvidia/wd5/NVIDIAExternalCareerSite',
       });
       expect(config).toEqual({
         host: 'nvidia.wd5.myworkdayjobs.com',
@@ -24,59 +25,53 @@ describe('WorkdayAdapter — Comprehensive ATS Verification', () => {
       });
     });
 
-    it('parses Workday URL with en-US locale prefix', () => {
+    // Test 2
+    it('parses canonical 3-part identifier for IBM (ibm/wd1/IBM_Careers)', () => {
       const config = WorkdayAdapter.parseConfig({
-        sourceUrl: 'https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced',
+        sourceIdentifier: 'ibm/wd1/IBM_Careers',
       });
       expect(config).toEqual({
-        host: 'adobe.wd5.myworkdayjobs.com',
-        tenant: 'adobe',
-        site: 'external_experienced',
+        host: 'ibm.wd1.myworkdayjobs.com',
+        tenant: 'ibm',
+        site: 'IBM_Careers',
       });
     });
 
-    it('parses Workday URL with instance wd1 and language prefix', () => {
+    // Test 3
+    it('parses from valid sourceUrl when identifier is missing or 2-part', () => {
       const config = WorkdayAdapter.parseConfig({
-        sourceUrl: 'https://netflix.wd1.myworkdayjobs.com/en-US/Netflix',
+        sourceUrl: 'https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite',
       });
       expect(config).toEqual({
-        host: 'netflix.wd1.myworkdayjobs.com',
-        tenant: 'netflix',
-        site: 'Netflix',
+        host: 'nvidia.wd5.myworkdayjobs.com',
+        tenant: 'nvidia',
+        site: 'NVIDIAExternalCareerSite',
       });
     });
 
-    it('parses Workday URL with instance wd12', () => {
+    it('parses 2-part identifier ONLY if valid host/shard is available from sourceUrl', () => {
       const config = WorkdayAdapter.parseConfig({
-        sourceUrl: 'https://salesforce.wd12.myworkdayjobs.com/External_Career_Site',
+        sourceIdentifier: 'nvidia/NVIDIAExternalCareerSite',
+        sourceUrl: 'https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite',
       });
       expect(config).toEqual({
-        host: 'salesforce.wd12.myworkdayjobs.com',
-        tenant: 'salesforce',
-        site: 'External_Career_Site',
+        host: 'nvidia.wd5.myworkdayjobs.com',
+        tenant: 'nvidia',
+        site: 'NVIDIAExternalCareerSite',
       });
     });
 
-    it('parses sourceIdentifier in tenant/site format', () => {
+    // Test 4
+    it('returns null for invalid configuration (insufficient information)', () => {
       const config = WorkdayAdapter.parseConfig({
-        sourceIdentifier: 'target/targetcareers',
+        sourceIdentifier: 'nvidia', // 1-part is invalid
       });
-      expect(config).toEqual({
-        host: 'target.myworkdayjobs.com',
-        tenant: 'target',
-        site: 'targetcareers',
+      expect(config).toBeNull();
+      
+      const config2 = WorkdayAdapter.parseConfig({
+        sourceIdentifier: 'nvidia/NVIDIAExternalCareerSite', // 2-part without shard is invalid
       });
-    });
-
-    it('parses sourceIdentifier in host/site format', () => {
-      const config = WorkdayAdapter.parseConfig({
-        sourceIdentifier: 'walmart.wd5.myworkdayjobs.com/WalmartExternal',
-      });
-      expect(config).toEqual({
-        host: 'walmart.wd5.myworkdayjobs.com',
-        tenant: 'walmart',
-        site: 'WalmartExternal',
-      });
+      expect(config2).toBeNull();
     });
 
     it('prefers explicit adapterConfig if provided', () => {
@@ -249,6 +244,36 @@ describe('WorkdayAdapter — Comprehensive ATS Verification', () => {
       expect(candidates[2]!.externalJobId).toBe('R103');
     });
 
+    // Test 5
+    it('extracts candidate from CXS response with correct host in sourceJobUrl and discoveryUrl', async () => {
+      const config = {
+        ...mockSourceConfig,
+        sourceIdentifier: 'nvidia/wd5/NVIDIAExternalCareerSite',
+        sourceUrl: undefined,
+      };
+
+      vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
+        status: 200,
+        data: {
+          total: 1,
+          jobPostings: [
+            {
+              title: 'Senior Software Engineer',
+              externalPath: '/job/US-CA/Senior-Software-Engineer_JR12345',
+              bulletFields: ['JR12345'],
+            },
+          ],
+        },
+        headers: {},
+      });
+
+      const candidates = await adapter.discover(config);
+      expect(candidates.length).toBe(1);
+      expect(candidates[0]!.externalJobId).toBe('JR12345');
+      expect(candidates[0]!.sourceJobUrl).toBe('https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/US-CA/Senior-Software-Engineer_JR12345');
+      expect(candidates[0]!.discoveryUrl).toBe('https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs');
+    });
+
     it('handles empty discovery result gracefully', async () => {
       vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
         status: 200,
@@ -263,15 +288,14 @@ describe('WorkdayAdapter — Comprehensive ATS Verification', () => {
       expect(candidates).toEqual([]);
     });
 
-    it('handles malformed API response without crashing', async () => {
+    it('throws ADAPTER_ERROR on malformed API response on first page', async () => {
       vi.spyOn(httpClient, 'post').mockResolvedValueOnce({
         status: 200,
         data: { invalid: 'payload' } as any,
         headers: {},
       });
 
-      const candidates = await adapter.discover(mockSourceConfig);
-      expect(candidates).toEqual([]);
+      await expect(adapter.discover(mockSourceConfig)).rejects.toThrow('ADAPTER_ERROR');
     });
 
     it('skips malformed individual jobs within a valid list', async () => {

@@ -53,6 +53,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 1.5 Validating Source directly against ATS adapter
+    const { getAdapterForSource } = await import('@jobpulse/ats');
+    const adapter = getAdapterForSource(input.atsType);
+    if (adapter) {
+      const validationResult = await adapter.validateSource({
+        adapterName: input.atsType,
+        sourceIdentifier: input.boardIdentifier,
+        sourceUrl: input.sourceUrl || undefined,
+      } as any);
+
+      if (!validationResult.isValid) {
+        return ApiResponse.error(
+          `ATS Validation Failed: ${validationResult.error}`,
+          null,
+          400
+        );
+      }
+    }
+
     // 2. Targeted Candidate Company Query (prevents full-table scan)
     const filter = CompanySourceOnboardingService.getCandidateLookupFilter(input);
     let candidateQuery = supabase

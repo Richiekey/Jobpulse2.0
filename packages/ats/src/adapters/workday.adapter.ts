@@ -64,13 +64,22 @@ export class WorkdayAdapter implements ATSAdapter {
 
   /**
    * Parses and extracts Workday host, tenant, and site from a URL, sourceIdentifier, or config.
+   *
+   * Precedence:
+   *   1. Explicit adapterConfig with host + tenant + site
+   *   2. Canonical 3-part sourceIdentifier: tenant/wdN/site
+   *   3. Valid sourceUrl (preserves shard from hostname)
+   *   4. 2-part sourceIdentifier: only if host/shard is available elsewhere
+   *   5. Full host/site sourceIdentifier: tenant.wdN.myworkdayjobs.com/site
+   *
+   * A 2-part identifier without shard information returns null (invalid_configuration).
    */
   public static parseConfig(source: {
     sourceUrl?: string | null;
     sourceIdentifier?: string;
     adapterConfig?: any;
   }): WorkdayTenantConfig | null {
-    // 1. Explicit adapter config
+    // 1. Explicit adapter config (highest priority)
     if (source.adapterConfig && typeof source.adapterConfig === 'object') {
       const { host, tenant, site } = source.adapterConfig;
       if (host && tenant && site) {
@@ -78,61 +87,108 @@ export class WorkdayAdapter implements ATSAdapter {
       }
     }
 
-    // 2. Parse from sourceUrl
-    const urlStr = source.sourceUrl || '';
-    if (urlStr) {
-      try {
-        const parsedUrl = new URL(urlStr);
-        const host = parsedUrl.host;
+    const identifier = (source.sourceIdentifier || '').trim();
 
-        // Host pattern: {tenant}.wd{n}.myworkdayjobs.com or {tenant}.myworkdayjobs.com
-        const hostMatch = host.match(/^([a-zA-Z0-9_-]+)(?:\.wd\d+)?\.myworkdayjobs\.com$/i);
-        const tenantFromHost = hostMatch ? hostMatch[1]!.toLowerCase() : null;
-
-        // Path pattern: /[locale]/{site} or /{site}
-        const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
-        let site: string | null = null;
-        let tenant: string | null = tenantFromHost;
-
-        if (pathSegments.length > 0) {
-          // If first segment is a locale (e.g. en-US, fr-CA, etc.), second segment is site
-          if (/^[a-z]{2}(?:-[A-Z]{2})?$/i.test(pathSegments[0]!)) {
-            site = pathSegments[1] || null;
-          } else {
-            site = pathSegments[0] || null;
-          }
-        }
-
-        if (host && tenant && site) {
-          return { host, tenant, site };
-        }
-      } catch {
-        // Fall through to sourceIdentifier
-      }
-    }
-
-    // 3. Parse from sourceIdentifier: e.g. "nvidia/NVIDIAExternalCareerSite" or "nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
-    const identifier = source.sourceIdentifier || '';
-    if (identifier.includes('/')) {
-      const parts = identifier.split('/');
-      const first = parts[0]!;
-      const site = parts[1]!;
-
-      if (first.includes('myworkdayjobs.com')) {
-        const tenantMatch = first.match(/^([a-zA-Z0-9_-]+)/);
-        const tenant = tenantMatch ? tenantMatch[1]!.toLowerCase() : first;
-        return { host: first, tenant, site };
-      } else {
+    // 2. Canonical 3-part identifier: tenant/wdN/site (e.g. nvidia/wd5/NVIDIAExternalCareerSite)
+    if (identifier) {
+      const threePartMatch = identifier.match(/^([a-zA-Z0-9_-]+)\/(wd\d+)\/([a-zA-Z0-9_-]+)$/);
+      if (threePartMatch) {
+        const tenant = threePartMatch[1]!.toLowerCase();
+        const shard = threePartMatch[2]!;
+        const site = threePartMatch[3]!;
         return {
-          host: `${first}.myworkdayjobs.com`,
-          tenant: first.toLowerCase(),
+          host: `${tenant}.${shard}.myworkdayjobs.com`,
+          tenant,
           site,
         };
       }
     }
 
+    // 3. Parse from sourceUrl (preserves shard in hostname)
+    const urlStr = source.sourceUrl || '';
+    if (urlStr) {
+      const parsed = WorkdayAdapter.parseWorkdayUrl(urlStr);
+      if (parsed) {
+        return parsed;
+      }
+    }
+
+    // 4. Full host/site identifier: tenant.wdN.myworkdayjobs.com/site
+    if (identifier && identifier.includes('/')) {
+      const parts = identifier.split('/');
+      const first = parts[0]!;
+      const site = parts[parts.length - 1]!; // last segment is always the site
+
+      if (first.includes('myworkdayjobs.com')) {
+        const tenantMatch = first.match(/^([a-zA-Z0-9_-]+)/);
+        const tenant = tenantMatch ? tenantMatch[1]!.toLowerCase() : first;
+        return { host: first, tenant, site };
+      }
+
+      // 5. 2-part identifier (tenant/site) — only valid if we can get shard from sourceUrl
+      if (parts.length === 2) {
+        // Try to extract shard from sourceUrl even if full parse failed
+        if (urlStr) {
+          try {
+            const u = new URL(urlStr);
+            const shardMatch = u.host.match(/\.(wd\d+)\./);
+            if (shardMatch) {
+              const tenant = first.toLowerCase();
+              return {
+                host: `${tenant}.${shardMatch[1]}.myworkdayjobs.com`,
+                tenant,
+                site,
+              };
+            }
+          } catch {
+            // Fall through
+          }
+        }
+        // 2-part without shard is insufficient — return null (invalid_configuration)
+        return null;
+      }
+    }
+
     return null;
   }
+
+  /**
+   * Parses a Workday myworkdayjobs.com URL into tenant config.
+   * Correctly preserves the shard (e.g. wd5) in the host.
+   */
+  private static parseWorkdayUrl(urlStr: string): WorkdayTenantConfig | null {
+    try {
+      const parsedUrl = new URL(urlStr);
+      const host = parsedUrl.host;
+
+      // Host pattern: {tenant}.wd{n}.myworkdayjobs.com or {tenant}.myworkdayjobs.com
+      const hostMatch = host.match(/^([a-zA-Z0-9_-]+)(?:\.(wd\d+))?\.myworkdayjobs\.com$/i);
+      if (!hostMatch) return null;
+
+      const tenant = hostMatch[1]!.toLowerCase();
+
+      // Path pattern: /[locale]/{site}[/...] or /{site}[/...]
+      const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+      let site: string | null = null;
+
+      if (pathSegments.length > 0) {
+        // If first segment is a locale (e.g. en-US, fr-CA, etc.), second segment is site
+        if (/^[a-z]{2}(?:-[A-Z]{2})?$/i.test(pathSegments[0]!)) {
+          site = pathSegments[1] || null;
+        } else {
+          site = pathSegments[0] || null;
+        }
+      }
+
+      if (!site) return null;
+
+      // Use the full host as-is (preserves shard)
+      return { host, tenant, site };
+    } catch {
+      return null;
+    }
+  }
+
 
   public detect(url: string, html?: string): ATSDetectionResult {
     // 1. Direct URL pattern match
@@ -193,7 +249,7 @@ export class WorkdayAdapter implements ATSAdapter {
         boardIdentifier: config.sourceIdentifier,
         jobsDiscoveredCount: 0,
         sampleJobTitles: [],
-        error: 'Unable to parse Workday tenant configuration (host, tenant, and site required)',
+        error: 'INVALID_CONFIGURATION: Unable to parse Workday tenant configuration (host, tenant, and site required)',
         durationMs: Date.now() - start,
       };
     }
@@ -206,7 +262,7 @@ export class WorkdayAdapter implements ATSAdapter {
         url,
         {
           appliedFacets: {},
-          limit: 5,
+          limit: WorkdayAdapter.DEFAULT_PAGE_SIZE,
           offset: 0,
           searchText: '',
         },
@@ -238,7 +294,7 @@ export class WorkdayAdapter implements ATSAdapter {
         boardIdentifier: `${tenant}/${site}`,
         jobsDiscoveredCount: 0,
         sampleJobTitles: [],
-        error: `Workday CXS API returned HTTP ${response.status}`,
+        error: `Workday CXS API returned HTTP ${response.status} or malformed response`,
         durationMs,
       };
     } catch (err: any) {
@@ -257,7 +313,7 @@ export class WorkdayAdapter implements ATSAdapter {
   public async discover(companySource: CompanySourceConfig): Promise<JobCandidate[]> {
     const parsed = WorkdayAdapter.parseConfig(companySource);
     if (!parsed) {
-      return [];
+      throw new Error('INVALID_CONFIGURATION: Unable to construct valid Workday host/tenant/site');
     }
 
     const { host, tenant, site } = parsed;
@@ -291,8 +347,20 @@ export class WorkdayAdapter implements ATSAdapter {
           }
         );
 
-        if (response.status !== 200 || !response.data || !Array.isArray(response.data.jobPostings)) {
-          break;
+        if (response.status !== 200) {
+          if (pageCount === 1) {
+            throw new Error(`HTTP_ERROR: Workday CXS API returned HTTP ${response.status}`);
+          } else {
+            break; // Stop pagination on subsequent failures
+          }
+        }
+
+        if (!response.data || !Array.isArray(response.data.jobPostings)) {
+          if (pageCount === 1) {
+            throw new Error('ADAPTER_ERROR: Malformed successful response missing jobPostings array');
+          } else {
+            break;
+          }
         }
 
         total = typeof response.data.total === 'number' ? response.data.total : 0;
@@ -339,8 +407,11 @@ export class WorkdayAdapter implements ATSAdapter {
         }
 
         offset += postings.length;
-      } catch {
-        // Stop pagination on unrecoverable network/server error, return what we discovered
+      } catch (err) {
+        if (pageCount === 1) {
+          throw err;
+        }
+        // Stop pagination on unrecoverable network/server error for subsequent pages, return what we discovered
         break;
       }
     }

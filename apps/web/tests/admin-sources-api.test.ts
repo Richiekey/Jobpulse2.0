@@ -236,6 +236,41 @@ describe('Admin Source Intelligence APIs Security & Behavior (S14, SSRF, Paginat
     expect(json.data.companySlug).toBe('stripe');
   });
 
+  it('rejects onboarding with 400 if ATS adapter validation fails', async () => {
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'sources') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ data: { id: 'src_wd_1', adapter_name: 'workday' }, error: null }),
+          };
+        }
+        return {};
+      }),
+    };
+
+    vi.spyOn(AuthGuard, 'requireAdmin').mockResolvedValue({
+      user: { id: 'admin_1' },
+      profile: { id: 'admin_1', role: 'admin' },
+      supabase: mockSupabase as any,
+    } as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/sources/onboard', {
+      method: 'POST',
+      body: JSON.stringify({
+        companyName: 'Invalid',
+        atsType: 'workday',
+        boardIdentifier: 'invalid-identifier-without-shard', // This will fail workday validation
+      }),
+    });
+
+    const res = await onboardRoute(req);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain('ATS Validation Failed: INVALID_CONFIGURATION');
+  });
+
   it('fails hard with 500 when onboarding RPC fails, with zero client-side fallback mutation', async () => {
     const mockRpc = vi.fn().mockResolvedValue({
       data: null,
