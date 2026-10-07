@@ -5,6 +5,7 @@ import { VerificationRunner } from './engine/verification-runner.js';
 import { DiscoveryQueueRunner } from './engine/discovery-queue-runner.js';
 import { FullSyncRunner } from './engine/full-sync-runner.js';
 import { DiscoveryEngineRunner } from './engine/discovery-engine-runner.js';
+import { DiscoveryProcessRunner } from './engine/discovery-process-runner.js';
 import { logger } from '@jobpulse/shared';
 import { validateWorkerEnvironment, GracefulShutdownManager } from './lifecycle.js';
 
@@ -30,8 +31,9 @@ async function main() {
   const isSync = args.includes('--sync');
   const isSignals = args.includes('--signals');
   const isDiscoveryEngine = args.includes('--discovery-engine');
+  const isDiscoveryProcess = args.includes('--discovery-process') || args.includes('--process-pipeline');
   const isDryRun = args.includes('--dry-run');
-  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg) || Boolean(runIdArg) || isDiscover || isVerify || isQueue || isFunnel || isScore || isSync || isSignals || isDiscoveryEngine;
+  const isOnce = args.includes('--once') || Boolean(companyArg) || Boolean(sourceArg) || Boolean(runIdArg) || isDiscover || isVerify || isQueue || isFunnel || isScore || isSync || isSignals || isDiscoveryEngine || isDiscoveryProcess;
   const isDaemon = args.includes('--daemon') || !isOnce;
 
   logger.info('Starting JobPulse Worker Process...', {
@@ -78,6 +80,22 @@ async function main() {
         });
         completeTask();
         process.exit(0);
+        return;
+      }
+
+      // 0.5 If executing automated Verification & Promotion Pipeline
+      if (isDiscoveryProcess) {
+        logger.info('Executing automated Verification & Promotion Pipeline...');
+        const stagesArg = args.find((a) => a.startsWith('--stages='))?.split('=')[1]?.split(',') as any;
+        const processRunner = new DiscoveryProcessRunner();
+        const report = await processRunner.runPipeline({
+          limit: limitArg ? parseInt(limitArg, 10) : 50,
+          dryRun: isDryRun,
+          stages: stagesArg,
+        });
+        logger.info('Discovery Process Run finished.', { report });
+        completeTask();
+        process.exit(report.totalErrors > 0 && !isDryRun ? 1 : 0);
         return;
       }
 

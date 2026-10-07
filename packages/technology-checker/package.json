@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@jobpulse/ats": "workspace:*",
+    "@jobpulse/discovery-engine": "workspace:*",
     "@jobpulse/domain": "workspace:*",
     "@jobpulse/shared": "workspace:*",
     "@jobpulse/shared-state": "workspace:*",

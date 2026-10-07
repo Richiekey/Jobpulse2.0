@@ -5,3 +5,5 @@ export * from './verification.js';
 export * from './queue-processor.js';
 export * from './scoring.js';
 export * from './state-store.js';
+export * from './retry-classifier.js';
+export * from './execution-context.js';

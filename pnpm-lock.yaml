@@ -285,6 +285,9 @@ importers:
       '@jobpulse/ats':
         specifier: workspace:*
         version: link:../ats
+      '@jobpulse/discovery-engine':
+        specifier: workspace:*
+        version: link:../discovery-engine
       '@jobpulse/domain':
         specifier: workspace:*
         version: link:../domain

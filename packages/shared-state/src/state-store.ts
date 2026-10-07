@@ -10,18 +10,42 @@ export interface DiscoveryRecord {
   adapter_status: string | null;
   board_identifier: string | null;
   detection_url: string | null;
+  detection_domain?: string | null;
+  country?: string | null;
+  industry?: string | null;
+  employees?: string | null;
+  discovery_source?: string;
+  discovery_confidence?: number | null;
+  adapter?: string | null;
   crawl_job_count: number | null;
+  crawl_jobs_inserted?: number | null;
   crawl_eligible_job_count: number;
   crawl_rejected_job_count: number;
-  promotion_status: string | null;
-  first_discovered_at: string | null;
-  last_success_at: string | null;
+  last_crawled_at?: string | null;
+  company_source_id?: string | null;
   priority_score: number | null;
+  promotion_status: string | null;
+  promoted_at?: string | null;
+  first_discovered_at: string | null;
+  last_verified_at?: string | null;
+  last_scraped_at?: string | null;
+  last_success_at: string | null;
+  last_failure_at?: string | null;
   discovery_providers?: string[] | null;
   discovery_evidence?: any[] | null;
   careers_url?: string | null;
+  job_evidence?: any[] | null;
   job_evidence_count?: number | null;
   last_seen_at?: string | null;
+  verification_attempts?: number;
+  verification_error?: string | null;
+  adapter_resolution_attempts?: number;
+  trial_crawl_attempts?: number;
+  trial_failure_reason?: string | null;
+  promotion_attempted_at?: string | null;
+  promotion_reason?: string | null;
+  claimed_at?: string | null;
+  claimed_by?: string | null;
   [key: string]: any;
 }
 
@@ -43,6 +67,20 @@ export interface StateStore {
 
   /** Query all records */
   queryAll(limit?: number): Promise<DiscoveryRecord[]>;
+
+  /** Claim candidates atomically using FOR UPDATE SKIP LOCKED (MC-1) */
+  claimCandidates(
+    status: string,
+    workerId: string,
+    limit?: number,
+    leaseIntervalMinutes?: number
+  ): Promise<DiscoveryRecord[]>;
+
+  /** Recover stale claims whose lease has expired (MC-1) */
+  recoverStaleClaims(leaseIntervalMinutes?: number): Promise<number>;
+
+  /** Release claim on a record */
+  releaseClaim(id: string, workerId?: string): Promise<boolean>;
 }
 
 export class SupabaseStateStore implements StateStore {
@@ -103,6 +141,39 @@ export class SupabaseStateStore implements StateStore {
     const { data, error } = await this.db.from('discovery_registry').select('*').limit(limit);
     if (error) throw new Error(`QueryAll failed: ${error.message}`);
     return data as DiscoveryRecord[];
+  }
+
+  async claimCandidates(
+    status: string,
+    workerId: string,
+    limit: number = 50,
+    leaseIntervalMinutes: number = 10
+  ): Promise<DiscoveryRecord[]> {
+    const { data, error } = await this.db.rpc('claim_discovery_candidates', {
+      p_status: status,
+      p_worker_id: workerId,
+      p_limit: limit,
+      p_lease_interval: `${leaseIntervalMinutes} minutes`,
+    });
+    if (error) throw new Error(`claimCandidates failed: ${error.message}`);
+    return (data || []) as DiscoveryRecord[];
+  }
+
+  async recoverStaleClaims(leaseIntervalMinutes: number = 10): Promise<number> {
+    const { data, error } = await this.db.rpc('recover_stale_discovery_claims', {
+      p_lease_interval: `${leaseIntervalMinutes} minutes`,
+    });
+    if (error) throw new Error(`recoverStaleClaims failed: ${error.message}`);
+    return (data as number) ?? 0;
+  }
+
+  async releaseClaim(id: string, workerId?: string): Promise<boolean> {
+    const { data, error } = await this.db.rpc('release_discovery_claim', {
+      p_id: id,
+      p_worker_id: workerId || null,
+    });
+    if (error) throw new Error(`releaseClaim failed: ${error.message}`);
+    return Boolean(data);
   }
 }
 
@@ -172,6 +243,9 @@ export class InMemoryStateStore implements StateStore {
       id,
       crawl_eligible_job_count: record.crawl_eligible_job_count ?? 0,
       crawl_rejected_job_count: record.crawl_rejected_job_count ?? 0,
+      verification_attempts: record.verification_attempts ?? 0,
+      adapter_resolution_attempts: record.adapter_resolution_attempts ?? 0,
+      trial_crawl_attempts: record.trial_crawl_attempts ?? 0,
     } as DiscoveryRecord);
     return id;
   }
@@ -220,6 +294,85 @@ export class InMemoryStateStore implements StateStore {
       }
     }
     return Array.from(this.records.values()).slice(0, limit);
+  }
+
+  async claimCandidates(
+    status: string,
+    workerId: string,
+    limit: number = 50,
+    leaseIntervalMinutes: number = 10
+  ): Promise<DiscoveryRecord[]> {
+    // If we have a fallback store, populate cache first
+    if (this.fallbackStore) {
+      const dbRecords = await this.fallbackStore.queryByStatus(status, {}, limit * 2);
+      for (const rec of dbRecords) {
+        if (!this.records.has(rec.id)) {
+          this.records.set(rec.id, { ...rec });
+        }
+      }
+    }
+
+    const nowMs = Date.now();
+    const leaseExpiryMs = leaseIntervalMinutes * 60 * 1000;
+    const claimed: DiscoveryRecord[] = [];
+
+    const candidates = Array.from(this.records.values())
+      .filter((rec) => {
+        if (rec.discovery_status !== status) return false;
+        if (!rec.claimed_at) return true;
+        const claimTime = new Date(rec.claimed_at).getTime();
+        return isNaN(claimTime) || nowMs - claimTime > leaseExpiryMs;
+      })
+      .sort((a, b) => {
+        const scoreDiff = (b.priority_score ?? 0) - (a.priority_score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        const aDate = a.first_discovered_at ? new Date(a.first_discovered_at).getTime() : 0;
+        const bDate = b.first_discovered_at ? new Date(b.first_discovered_at).getTime() : 0;
+        return aDate - bDate;
+      })
+      .slice(0, limit);
+
+    const nowIso = new Date(nowMs).toISOString();
+    for (const cand of candidates) {
+      cand.claimed_at = nowIso;
+      cand.claimed_by = workerId;
+      this.records.set(cand.id, { ...cand });
+      claimed.push({ ...cand });
+    }
+
+    return claimed;
+  }
+
+  async recoverStaleClaims(leaseIntervalMinutes: number = 10): Promise<number> {
+    const nowMs = Date.now();
+    const leaseExpiryMs = leaseIntervalMinutes * 60 * 1000;
+    let recovered = 0;
+
+    for (const rec of this.records.values()) {
+      if (rec.claimed_at) {
+        const claimTime = new Date(rec.claimed_at).getTime();
+        if (isNaN(claimTime) || nowMs - claimTime > leaseExpiryMs) {
+          rec.claimed_at = null;
+          rec.claimed_by = null;
+          this.records.set(rec.id, { ...rec });
+          recovered++;
+        }
+      }
+    }
+
+    return recovered;
+  }
+
+  async releaseClaim(id: string, workerId?: string): Promise<boolean> {
+    const rec = this.records.get(id);
+    if (!rec) return false;
+    if (!workerId || rec.claimed_by === workerId) {
+      rec.claimed_at = null;
+      rec.claimed_by = null;
+      this.records.set(id, { ...rec });
+      return true;
+    }
+    return false;
   }
   
   // Test helper
