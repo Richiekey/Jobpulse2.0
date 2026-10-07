@@ -603,7 +603,7 @@ export class DiscoveryQueueProcessor {
         const filter = CompanySourceOnboardingService.getCandidateLookupFilter(onboardInput);
         let candidateQuery = this.db
           .from('companies')
-          .select('id, name, slug, domain, normalized_name, careers_url, logo_url, description, industry, company_size, location, verified, status, metadata, created_at, updated_at');
+          .select('id, name, slug, domain, normalized_name, careers_url, logo_url, description, industry, company_size, verified, status, metadata, created_at, updated_at');
 
         if (filter.domain && typeof candidateQuery.or === 'function') {
           candidateQuery = candidateQuery.or(`domain.eq.${filter.domain},normalized_name.eq.${filter.normalizedName}`);
