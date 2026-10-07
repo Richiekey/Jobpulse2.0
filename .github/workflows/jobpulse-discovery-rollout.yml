@@ -1,0 +1,121 @@
+name: JobPulse 2.0 Discovery Rollout
+
+on:
+  schedule:
+    - cron: '30 2-23/6 * * *' # Every 6 hours at :30 — offset from scraper at :00
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Maximum number of discovery candidates processed/promoted by this rollout'
+        required: false
+        default: '5'
+        type: string
+      provider:
+        description: 'Discovery provider (hn-hiring, ats-directory). Leave blank for all providers.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Run in dry-run mode (no mutations). Scheduled runs always use dryRun=false.'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: jobpulse-discovery-rollout
+  cancel-in-progress: false
+
+jobs:
+  discovery-rollout:
+    name: Discovery Engine V1 Rollout
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Workspace Packages
+        run: pnpm --filter @jobpulse/worker... run build
+
+      - name: Resolve Run Parameters
+        id: params
+        run: |
+          # Scheduled runs always use production defaults; manual inputs can override
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            LIMIT="5"
+            DRY_RUN="false"
+            PROVIDER=""
+          else
+            LIMIT="${{ inputs.limit || '5' }}"
+            DRY_RUN="${{ inputs.dry_run }}"
+            PROVIDER="${{ inputs.provider }}"
+          fi
+
+          echo "limit=$LIMIT" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
+
+          echo "=== JobPulse Discovery Rollout ==="
+          echo "Mode: ${{ github.event_name }}"
+          echo "Discovery limit: $LIMIT"
+          echo "Promotion limit: $LIMIT"
+          echo "Provider: ${PROVIDER:-all}"
+          echo "Dry run: $DRY_RUN"
+          echo "=================================="
+
+      - name: '[1/2] Discovery Engine V1'
+        run: |
+          ARGS="--discovery-engine --limit=${{ steps.params.outputs.limit }}"
+          if [ -n "${{ steps.params.outputs.provider }}" ]; then
+            ARGS="$ARGS --provider=${{ steps.params.outputs.provider }}"
+          fi
+          if [ "${{ steps.params.outputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          echo "[1/2] Running Discovery Engine V1 with args: $ARGS"
+          node apps/worker/dist/index.js $ARGS
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WORKER_SECRET_TOKEN: ${{ secrets.WORKER_SECRET_TOKEN }}
+          JOBRIGHT_EMAIL: ${{ secrets.JOBRIGHT_EMAIL }}
+          JOBRIGHT_PASSWORD: ${{ secrets.JOBRIGHT_PASSWORD }}
+          JOBRIGHT_DETAIL_FETCH_CAP: '100'
+          NODE_ENV: production
+
+      - name: '[2/2] Verification & Promotion Pipeline'
+        run: |
+          ARGS="--discovery-process --limit=${{ steps.params.outputs.limit }}"
+          if [ "${{ steps.params.outputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          echo "[2/2] Running Verification & Promotion Pipeline with args: $ARGS"
+          node apps/worker/dist/index.js $ARGS
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WORKER_SECRET_TOKEN: ${{ secrets.WORKER_SECRET_TOKEN }}
+          JOBRIGHT_EMAIL: ${{ secrets.JOBRIGHT_EMAIL }}
+          JOBRIGHT_PASSWORD: ${{ secrets.JOBRIGHT_PASSWORD }}
+          JOBRIGHT_DETAIL_FETCH_CAP: '100'
+          NODE_ENV: production
+
+      - name: Report Failure
+        if: failure()
+        run: echo "::error::JobPulse Discovery Rollout failed — inspect step logs above."
