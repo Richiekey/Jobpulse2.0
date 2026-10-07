@@ -119,26 +119,30 @@ export class DiscoveryQueueProcessor {
       return { eligible: false, reason: 'Missing board_identifier' };
     }
 
-    // 6. Trial crawl must have produced eligible jobs (if count details exist)
-    if (record.crawl_job_count !== null && record.crawl_job_count !== undefined) {
-      if (record.crawl_job_count <= 0) {
-        return {
-          eligible: false,
-          reason: `Trial crawl produced 0 jobs`,
-        };
-      }
-      if (
-        record.crawl_eligible_job_count !== null &&
-        record.crawl_eligible_job_count !== undefined &&
-        record.crawl_rejected_job_count !== null &&
-        record.crawl_rejected_job_count > 0 &&
-        record.crawl_eligible_job_count <= 0
-      ) {
-        return {
-          eligible: false,
-          reason: `Trial crawl produced 0 eligible jobs`,
-        };
-      }
+    // 6. Trial crawl counts are mandatory and must be positive
+    if (record.crawl_job_count === null || record.crawl_job_count === undefined) {
+      return {
+        eligible: false,
+        reason: 'Missing crawl_job_count — trial crawl data is required for promotion',
+      };
+    }
+    if (record.crawl_job_count <= 0) {
+      return {
+        eligible: false,
+        reason: `Trial crawl produced 0 jobs (crawl_job_count=${record.crawl_job_count})`,
+      };
+    }
+    if (record.crawl_eligible_job_count === null || record.crawl_eligible_job_count === undefined) {
+      return {
+        eligible: false,
+        reason: 'Missing crawl_eligible_job_count — eligible job data is required for promotion',
+      };
+    }
+    if (record.crawl_eligible_job_count <= 0) {
+      return {
+        eligible: false,
+        reason: `Trial crawl produced 0 eligible jobs (crawl_eligible_job_count=${record.crawl_eligible_job_count})`,
+      };
     }
 
     // 7. Safety: Circuit breaker must be closed
@@ -402,6 +406,14 @@ export class DiscoveryQueueProcessor {
             logger.warn(`Trial crawl: failed to fetch/parse candidate ${candidate.externalJobId}`, {
               error: String(fetchErr),
             });
+          }
+
+          // Heartbeat: renew claim lease after each candidate to prevent stale recovery
+          // from stealing an active long-running trial crawl claim
+          try {
+            await this.store.renewClaim(record.id, this.workerId);
+          } catch {
+            // Non-fatal — claim may have already been released
           }
         }
 

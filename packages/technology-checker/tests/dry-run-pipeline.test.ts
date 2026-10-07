@@ -97,6 +97,7 @@ describe('Dry-Run Pipeline via InMemoryStateStore', () => {
       adapter_status: 'ready',
       board_identifier: 'promote-test',
       crawl_job_count: 5,
+      crawl_eligible_job_count: 5,
       promotion_status: null,
     });
 

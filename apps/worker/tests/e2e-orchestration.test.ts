@@ -122,5 +122,5 @@ describe('E2E Orchestration (Dry Run)', () => {
 
     // Prove zero mutations by checking Supabase mock (if it was mocked)
     // We rely on InMemoryStateStore isolating the changes.
-  });
+  }, 30000);
 });

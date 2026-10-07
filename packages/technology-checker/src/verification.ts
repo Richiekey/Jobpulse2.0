@@ -217,8 +217,11 @@ export class TechnologyCheckerVerifier {
       let html = '';
       let finalUrl = '';
       let fetchSuccess = false;
+      let detection: ReturnType<typeof ATSDetector.detect> | null = null;
+      let anyFetchSucceeded = false;
 
-      // Rate-limited domain probe
+      // Rate-limited domain probe — traverse ALL evidence URLs until ATSDetector
+      // produces a valid detection. Do NOT stop at the first HTTP-200 response.
       await this.rateLimiter.acquire(record.domain);
       try {
         for (const url of testUrls) {
@@ -229,20 +232,31 @@ export class TechnologyCheckerVerifier {
               maxRedirectHops: 3,
               throwOn404: true,
             });
-            html = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-            finalUrl = res.url;
-            fetchSuccess = true;
+            const pageHtml = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+            anyFetchSucceeded = true;
             this.circuitBreaker.recordSuccess(record.domain);
-            break;
+
+            // Attempt ATS detection on this page
+            const pageDetection = ATSDetector.detect(res.url, pageHtml);
+            if (pageDetection.detected && pageDetection.atsType) {
+              // Valid detection found — use this URL's results
+              html = pageHtml;
+              finalUrl = res.url;
+              fetchSuccess = true;
+              detection = pageDetection;
+              break;
+            }
+            // HTTP-200 but no ATS signature: continue to the next evidence URL
           } catch (e) {
-            // Try next candidate URL
+            // Network/HTTP error on this URL — try next candidate URL
           }
         }
       } finally {
         this.rateLimiter.release(record.domain);
       }
 
-      if (!fetchSuccess) {
+      if (!anyFetchSucceeded) {
+        // No URL was reachable at all
         this.circuitBreaker.recordFailure(record.domain);
         verificationStatus = 'inaccessible';
         discoveryError = 'All candidate URLs inaccessible';
@@ -270,71 +284,69 @@ export class TechnologyCheckerVerifier {
 
         discoveryStatus = 'FAILED';
         verificationError = decision.reason;
+      } else if (!fetchSuccess || !detection) {
+        // At least one page responded HTTP-200 but none had a valid ATS detection
+        verificationStatus = 'unresolved';
+        discoveryStatus = 'FAILED';
+        discoveryError = 'No ATS signature detected across all reachable evidence URLs';
+        verificationError = discoveryError;
+        metrics.unresolved++;
       } else {
-        const detection = ATSDetector.detect(finalUrl, html);
+        // Valid ATS detection found
+        detectionUrl = detection.sourceUrl;
+        confidence = detection.confidence;
+        boardIdentifier = detection.boardIdentifier;
 
-        if (detection.detected && detection.atsType) {
-          detectionUrl = detection.sourceUrl;
-          confidence = detection.confidence;
-          boardIdentifier = detection.boardIdentifier;
-
-          if (detection.atsType !== record.ats_provider) {
-            verificationStatus = 'mismatch';
-            discoveryStatus = 'FAILED';
-            discoveryError = `Expected ${record.ats_provider}, detected ${detection.atsType}`;
-            verificationError = discoveryError;
-            metrics.mismatch++;
-          } else {
-            // ATS matches — check adapter availability
-            const hasAdapter = ATSAdapterRegistry.hasAdapter(detection.atsType);
-
-            if (hasAdapter) {
-              const adapter = ATSAdapterRegistry.getAdapter(detection.atsType);
-              adapterSlug = adapter.platformSlug;
-
-              try {
-                const validation = await adapter.validateSource({
-                  sourceUrl: detection.sourceUrl,
-                  sourceIdentifier: detection.boardIdentifier!,
-                  adapterConfig: {},
-                } as any);
-
-                if (validation.isValid) {
-                  verificationStatus = 'verified';
-                  discoveryStatus = 'VERIFIED';
-                  adapterStatus = 'ready';
-                  metrics.verified++;
-                } else {
-                  verificationStatus = 'stale';
-                  discoveryStatus = 'FAILED';
-                  adapterStatus = 'invalid';
-                  discoveryError = 'Adapter validation failed: source not valid';
-                  verificationError = discoveryError;
-                  metrics.stale++;
-                }
-              } catch (e: any) {
-                verificationStatus = 'probable';
-                discoveryStatus = 'VERIFIED';
-                adapterStatus = 'error';
-                discoveryError = `Adapter validation threw: ${e instanceof Error ? e.message : String(e)}`;
-                verificationError = discoveryError;
-                metrics.probable++;
-              }
-            } else {
-              // ATS confirmed but no adapter yet — still verified
-              verificationStatus = 'verified';
-              discoveryStatus = 'VERIFIED';
-              adapterSlug = detection.atsType;
-              adapterStatus = 'unavailable';
-              metrics.verified++;
-            }
-          }
-        } else {
-          verificationStatus = 'unresolved';
+        if (detection.atsType !== record.ats_provider) {
+          verificationStatus = 'mismatch';
           discoveryStatus = 'FAILED';
-          discoveryError = 'No ATS signature detected in HTML';
+          discoveryError = `Expected ${record.ats_provider}, detected ${detection.atsType}`;
           verificationError = discoveryError;
-          metrics.unresolved++;
+          metrics.mismatch++;
+        } else {
+          // ATS matches — check adapter availability
+          const hasAdapter = ATSAdapterRegistry.hasAdapter(detection.atsType);
+
+          if (hasAdapter) {
+            const adapter = ATSAdapterRegistry.getAdapter(detection.atsType);
+            adapterSlug = adapter.platformSlug;
+
+            try {
+              const validation = await adapter.validateSource({
+                sourceUrl: detection.sourceUrl,
+                sourceIdentifier: detection.boardIdentifier!,
+                adapterConfig: {},
+              } as any);
+
+              if (validation.isValid) {
+                verificationStatus = 'verified';
+                discoveryStatus = 'VERIFIED';
+                adapterStatus = 'ready';
+                metrics.verified++;
+              } else {
+                verificationStatus = 'stale';
+                discoveryStatus = 'FAILED';
+                adapterStatus = 'invalid';
+                discoveryError = 'Adapter validation failed: source not valid';
+                verificationError = discoveryError;
+                metrics.stale++;
+              }
+            } catch (e: any) {
+              verificationStatus = 'probable';
+              discoveryStatus = 'VERIFIED';
+              adapterStatus = 'error';
+              discoveryError = `Adapter validation threw: ${e instanceof Error ? e.message : String(e)}`;
+              verificationError = discoveryError;
+              metrics.probable++;
+            }
+          } else {
+            // ATS confirmed but no adapter yet — still verified
+            verificationStatus = 'verified';
+            discoveryStatus = 'VERIFIED';
+            adapterSlug = detection.atsType;
+            adapterStatus = 'unavailable';
+            metrics.verified++;
+          }
         }
       }
     } catch (err: any) {

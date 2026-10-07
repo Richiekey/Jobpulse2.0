@@ -83,6 +83,30 @@ describe('Promotion Gate (canPromote)', () => {
     const record = { ...baseValidRecord, crawl_job_count: 0 };
     const result = processor.canPromote(record as any);
     expect(result.eligible).toBe(false);
+    expect(result.reason).toContain('0 jobs');
+  });
+
+  it('rejects promotion if trial crawl produced 0 eligible jobs', () => {
+    const record = { ...baseValidRecord, crawl_eligible_job_count: 0 };
+    const result = processor.canPromote(record as any);
+    expect(result.eligible).toBe(false);
+    expect(result.reason).toContain('0 eligible jobs');
+  });
+
+  it('rejects promotion if crawl_job_count is missing', () => {
+    const record = { ...baseValidRecord };
+    delete (record as any).crawl_job_count;
+    const result = processor.canPromote(record as any);
+    expect(result.eligible).toBe(false);
+    expect(result.reason).toContain('Missing crawl_job_count');
+  });
+
+  it('rejects promotion if crawl_eligible_job_count is missing', () => {
+    const record = { ...baseValidRecord };
+    delete (record as any).crawl_eligible_job_count;
+    const result = processor.canPromote(record as any);
+    expect(result.eligible).toBe(false);
+    expect(result.reason).toContain('Missing crawl_eligible_job_count');
   });
 
   it('rejects promotion if circuit breaker is open for the domain', () => {

@@ -36,6 +36,7 @@ describe('TechnologyChecker Pipeline Regression Tests', () => {
       detection_url: 'https://apply.workable.com/example',
       board_identifier: 'example',
       crawl_job_count: 5,
+      crawl_eligible_job_count: 5,
       promotion_status: null,
     });
 

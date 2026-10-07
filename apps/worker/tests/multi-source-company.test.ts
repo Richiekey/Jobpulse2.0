@@ -81,8 +81,8 @@ describe('Multi-Source Company Integration & Concurrency (S15 & S20)', () => {
     expect(results[0].sourceIdentifier).toBe('stripe_main');
     expect(results[1].sourceIdentifier).toBe('stripe_subsidiary');
 
-    // Both succeeded
-    expect(results[0].status).toBe('succeeded');
-    expect(results[1].status).toBe('succeeded');
+    // Both were empty
+    expect(results[0].status).toBe('empty');
+    expect(results[1].status).toBe('empty');
   });
 });

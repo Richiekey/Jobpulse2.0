@@ -87,6 +87,40 @@ describe('Concurrent Promotion & Idempotency (MC-5)', () => {
     }
   });
 
+  it('ensures exactly one production company_source results when two workers process the same candidate concurrently', async () => {
+    // Seed a single candidate
+    const candidateId = await store.insertRecord({
+      domain: `single-target.com`,
+      company_name: `Single Target`,
+      ats_provider: 'ashby',
+      discovery_status: 'SUCCESS',
+      verification_status: 'verified',
+      adapter_status: 'ready',
+      board_identifier: `single-target`,
+      crawl_job_count: 10,
+      crawl_eligible_job_count: 5,
+      crawl_rejected_job_count: 5,
+      promotion_status: null,
+    });
+
+    const processor1 = new DiscoveryQueueProcessor(store, undefined, { workerId: 'worker-1' });
+    const processor2 = new DiscoveryQueueProcessor(store, undefined, { workerId: 'worker-2' });
+
+    // Both processors run promote concurrently in dry-run mode
+    const [metrics1, metrics2] = await Promise.all([
+      processor1.promoteSuccessfulDiscovery({ limit: 10, dryRun: true }),
+      processor2.promoteSuccessfulDiscovery({ limit: 10, dryRun: true }),
+    ]);
+
+    // Only one worker should have successfully promoted it
+    expect(metrics1.promoted + metrics2.promoted).toBe(1);
+
+    // Verify record in store is marked promoted exactly once
+    const record = await store.findRecord({ id: candidateId });
+    expect(record?.promotion_status).toBe('promoted');
+    expect(record?.promoted_at).toBeDefined();
+  });
+
   it('proves idempotency: subsequent promotion runs result in zero duplicate promotions', async () => {
     await store.insertRecord({
       domain: 'idempotent-test.com',

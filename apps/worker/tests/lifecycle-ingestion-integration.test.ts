@@ -51,7 +51,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     const result = await runner.processSource(sampleCompanySource as any, 'run_123');
 
-    expect(result.status).toBe('succeeded');
+    expect(result.status).toBe('healthy');
     expect(result.discovered).toBe(2);
 
     // Verify reconcile_source_job_lifecycle RPC was invoked with discovered external IDs
@@ -93,7 +93,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     const result = await runner.processSource(sampleCompanySource as any, 'run_123');
 
-    expect(result.status).toBe('succeeded');
+    expect(result.status).toBe('healthy');
     expect(result.discovered).toBe(2);
 
     // Hard Invariant: Partial crawl MUST NOT trigger reconciliation or job expiration
@@ -162,7 +162,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     const result = await runner.processSource(sampleCompanySource as any, 'run_123');
 
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('adapter_error');
     expect(result.errorMessage).toContain('Greenhouse API 500 Internal Server Error');
 
     // Hard Invariant: reconcile_company_source_job_lifecycle must NOT be called on failed crawl
@@ -188,7 +188,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     const result = await runner.processSource(sampleCompanySource as any, 'run_123');
 
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('http_error');
     expect(result.errorMessage).toContain('ETIMEDOUT');
 
     // Hard Invariant: reconcile_company_source_job_lifecycle must NOT be called on timeout
@@ -214,7 +214,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     const result = await runner.processSource(sampleCompanySource as any, 'run_123');
 
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('adapter_error');
     expect(result.errorMessage).toContain('AbortError');
 
     // Hard Invariant: reconcile_company_source_job_lifecycle must NOT be called on cancellation
@@ -249,7 +249,7 @@ describe('ScraperRunner & JobLifecycle Ingestion Integration (S26/S27 P0)', () =
 
     const result = await runner.processSource(sampleCompanySource as any, 'run_123');
 
-    expect(result.status).toBe('succeeded');
+    expect(result.status).toBe('healthy');
     expect(rpcSpy).not.toHaveBeenCalledWith(
       'reconcile_company_source_job_lifecycle',
       expect.anything()

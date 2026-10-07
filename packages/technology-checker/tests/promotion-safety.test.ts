@@ -126,6 +126,8 @@ describe('Promotion Safety', () => {
       verification_status: 'verified',
       adapter_status: 'ready',
       board_identifier: 'promo-test-7',
+      crawl_job_count: 5,
+      crawl_eligible_job_count: 5,
       promotion_status: null,
     });
 

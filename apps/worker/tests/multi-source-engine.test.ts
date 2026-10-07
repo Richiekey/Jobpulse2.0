@@ -107,17 +107,17 @@ describe('Multi-Source Ingestion Engine & Real ScraperRunner Orchestration (S09 
 
     // 2. Verify Source A failed with exact error message and did not throw or halt execution
     const resultA = results.find((r) => r.companySourceId === '10000000-0000-0000-0000-000000000001');
-    expect(resultA?.status).toBe('failed');
+    expect(resultA?.status).toBe('adapter_error');
     expect(resultA?.errorMessage).toBe('HTTP 500 Internal Server Error');
 
-    // 3. Verify Source B succeeded completely
+    // 3. Verify Source B succeeded completely (empty because it discovered 0 candidates)
     const resultB = results.find((r) => r.companySourceId === '10000000-0000-0000-0000-000000000002');
-    expect(resultB?.status).toBe('succeeded');
+    expect(resultB?.status).toBe('empty');
     expect(resultB?.errorMessage).toBeNull();
 
-    // 4. Verify Source C succeeded completely
+    // 4. Verify Source C succeeded completely (empty because it discovered 0 candidates)
     const resultC = results.find((r) => r.companySourceId === '10000000-0000-0000-0000-000000000003');
-    expect(resultC?.status).toBe('succeeded');
+    expect(resultC?.status).toBe('empty');
     expect(resultC?.errorMessage).toBeNull();
   });
 });

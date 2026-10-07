@@ -46,6 +46,7 @@ export interface DiscoveryRecord {
   promotion_reason?: string | null;
   claimed_at?: string | null;
   claimed_by?: string | null;
+  claim_epoch?: number;
   [key: string]: any;
 }
 
@@ -78,6 +79,9 @@ export interface StateStore {
 
   /** Recover stale claims whose lease has expired (MC-1) */
   recoverStaleClaims(leaseIntervalMinutes?: number): Promise<number>;
+
+  /** Renew/extend claim lease heartbeat — bumps epoch and resets claimed_at */
+  renewClaim(id: string, workerId: string): Promise<boolean>;
 
   /** Release claim on a record */
   releaseClaim(id: string, workerId?: string): Promise<boolean>;
@@ -165,6 +169,15 @@ export class SupabaseStateStore implements StateStore {
     });
     if (error) throw new Error(`recoverStaleClaims failed: ${error.message}`);
     return (data as number) ?? 0;
+  }
+
+  async renewClaim(id: string, workerId: string): Promise<boolean> {
+    const { data, error } = await this.db.rpc('renew_discovery_claim', {
+      p_id: id,
+      p_worker_id: workerId,
+    });
+    if (error) throw new Error(`renewClaim failed: ${error.message}`);
+    return Boolean(data);
   }
 
   async releaseClaim(id: string, workerId?: string): Promise<boolean> {
@@ -319,7 +332,9 @@ export class InMemoryStateStore implements StateStore {
     const candidates = Array.from(this.records.values())
       .filter((rec) => {
         if (rec.discovery_status !== status) return false;
+        // Unclaimed: available
         if (!rec.claimed_at) return true;
+        // Claimed: only re-claimable if lease has expired
         const claimTime = new Date(rec.claimed_at).getTime();
         return isNaN(claimTime) || nowMs - claimTime > leaseExpiryMs;
       })
@@ -336,6 +351,7 @@ export class InMemoryStateStore implements StateStore {
     for (const cand of candidates) {
       cand.claimed_at = nowIso;
       cand.claimed_by = workerId;
+      cand.claim_epoch = 1;
       this.records.set(cand.id, { ...cand });
       claimed.push({ ...cand });
     }
@@ -351,9 +367,12 @@ export class InMemoryStateStore implements StateStore {
     for (const rec of this.records.values()) {
       if (rec.claimed_at) {
         const claimTime = new Date(rec.claimed_at).getTime();
+        // Only recover if the claimed_at timestamp is actually past the lease window.
+        // A renewed claim will have an updated claimed_at, so it won't be reclaimed.
         if (isNaN(claimTime) || nowMs - claimTime > leaseExpiryMs) {
           rec.claimed_at = null;
           rec.claimed_by = null;
+          rec.claim_epoch = 0;
           this.records.set(rec.id, { ...rec });
           recovered++;
         }
@@ -363,12 +382,24 @@ export class InMemoryStateStore implements StateStore {
     return recovered;
   }
 
+  async renewClaim(id: string, workerId: string): Promise<boolean> {
+    const rec = this.records.get(id);
+    if (!rec) return false;
+    // Only the owning worker can renew its own claim
+    if (rec.claimed_by !== workerId) return false;
+    rec.claimed_at = new Date().toISOString();
+    rec.claim_epoch = (rec.claim_epoch ?? 0) + 1;
+    this.records.set(id, { ...rec });
+    return true;
+  }
+
   async releaseClaim(id: string, workerId?: string): Promise<boolean> {
     const rec = this.records.get(id);
     if (!rec) return false;
     if (!workerId || rec.claimed_by === workerId) {
       rec.claimed_at = null;
       rec.claimed_by = null;
+      rec.claim_epoch = 0;
       this.records.set(id, { ...rec });
       return true;
     }
