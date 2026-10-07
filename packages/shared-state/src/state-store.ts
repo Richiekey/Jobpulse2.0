@@ -80,8 +80,9 @@ export interface StateStore {
   /** Recover stale claims whose lease has expired (MC-1) */
   recoverStaleClaims(leaseIntervalMinutes?: number): Promise<number>;
 
-  /** Renew/extend claim lease heartbeat — bumps epoch and resets claimed_at */
-  renewClaim(id: string, workerId: string): Promise<boolean>;
+  /** Renew/extend claim lease heartbeat — bumps epoch and resets claimed_at.
+   *  Returns the new epoch (fencing token) or null if the claim was stolen. */
+  renewClaim(id: string, workerId: string): Promise<number | null>;
 
   /** Release claim on a record */
   releaseClaim(id: string, workerId?: string): Promise<boolean>;
@@ -171,13 +172,14 @@ export class SupabaseStateStore implements StateStore {
     return (data as number) ?? 0;
   }
 
-  async renewClaim(id: string, workerId: string): Promise<boolean> {
+  async renewClaim(id: string, workerId: string): Promise<number | null> {
     const { data, error } = await this.db.rpc('renew_discovery_claim', {
       p_id: id,
       p_worker_id: workerId,
     });
     if (error) throw new Error(`renewClaim failed: ${error.message}`);
-    return Boolean(data);
+    // RPC returns the new epoch integer, or null if no row matched (claim stolen)
+    return typeof data === 'number' ? data : null;
   }
 
   async releaseClaim(id: string, workerId?: string): Promise<boolean> {
@@ -382,15 +384,16 @@ export class InMemoryStateStore implements StateStore {
     return recovered;
   }
 
-  async renewClaim(id: string, workerId: string): Promise<boolean> {
+  async renewClaim(id: string, workerId: string): Promise<number | null> {
     const rec = this.records.get(id);
-    if (!rec) return false;
+    if (!rec) return null;
     // Only the owning worker can renew its own claim
-    if (rec.claimed_by !== workerId) return false;
+    if (rec.claimed_by !== workerId) return null;
+    if (!rec.claimed_at) return null;
     rec.claimed_at = new Date().toISOString();
     rec.claim_epoch = (rec.claim_epoch ?? 0) + 1;
     this.records.set(id, { ...rec });
-    return true;
+    return rec.claim_epoch;
   }
 
   async releaseClaim(id: string, workerId?: string): Promise<boolean> {

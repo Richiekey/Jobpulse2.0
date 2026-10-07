@@ -370,51 +370,73 @@ export class DiscoveryQueueProcessor {
         let eligibleCount = 0;
         let rejectedCount = 0;
 
-        for (const candidate of trialSample) {
+        // True periodic heartbeat: renew claim on a fixed interval regardless of
+        // candidate processing speed. Fires every 1/3 of the lease window so the
+        // claim never expires during a long-running trial crawl.
+        const heartbeatIntervalMs = Math.max(
+          (this.claimDurationMinutes * 60 * 1000) / 3,
+          5000 // floor at 5s to avoid spinning
+        );
+        let heartbeatFailed = false;
+        const heartbeatTimer = setInterval(async () => {
           try {
-            await this.rateLimiter.acquire(record.domain);
-            let rawPayload: any;
-            try {
-              rawPayload = await adapter.fetch(candidate);
-            } finally {
-              this.rateLimiter.release(record.domain);
+            const renewed = await this.store.renewClaim(record.id, this.workerId);
+            if (!renewed) {
+              heartbeatFailed = true;
             }
-
-            const rawJob = await adapter.parse(rawPayload);
-            const normalized = await adapter.normalize(rawJob, rawPayload.payloadHash);
-
-            const eligibilityInput: JobCandidateData = {
-              title: normalized.canonicalTitle || normalized.displayTitle,
-              displayTitle: normalized.displayTitle,
-              canonicalTitle: normalized.canonicalTitle,
-              description: normalized.description,
-              locations: normalized.locations,
-              workplaceType: normalized.workplaceType,
-              postedAt: normalized.postedAt,
-              skills: normalized.skills,
-              sourceMetadata: normalized.sourceMetadata as Record<string, any>,
-            };
-
-            const result = JobEligibilityPolicy.evaluate(eligibilityInput);
-            if (result.eligible) {
-              eligibleCount++;
-            } else {
-              rejectedCount++;
-            }
-          } catch (fetchErr) {
-            rejectedCount++;
-            logger.warn(`Trial crawl: failed to fetch/parse candidate ${candidate.externalJobId}`, {
-              error: String(fetchErr),
-            });
-          }
-
-          // Heartbeat: renew claim lease after each candidate to prevent stale recovery
-          // from stealing an active long-running trial crawl claim
-          try {
-            await this.store.renewClaim(record.id, this.workerId);
           } catch {
-            // Non-fatal — claim may have already been released
+            // Non-fatal — claim may have been released externally
+            heartbeatFailed = true;
           }
+        }, heartbeatIntervalMs);
+
+        try {
+          for (const candidate of trialSample) {
+            // Abort if heartbeat failed — claim was stolen
+            if (heartbeatFailed) {
+              logger.warn(`Trial crawl: heartbeat failed for ${record.id}, aborting — claim may have been stolen`);
+              break;
+            }
+
+            try {
+              await this.rateLimiter.acquire(record.domain);
+              let rawPayload: any;
+              try {
+                rawPayload = await adapter.fetch(candidate);
+              } finally {
+                this.rateLimiter.release(record.domain);
+              }
+
+              const rawJob = await adapter.parse(rawPayload);
+              const normalized = await adapter.normalize(rawJob, rawPayload.payloadHash);
+
+              const eligibilityInput: JobCandidateData = {
+                title: normalized.canonicalTitle || normalized.displayTitle,
+                displayTitle: normalized.displayTitle,
+                canonicalTitle: normalized.canonicalTitle,
+                description: normalized.description,
+                locations: normalized.locations,
+                workplaceType: normalized.workplaceType,
+                postedAt: normalized.postedAt,
+                skills: normalized.skills,
+                sourceMetadata: normalized.sourceMetadata as Record<string, any>,
+              };
+
+              const result = JobEligibilityPolicy.evaluate(eligibilityInput);
+              if (result.eligible) {
+                eligibleCount++;
+              } else {
+                rejectedCount++;
+              }
+            } catch (fetchErr) {
+              rejectedCount++;
+              logger.warn(`Trial crawl: failed to fetch/parse candidate ${candidate.externalJobId}`, {
+                error: String(fetchErr),
+              });
+            }
+          }
+        } finally {
+          clearInterval(heartbeatTimer);
         }
 
         if (eligibleCount > 0) {
